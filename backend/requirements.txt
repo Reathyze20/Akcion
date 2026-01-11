@@ -1,0 +1,28 @@
+# Backend Dependencies for Akcion - FastAPI Production
+
+# Core Framework
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic>=2.10.3  # Flexible version for Python 3.14 compatibility
+pydantic-settings==2.6.1
+
+# Database
+sqlalchemy==2.0.36
+psycopg[binary]>=3.2.3  # Modern PostgreSQL adapter with Python 3.14 support
+alembic==1.13.1  # For future database migrations
+
+# AI & Analysis
+google-generativeai==0.8.3
+
+# Data Extraction
+youtube-transcript-api>=1.2.3  # Compatible with Python 3.14+
+requests==2.32.3
+python-docx==1.1.0
+
+# Environment & Config
+python-dotenv==1.0.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1  # For testing FastAPI endpoints

@@ -1,0 +1,202 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Premium Dark Modular Theme - Base Styles */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  body {
+    background-color: #0E1117;
+    color: #E6EDF3;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@layer components {
+  /* Modern Card System */
+  .card {
+    background-color: #1C2128;
+    border-radius: 12px;
+    border: 1px solid #30363D;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .card-hover:hover {
+    border-color: #58A6FF;
+    box-shadow: 0 4px 16px rgba(88, 166, 255, 0.15);
+    transform: translateY(-2px);
+  }
+  
+  /* Modern Button System */
+  .btn {
+    padding: 0.625rem 1.25rem;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    border: none;
+    outline: none;
+  }
+  
+  .btn:focus-visible {
+    outline: 2px solid #58A6FF;
+    outline-offset: 2px;
+  }
+  
+  .btn-primary {
+    background: linear-gradient(135deg, #58A6FF 0%, #388BFD 100%);
+    color: white;
+  }
+  
+  .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #388BFD 0%, #1F6FEB 100%);
+    box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3);
+  }
+  
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .btn-secondary {
+    background-color: #22272E;
+    color: #E6EDF3;
+    border: 1px solid #30363D;
+  }
+  
+  .btn-secondary:hover:not(:disabled) {
+    background-color: #2D333B;
+    border-color: #58A6FF;
+  }
+  
+  .btn-success {
+    background-color: rgba(63, 185, 80, 0.15);
+    color: #3FB950;
+    border: 1px solid rgba(63, 185, 80, 0.3);
+  }
+  
+  .btn-success:hover:not(:disabled) {
+    background-color: rgba(63, 185, 80, 0.25);
+    box-shadow: 0 0 24px rgba(63, 185, 80, 0.2);
+  }
+  
+  /* Modern Input System */
+  .input, .textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background-color: #161B22;
+    border: 1px solid #30363D;
+    border-radius: 6px;
+    color: #E6EDF3;
+    font-size: 0.9375rem;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .input:hover, .textarea:hover {
+    border-color: #3D444D;
+  }
+  
+  .input:focus, .textarea:focus {
+    outline: none;
+    border-color: #58A6FF;
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+  }
+  
+  .input::placeholder, .textarea::placeholder {
+    color: #6E7681;
+  }
+  
+  select.input {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%238B949E' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    padding-right: 2.5rem;
+  }
+  
+  .textarea {
+    resize: vertical;
+    min-height: 120px;
+    font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+  
+  /* Badge System */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  
+  .badge-bullish {
+    background-color: rgba(63, 185, 80, 0.15);
+    color: #3FB950;
+    border: 1px solid rgba(63, 185, 80, 0.3);
+  }
+  
+  .badge-bearish {
+    background-color: rgba(248, 81, 73, 0.15);
+    color: #F85149;
+    border: 1px solid rgba(248, 81, 73, 0.3);
+  }
+  
+  .badge-neutral {
+    background-color: rgba(210, 153, 34, 0.15);
+    color: #D29922;
+    border: 1px solid rgba(210, 153, 34, 0.3);
+  }
+  
+  /* Skeleton Loader */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      #161B22 0%,
+      #22272E 50%,
+      #161B22 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+    border-radius: 4px;
+  }
+  
+  /* Custom Scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background-color: #161B22;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #30363D;
+    border-radius: 4px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #3D444D;
+  }
+}
