@@ -73,7 +73,9 @@ class AnalysisResponse(BaseModel):
     success: bool
     message: str
     stocks_found: int
-    stocks: List[StockResponse]
+    stocks: List[StockAnalysisResult]
+    source_id: str
+    source_type: str
     
     class Config:
         json_schema_extra = {
@@ -81,7 +83,9 @@ class AnalysisResponse(BaseModel):
                 "success": True,
                 "message": "Successfully analyzed transcript and found 3 stock mentions",
                 "stocks_found": 3,
-                "stocks": []
+                "stocks": [],
+                "source_id": "video_123",
+                "source_type": "YouTube"
             }
         }
 
@@ -110,13 +114,15 @@ class StocksListResponse(BaseModel):
     """Response model for list of stocks."""
     
     stocks: List[StockResponse]
-    total: int
+    total_stocks: int
+    filters_applied: Optional[dict] = None
     
     class Config:
         json_schema_extra = {
             "example": {
                 "stocks": [],
-                "total": 10
+                "total_stocks": 10,
+                "filters_applied": None
             }
         }
 

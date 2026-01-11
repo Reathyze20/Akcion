@@ -77,14 +77,18 @@ class StockAnalyzer:
             Returns None if analysis fails
         """
         try:
-            # Initialize model with:
-            # 1. System instruction (fiduciary analyst persona)
-            # 2. Google Search tools for real-time data
-            model = genai.GenerativeModel(
-                GEMINI_MODEL_NAME,
-                tools=GOOGLE_SEARCH_CONFIG,
-                system_instruction=FIDUCIARY_ANALYST_PROMPT
-            )
+            # Initialize model with system instruction (fiduciary analyst persona)
+            # Note: Google Search tools deprecated, using base model
+            model_kwargs = {
+                "model_name": GEMINI_MODEL_NAME,
+                "system_instruction": FIDUCIARY_ANALYST_PROMPT
+            }
+            
+            # Only add tools if they're configured
+            if GOOGLE_SEARCH_CONFIG:
+                model_kwargs["tools"] = GOOGLE_SEARCH_CONFIG
+            
+            model = genai.GenerativeModel(**model_kwargs)
             
             # Generate analysis prompt
             prompt = get_analysis_prompt(transcript)

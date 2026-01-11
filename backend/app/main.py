@@ -240,7 +240,7 @@ async def analyze_youtube(
             success=True,
             message=f"Successfully analyzed YouTube video and saved {len(stocks)} stock(s)",
             stocks=stock_results,
-            stocks_saved=len(stocks),
+            stocks_found=len(stocks),
             source_id=video_id,
             source_type="YouTube"
         )
@@ -267,7 +267,7 @@ async def analyze_google_docs(
     """Extract and analyze Google Docs content"""
     try:
         # Extract doc ID
-        doc_id = extract_google_doc_id(request.doc_url)
+        doc_id = extract_google_doc_id(request.url)
         if not doc_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -276,7 +276,7 @@ async def analyze_google_docs(
         
         # Get document content
         try:
-            content = get_google_doc_content(request.doc_url)
+            content = get_google_doc_content(request.url)
         except PermissionError as e:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -299,8 +299,8 @@ async def analyze_google_docs(
                 detail="Document is empty or inaccessible"
             )
         
-        # Analyze
-        analyzer = StockAnalyzer(request.api_key)
+        # Analyze with API key from settings
+        analyzer = StockAnalyzer(settings.gemini_api_key)
         result = analyzer.analyze_transcript(content)
         
         if not result or "stocks" not in result:
@@ -332,7 +332,7 @@ async def analyze_google_docs(
             success=True,
             message=f"Successfully analyzed Google Doc and saved {len(stocks)} stock(s)",
             stocks=stock_results,
-            stocks_saved=len(stocks),
+            stocks_found=len(stocks),
             source_id=doc_id,
             source_type="Google Docs"
         )
@@ -377,14 +377,18 @@ async def get_all_stocks(
         if sentiment:
             stocks = [s for s in stocks if s.sentiment == sentiment]
         
-        # Convert to response
+        # Convert to StockResponse objects using Pydantic validation
         stock_responses = [StockResponse.model_validate(stock) for stock in stocks]
         
         return StocksListResponse(
-            success=True,
-            count=len(stock_responses),
-            stocks=stock_responses
+            stocks=stock_responses,
+            total_stocks=len(stock_responses)
         )
+        
+        return {
+            "stocks": stock_responses,
+            "count": len(stock_responses)
+        }
         
     except Exception as e:
         raise HTTPException(
@@ -451,9 +455,8 @@ async def get_ticker_history(
         stock_responses = [StockResponse.model_validate(stock) for stock in stocks]
         
         return StocksListResponse(
-            success=True,
-            count=len(stock_responses),
-            stocks=stock_responses
+            stocks=stock_responses,
+            total_stocks=len(stock_responses)
         )
         
     except HTTPException:

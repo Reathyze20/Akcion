@@ -64,20 +64,16 @@ class AnalyzeYouTubeRequest(BaseModel):
 
 class AnalyzeGoogleDocsRequest(BaseModel):
     """Request body for Google Docs analysis"""
-    doc_url: str = Field(
+    url: str = Field(
         ...,
         description="Google Docs sharing URL"
     )
     speaker: str = Field(
-        default="Mark Gomes",
+        default="Unknown",
         description="Speaker/author"
     )
-    api_key: str = Field(
-        ...,
-        description="Google Gemini API key"
-    )
     
-    @field_validator('doc_url')
+    @field_validator('url')
     @classmethod
     def validate_docs_url(cls, v: str) -> str:
         """Ensure it's a valid Google Docs URL"""
@@ -110,7 +106,7 @@ class AnalysisResponse(BaseModel):
     success: bool
     message: str
     stocks: List[StockAnalysisResult] = []
-    stocks_saved: int = 0
+    stocks_found: int = 0
     source_id: str
     source_type: str
 

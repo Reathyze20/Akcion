@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     )
     
     # CORS Settings
-    cors_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"],
+    cors_origins: str | list[str] = Field(
+        default="http://localhost:3000,http://localhost:5173,http://localhost:5174",
         alias="CORS_ORIGINS"
     )
     
@@ -68,11 +68,17 @@ class Settings(BaseSettings):
         alias="DEBUG"
     )
     
-    @field_validator('cors_origins', mode='before')
+    @field_validator('cors_origins', mode='after')
     @classmethod
     def parse_cors_origins(cls, v):
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(',')]
+            # Try JSON first
+            import json
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                # Fallback to comma-separated
+                return [origin.strip() for origin in v.split(',')]
         return v
     
     model_config = SettingsConfigDict(

@@ -74,16 +74,9 @@ Transcript:
 # Google Search Tools Configuration
 # ==============================================================================
 
-GOOGLE_SEARCH_CONFIG = [
-    {
-        "google_search_retrieval": {
-            "dynamic_retrieval_config": {
-                "mode": "dynamic",
-                "dynamic_threshold": 0.6,
-            }
-        }
-    }
-]
+# Google Search Retrieval was deprecated by Gemini API
+# Using model without tools for now
+GOOGLE_SEARCH_CONFIG = None
 
 
 # ==============================================================================
