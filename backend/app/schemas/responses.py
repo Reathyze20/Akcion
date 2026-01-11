@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 class StockAnalysisResult(BaseModel):
-    """Individual stock analysis result from AI."""
+    """Individual stock analysis result from AI - Trading focused."""
     
     ticker: str
     company_name: Optional[str] = None
@@ -23,6 +23,16 @@ class StockAnalysisResult(BaseModel):
     status: Optional[str] = None
     time_horizon: Optional[str] = "Long-term"
     conviction_score: Optional[int] = Field(default=None, ge=1, le=10)
+    
+    # Trading action fields
+    action_verdict: Optional[str] = "WATCH_LIST"  # BUY_NOW, ACCUMULATE, WATCH_LIST, TRIM, SELL, AVOID
+    entry_zone: Optional[str] = None
+    price_target_short: Optional[str] = None
+    price_target_long: Optional[str] = None
+    stop_loss_risk: Optional[str] = None
+    moat_rating: Optional[int] = Field(default=3, ge=1, le=5)
+    trade_rationale: Optional[str] = None
+    chart_setup: Optional[str] = None
 
 
 class StockResponse(BaseModel):
@@ -43,6 +53,16 @@ class StockResponse(BaseModel):
     catalysts: Optional[str]
     risks: Optional[str]
     raw_notes: Optional[str]
+    
+    # Trading action fields
+    action_verdict: Optional[str] = None
+    entry_zone: Optional[str] = None
+    price_target_short: Optional[str] = None
+    price_target_long: Optional[str] = None
+    stop_loss_risk: Optional[str] = None
+    moat_rating: Optional[int] = None
+    trade_rationale: Optional[str] = None
+    chart_setup: Optional[str] = None
     
     class Config:
         from_attributes = True  # Allows SQLAlchemy model conversion

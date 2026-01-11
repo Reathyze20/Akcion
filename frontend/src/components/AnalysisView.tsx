@@ -1,95 +1,126 @@
 /**
  * AnalysisView Component
  * 
- * Welcome screen and instructions for the analysis feature.
+ * Main dashboard with "Top Picks" section highlighting BUY_NOW and ACCUMULATE stocks
  */
 
 import React from 'react';
+import { StockCard } from './StockCard';
+import { TrendingUp, Zap, Eye, AlertCircle } from 'lucide-react';
+import type { Stock } from '../types';
 
-export const AnalysisView: React.FC = () => {
+interface AnalysisViewProps {
+  stocks: Stock[];
+  onStockClick: (stock: Stock) => void;
+}
+
+export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick }) => {
+  
+  // Separate stocks by action verdict
+  const topPicks = stocks.filter(s => 
+    s.action_verdict === 'BUY_NOW' || s.action_verdict === 'ACCUMULATE'
+  );
+  
+  const watchList = stocks.filter(s => 
+    s.action_verdict === 'WATCH_LIST'
+  );
+  
+  const otherStocks = stocks.filter(s => 
+    !['BUY_NOW', 'ACCUMULATE', 'WATCH_LIST'].includes(s.action_verdict || '')
+  );
+
+  const renderSection = (title: string, items: Stock[], icon: React.ElementType, iconColor: string, emptyMessage: string) => (
+    <div className="mb-12">
+      <div className="flex items-center gap-3 mb-6">
+        {React.createElement(icon, { className: `w-6 h-6 ${iconColor}` })}
+        <h2 className="text-2xl font-bold text-white">{title}</h2>
+        <span className="px-3 py-1 bg-slate-800/50 rounded-full text-sm text-slate-400 font-mono">
+          {items.length}
+        </span>
+      </div>
+      
+      {items.length === 0 ? (
+        <div className="bg-slate-800/30 backdrop-blur border border-white/5 rounded-2xl p-12 text-center">
+          <AlertCircle className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+          <p className="text-slate-400">{emptyMessage}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {items.map(stock => (
+            <StockCard 
+              key={stock.id} 
+              stock={stock} 
+              onClick={() => onStockClick(stock)} 
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="flex-1 flex items-center justify-center p-6">
-      <div className="max-w-2xl text-center space-y-6">
-        <div className="text-6xl mb-4">📊</div>
-        <h1 className="text-4xl font-bold text-text-primary mb-4">
-          Welcome to <span className="text-accent-blue">AKCION</span>
+    <div className="space-y-12 animate-in fade-in duration-500">
+      {/* Page Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-white mb-2">
+          📊 Trading Signals Dashboard
         </h1>
-        <p className="text-lg text-text-secondary mb-8">
-          AI-powered investment analysis platform using fiduciary-grade analysis
-          and The Gomes Rules framework.
+        <p className="text-slate-400 text-sm">
+          Actionable investment opportunities from Mark Gomes methodology
         </p>
+      </div>
 
-        <div className="card p-6 text-left space-y-4">
-          <h2 className="text-xl font-semibold text-accent-blue">
-            Getting Started
-          </h2>
-          <ol className="space-y-3 text-text-secondary">
-            <li className="flex items-start gap-3">
-              <span className="text-accent-blue font-bold">1.</span>
-              <span>
-                Choose your input type: raw text, YouTube URL, or Google Docs URL
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-accent-blue font-bold">2.</span>
-              <span>
-                Enter the speaker/analyst name (e.g., "Mark Gomes")
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-accent-blue font-bold">3.</span>
-              <span>
-                Paste your content or URL in the input field
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-accent-blue font-bold">4.</span>
-              <span>
-                Click "Analyze" to extract stock mentions and insights
-              </span>
-            </li>
-          </ol>
+      {/* Stats Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
+          <div className="text-green-400 text-sm font-semibold mb-1">STRONG BUYS</div>
+          <div className="text-3xl font-bold text-white font-mono">{topPicks.length}</div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
-          <div className="card p-4">
-            <div className="text-2xl mb-2">🤖</div>
-            <h3 className="font-semibold text-text-primary mb-1">
-              AI-Powered
-            </h3>
-            <p className="text-sm text-text-secondary">
-              Gemini 3 Pro with Google Search integration
-            </p>
-          </div>
-          <div className="card p-4">
-            <div className="text-2xl mb-2">📈</div>
-            <h3 className="font-semibold text-text-primary mb-1">
-              Gomes Rules
-            </h3>
-            <p className="text-sm text-text-secondary">
-              Information Arbitrage, Catalysts, Risks
-            </p>
-          </div>
-          <div className="card p-4">
-            <div className="text-2xl mb-2">🎯</div>
-            <h3 className="font-semibold text-text-primary mb-1">
-              Fiduciary-Grade
-            </h3>
-            <p className="text-sm text-text-secondary">
-              Aggressive extraction with 1-10 scoring
-            </p>
-          </div>
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+          <div className="text-yellow-400 text-sm font-semibold mb-1">WATCH LIST</div>
+          <div className="text-3xl font-bold text-white font-mono">{watchList.length}</div>
         </div>
-
-        <div className="mt-8 p-4 bg-accent-blue/10 border border-accent-blue/30 rounded-lg">
-          <p className="text-sm text-text-secondary">
-            <span className="font-semibold text-accent-blue">Note:</span> This
-            application uses sophisticated AI analysis to support family financial
-            security decisions. All analysis maintains the fiduciary standard from
-            the original Streamlit application.
-          </p>
+        <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-4">
+          <div className="text-indigo-400 text-sm font-semibold mb-1">TOTAL STOCKS</div>
+          <div className="text-3xl font-bold text-white font-mono">{stocks.length}</div>
+        </div>
+        <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
+          <div className="text-purple-400 text-sm font-semibold mb-1">AVG SCORE</div>
+          <div className="text-3xl font-bold text-white font-mono">
+            {stocks.length > 0 
+              ? (stocks.reduce((sum, s) => sum + (s.gomes_score || 0), 0) / stocks.length).toFixed(1)
+              : '0.0'
+            }
+          </div>
         </div>
       </div>
+
+      {/* Top Picks Section - PRIORITY */}
+      {renderSection(
+        '🔥 Top Picks This Week',
+        topPicks,
+        TrendingUp,
+        'text-green-400',
+        'No strong buy signals at the moment. Check back after next analysis.'
+      )}
+
+      {/* Watch List Section */}
+      {renderSection(
+        '👀 Watch List',
+        watchList,
+        Eye,
+        'text-yellow-400',
+        'No stocks on watch list. Add analysis with specific entry triggers.'
+      )}
+
+      {/* Other Stocks Section */}
+      {otherStocks.length > 0 && renderSection(
+        '📈 All Other Stocks',
+        otherStocks,
+        Zap,
+        'text-slate-400',
+        ''
+      )}
     </div>
   );
 };

@@ -49,6 +49,16 @@ class Stock(Base):
     # Additional Notes
     raw_notes = Column(Text)                 # Freeform notes, status (New Idea, Update, Sold)
     
+    # ========== NEW: TRADING ACTION FIELDS ==========
+    action_verdict = Column(String(50))      # BUY_NOW, ACCUMULATE, WATCH_LIST, TRIM, SELL, AVOID
+    entry_zone = Column(String(200))         # "Under $15" or "Pullback to EMA20"
+    price_target_short = Column(String(50))  # Short-term target
+    price_target_long = Column(String(50))   # Long-term target  
+    stop_loss_risk = Column(Text)            # "Close below $10" or "High Volatility"
+    moat_rating = Column(Integer)            # 1-5, competitive advantage strength
+    trade_rationale = Column(Text)           # Why NOW vs later
+    chart_setup = Column(Text)               # Technical setup description
+    
     def to_dict(self):
         """Convert to dictionary for API responses"""
         return {
@@ -66,5 +76,13 @@ class Stock(Base):
             "edge": self.edge,
             "catalysts": self.catalysts,
             "risks": self.risks,
-            "raw_notes": self.raw_notes
+            "raw_notes": self.raw_notes,
+            "action_verdict": self.action_verdict,
+            "entry_zone": self.entry_zone,
+            "price_target_short": self.price_target_short,
+            "price_target_long": self.price_target_long,
+            "stop_loss_risk": self.stop_loss_risk,
+            "moat_rating": self.moat_rating,
+            "trade_rationale": self.trade_rationale,
+            "chart_setup": self.chart_setup
         }

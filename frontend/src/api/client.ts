@@ -67,6 +67,33 @@ class ApiClient {
     return response.data;
   }
 
+  async analyzeUrl(request: { url: string }): Promise<AnalysisResponse> {
+    // Try to detect if it's a YouTube URL or plain text
+    const isYouTube = request.url.includes('youtube.com') || request.url.includes('youtu.be');
+    const isGoogleDocs = request.url.includes('docs.google.com');
+    
+    if (isYouTube) {
+      const response = await this.client.post<AnalysisResponse>(
+        '/api/analyze/youtube',
+        { url: request.url, speaker: 'Unknown' }
+      );
+      return response.data;
+    } else if (isGoogleDocs) {
+      const response = await this.client.post<AnalysisResponse>(
+        '/api/analyze/google-docs',
+        { url: request.url, speaker: 'Unknown' }
+      );
+      return response.data;
+    } else {
+      // Treat as plain text/transcript
+      const response = await this.client.post<AnalysisResponse>(
+        '/api/analyze/text',
+        { text: request.url, speaker: 'Unknown' }
+      );
+      return response.data;
+    }
+  }
+
   // ==================== Portfolio Endpoints ====================
 
   async getStocks(filters?: {

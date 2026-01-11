@@ -20,6 +20,30 @@ export interface Stock {
   catalysts: string | null;
   risks: string | null;
   raw_notes: string | null;
+  
+  // Trading action fields
+  action_verdict: 'BUY_NOW' | 'ACCUMULATE' | 'WATCH_LIST' | 'TRIM' | 'SELL' | 'AVOID' | null;
+  entry_zone: string | null;
+  price_target_short: string | null;
+  price_target_long: string | null;
+  stop_loss_risk: string | null;
+  moat_rating: number | null; // 1-5
+  trade_rationale: string | null;
+  chart_setup: string | null;
+}
+
+export interface StockAnalysisResult {
+  ticker: string;
+  company_name: string | null;
+  sentiment: string;
+  gomes_score: number;
+  price_target: string | null;
+  edge: string | null;
+  catalysts: string | null;
+  risks: string | null;
+  status: string | null;
+  time_horizon: string | null;
+  conviction_score: number | null;
 }
 
 export interface AnalysisRequest {
@@ -42,7 +66,9 @@ export interface AnalysisResponse {
   success: boolean;
   message: string;
   stocks_found: number;
-  stocks: Stock[];
+  stocks: StockAnalysisResult[];
+  source_id: string;
+  source_type: string;
 }
 
 export interface PortfolioResponse {
