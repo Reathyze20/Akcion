@@ -1,456 +1,293 @@
-# 🎯 AKCION - Investment Analysis Platform
+# AKCION - Investment Analysis Platform
 
-**Three-Tier Architecture**  
-React Frontend → FastAPI Backend → Core Business Logic
+**Trading Intelligence pro kritická investiční rozhodnutí**
 
-## Overview
+---
 
-Akcion is a fiduciary-grade investment analysis platform that uses AI (Google Gemini) to extract stock mentions and insights from transcripts, applying "The Gomes Rules" framework. This application supports critical family financial decisions.
+## 📋 Přehled
 
-### Key Features
+Akcion je fiduciární investiční platforma využívající AI (Google Gemini) k extrakci akciových zmínek z transkriptů podle pravidel "The Gomes Rules". Aplikace podporuje kritická rodinná finanční rozhodnutí.
 
-- **AI-Powered Analysis**: Gemini 3 Pro with Google Search integration
-- **The Gomes Rules**: Information Arbitrage, Catalysts, Risk Assessment
-- **Fiduciary Standard**: Aggressive extraction with 1-10 scoring system
-- **Historical Tracking**: PostgreSQL database for sentiment analysis over time
-- **Premium UI**: Bloomberg Terminal-inspired dark fintech aesthetic
+### Klíčové funkce
+
+- **AI Analýza** - Gemini Pro s Google Search pro real-time data
+- **The Gomes Rules** - Information Arbitrage, Catalysts, Risk Assessment
+- **Fiduciární standard** - Agresivní extrakce se scoring systémem 1-10
+- **Multi-Portfolio** - Správa portfolií pro více majitelů
+- **Multi-Broker** - Import z Degiro, Trading212, XTB
+- **Real-Time ceny** - Massive.com API + yfinance fallback
+
+### Technologie
+
+| Vrstva | Technologie |
+|--------|-------------|
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
+| Backend | FastAPI, Python 3.12, SQLAlchemy 2.0 |
+| Databáze | PostgreSQL (Neon.tech) |
+| AI | Google Gemini Pro |
+| Market Data | Massive.com API, yfinance |
 
 ---
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Požadavky
 
-- **Python 3.14+**
-- **Node.js 18+**
-- **PostgreSQL** (Neon.tech)
-- **Gemini API Key**
+- Python 3.12+
+- Node.js 18+
+- PostgreSQL účet (Neon.tech)
+- Gemini API Key
 
-### 1. Backend Setup
+### 1. Backend
 
 ```powershell
 cd backend
-
-# Install dependencies
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Configure environment (edit .env with your credentials)
+# Konfigurace (.env)
 copy .env.example .env
+# Upravte .env s vašimi credentials
 
-# Start FastAPI server
+# Spuštění
 python start.py
 ```
 
-Backend runs at: **http://localhost:8000**  
+Backend: **http://localhost:8000**  
 API Docs: **http://localhost:8000/docs**
 
-### 2. Frontend Setup
+### 2. Frontend
 
 ```powershell
 cd frontend
-
-# Install dependencies
 npm install
-
-# Configure environment
-copy .env.example .env
-
-# Start React dev server
 npm run dev
 ```
 
-Frontend runs at: **http://localhost:5173**
-
-### 3. Use the Application
-
-1. Open **http://localhost:5173**
-2. Enter speaker name (e.g., "Mark Gomes")
-3. Choose input type:
-   - **Text**: Paste transcript directly
-   - **YouTube**: Paste video URL
-   - **Google Docs**: Paste document URL
-4. Click **Analyze** to extract stocks
-5. View results in **Portfolio** tab
+Frontend: **http://localhost:5173**
 
 ---
 
-## 📁 Project Structure
+## 📁 Struktura projektu
 
 ```
 Akcion/
-├── backend/                  # FastAPI Backend
+├── backend/
 │   ├── app/
-│   │   ├── core/            # Business logic (AI, extractors)
-│   │   ├── models/          # SQLAlchemy models
-│   │   ├── database/        # DB connection, repositories
-│   │   ├── routes/          # API endpoints
-│   │   ├── schemas/         # Pydantic models
-│   │   ├── config/          # Settings management
-│   │   └── main.py          # FastAPI app
-│   ├── tests/               # Test suite
-│   ├── requirements.txt     # Python dependencies
-│   ├── .env                 # Environment config
-│   ├── start.py             # Startup script
-│   └── README.md            # Backend docs
+│   │   ├── config/        # Nastavení (settings.py)
+│   │   ├── core/          # Business logika
+│   │   │   ├── analysis.py    # StockAnalyzer (Gemini AI)
+│   │   │   ├── extractors.py  # YouTube, Google Docs
+│   │   │   ├── prompts.py     # Fiduciary Analyst prompt
+│   │   │   └── constants.py   # Konstanty
+│   │   ├── database/      # DB vrstva
+│   │   │   ├── connection.py  # Engine, session factory
+│   │   │   └── repositories.py # CRUD operace
+│   │   ├── models/        # SQLAlchemy modely
+│   │   │   ├── stock.py       # Stock model
+│   │   │   ├── portfolio.py   # Portfolio, Position
+│   │   │   ├── analysis.py    # AnalyzedStock
+│   │   │   └── trading.py     # Trading signals
+│   │   ├── routes/        # API endpointy
+│   │   │   ├── analysis.py    # /api/analyze/*
+│   │   │   ├── stocks.py      # /api/stocks/*
+│   │   │   ├── portfolio.py   # /api/portfolio/*
+│   │   │   └── gap_analysis.py
+│   │   ├── schemas/       # Pydantic modely
+│   │   │   ├── requests.py
+│   │   │   └── responses.py
+│   │   ├── services/      # Business services
+│   │   └── main.py        # FastAPI app
+│   ├── tests/             # Testy
+│   ├── .env               # Konfigurace
+│   └── requirements.txt
 │
-├── frontend/                # React Frontend
+├── frontend/
 │   ├── src/
-│   │   ├── api/            # API client
-│   │   ├── components/     # React components
-│   │   ├── context/        # State management
-│   │   ├── types/          # TypeScript types
-│   │   ├── App.tsx         # Root component
-│   │   └── index.css       # Tailwind styles
-│   ├── public/             # Static assets
-│   ├── .env                # Environment config
-│   ├── package.json        # Dependencies
-│   └── README.md           # Frontend docs
+│   │   ├── api/           # API klient (Axios)
+│   │   ├── components/    # React komponenty
+│   │   │   ├── Sidebar.tsx
+│   │   │   ├── AnalysisView.tsx
+│   │   │   ├── PortfolioView.tsx
+│   │   │   ├── StockCard.tsx
+│   │   │   └── StockDetail.tsx
+│   │   ├── context/       # State management
+│   │   ├── types/         # TypeScript typy
+│   │   └── App.tsx
+│   └── package.json
 │
-├── app.py                   # Original Streamlit app (still works!)
-├── .streamlit/secrets.toml  # Streamlit secrets
-├── PHASE1_COMPLETE.md       # Core extraction docs
-├── PHASE2_AND_3_COMPLETE.md # Migration completion docs
-└── README.md                # This file
+└── README.md              # Tento soubor
 ```
 
 ---
 
-## 🏗️ Architecture
+## 🔌 API Endpointy
 
-### Three-Tier Design
+### Analýza
+
+| Endpoint | Popis |
+|----------|-------|
+| `POST /api/analyze/text` | Analyzuj raw transkript |
+| `POST /api/analyze/youtube` | Analyzuj YouTube video |
+| `POST /api/analyze/google-docs` | Analyzuj Google Doc |
+
+### Portfolio
+
+| Endpoint | Popis |
+|----------|-------|
+| `GET /api/stocks` | Všechny akcie (s filtry) |
+| `GET /api/stocks/high-conviction` | High-conviction (score ≥7) |
+| `GET /api/stocks/{ticker}` | Konkrétní akcie |
+| `GET /api/stocks/{ticker}/history` | Historie tickeru |
+
+### Portfolio Management
+
+| Endpoint | Popis |
+|----------|-------|
+| `POST /api/portfolio/create` | Vytvořit portfolio |
+| `GET /api/portfolio/list` | Seznam portfolií |
+| `POST /api/portfolio/upload-csv` | Import CSV |
+| `POST /api/portfolio/refresh` | Refresh cen |
+
+---
+
+## 🏗️ Architektura
 
 ```
 ┌─────────────────────────────────────────┐
 │         Frontend (React)                │
-│  - UI Components                        │
-│  - State Management (Context)           │
-│  - API Client (Axios)                   │
+│  - UI Components, State Management      │
 └──────────────┬──────────────────────────┘
                │ HTTP REST API
 ┌──────────────▼──────────────────────────┐
 │         Backend (FastAPI)               │
-│  - REST API Endpoints                   │
-│  - Request Validation (Pydantic)        │
-│  - Error Handling & CORS                │
+│  - Routes, Schemas, Validation          │
 └──────────────┬──────────────────────────┘
                │ Function Calls
 ┌──────────────▼──────────────────────────┐
 │         Core (Pure Python)              │
-│  - AI Prompts (Fiduciary Analyst)       │
-│  - Stock Analysis (Gemini)              │
-│  - Data Extractors (YouTube, Docs)      │
+│  - AI Prompts, Analysis, Extractors     │
 │  - Database Models & Repositories       │
+└──────────────┬──────────────────────────┘
+               │ SQL
+┌──────────────▼──────────────────────────┘
+│         PostgreSQL (Neon.tech)          │
 └─────────────────────────────────────────┘
 ```
 
-### Key Benefits
+### Principy
 
-✅ **Separation of Concerns**: UI, API, business logic are isolated  
-✅ **Scalability**: Each tier can scale independently  
-✅ **Testability**: Core logic testable without UI/API  
-✅ **Maintainability**: Changes to one tier don't break others  
-✅ **Flexibility**: Can add mobile app, CLI, etc. using same backend
+- **Separation of Concerns** - UI, API, business logika izolované
+- **Repository Pattern** - Čistá data access vrstva
+- **Type Safety** - TypeScript + Pydantic + Python type hints
+- **Clean Code** - SRP, meaningful names, logging
 
 ---
 
 ## 🎨 UI Design
 
-### Bloomberg Terminal Aesthetic
+**Bloomberg Terminal Aesthetic:**
+- Dark theme: `#0E1117` background, `#2962FF` accent
+- Sentiment barvy: 🟢 Bullish (#00E676), 🔴 Bearish (#FF5252)
+- Grid layout s kompaktními kartami
 
-- **Dark Theme**: `#0E1117` background with `#2962FF` electric blue accents
-- **Compact Cards**: Grid layout (3 columns) with key metrics
-- **Color-Coded Sentiment**:
-  - 🟢 Bullish: `#00E676`
-  - 🔴 Bearish: `#FF5252`
-  - ⚪ Neutral: `#78909C`
-- **Typography**: Inter for UI, JetBrains Mono for code
-- **Shadows**: Subtle elevation with blue glow on hover
-
-### Views
-
-1. **Analysis View**: Welcome screen with input form
-2. **Portfolio View**: Grid of stock cards with filters
-3. **Stock Detail Modal**: Full analysis with Gomes Rules breakdown
+**Views:**
+1. **Analysis** - Input form pro transkripty
+2. **Portfolio** - Grid akcií s filtry
+3. **Stock Detail** - Modal s plnou analýzou
 
 ---
 
-## 📊 API Endpoints
+## 📊 Datový model
 
-### Analysis
+```sql
+-- Hlavní tabulky
+stocks          -- AI analýzy z transkriptů
+portfolios      -- Portfolia (majitel, broker)
+positions       -- Akciové pozice
+analyzed_stocks -- Detailní analýzy
 
-- `POST /api/analyze/text` - Analyze raw transcript
-- `POST /api/analyze/youtube` - Fetch & analyze YouTube video
-- `POST /api/analyze/google-docs` - Fetch & analyze Google Doc
-
-### Portfolio
-
-- `GET /api/stocks` - Get all stocks (with filters)
-- `GET /api/stocks/high-conviction` - High-conviction picks (score >= 7)
-- `GET /api/stocks/{ticker}` - Get specific stock
-- `GET /api/stocks/{ticker}/history` - Get ticker history
-- `GET /api/stocks/stats/summary` - Portfolio statistics
-
-### Health
-
-- `GET /health` - System health check
-- `GET /` - API root with feature list
-
-Full API docs: **http://localhost:8000/docs**
+-- Klíčová pole v stocks
+ticker, company_name, sentiment, gomes_score,
+conviction_score, action_verdict, entry_zone,
+price_target, stop_loss, edge, catalysts, risks
+```
 
 ---
 
-## 🔐 Environment Configuration
+## ⚙️ Konfigurace
 
-### Backend `.env`
+### Backend (.env)
 
-```bash
-DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
-GEMINI_API_KEY=your_api_key_here
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000
-APP_NAME=Akcion Investment Analysis API
+```env
+DATABASE_URL=postgresql://user:pass@host/db
+GEMINI_API_KEY=your_key
+MASSIVE_API_KEY=your_key
+CORS_ORIGINS=http://localhost:5173
 DEBUG=True
 ```
 
-### Frontend `.env`
+### Frontend (.env)
 
-```bash
+```env
 VITE_API_URL=http://localhost:8000
 ```
 
 ---
 
-## 🧪 Testing
+## 🔧 Vývoj
 
-### Backend Tests
+### Spuštění testů
 
 ```powershell
 cd backend
-
-# Core logic verification
-python tests/test_phase1_extraction.py
-
-# API endpoint tests (future)
-pytest tests/
+python -m pytest tests/
 ```
 
-### Frontend Type Checking
+### Kontrola kódu
 
 ```powershell
-cd frontend
-npm run type-check
-```
+# Backend
+python -c "from app.core import *; from app.models import *; print('OK')"
 
----
-
-## 🚢 Production Deployment
-
-### Backend Deployment
-
-**Recommended Platforms:**
-- Railway
-- Render
-- AWS ECS
-- Google Cloud Run
-
-**Steps:**
-1. Build Docker image or use Python buildpack
-2. Set environment variables
-3. Deploy with auto-scaling
-4. Point domain to backend URL
-
-### Frontend Deployment
-
-**Recommended Platforms:**
-- Vercel (recommended for Vite)
-- Netlify
-- AWS S3 + CloudFront
-
-**Steps:**
-```powershell
+# Frontend
 cd frontend
 npm run build
-# Deploy dist/ folder
 ```
 
-Set `VITE_API_URL` to your production backend URL.
+### Databázové migrace
 
-### Database
-
-Already on **Neon.tech** (production-ready PostgreSQL).
-
----
-
-## 🔄 Migration from Streamlit
-
-The original **app.py** (Streamlit) still works! You can:
-
-1. **Run in Parallel**: Keep Streamlit for internal use
-2. **Incremental Migration**: Gradually move users to React
-3. **Import Backend Modules**: Streamlit can import from `backend/app/`
-
-Example:
-```python
-# In app.py (Streamlit)
-from backend.app.core.analysis import StockAnalyzer
-
-analyzer = StockAnalyzer(api_key=st.secrets["GEMINI_API_KEY"])
-stocks = analyzer.analyze_transcript(transcript, speaker, source_type)
-```
-
-This allows **zero-downtime migration**.
+SQL skripty v `backend/migrations/`:
+- `add_analysis_tables.sql`
+- `add_trading_tables.sql`
 
 ---
 
-## 📚 Documentation
+## 📈 Statistiky projektu
 
-- **Backend API**: http://localhost:8000/docs
-- **Backend README**: [backend/README.md](backend/README.md )
-- **Frontend README**: [frontend/README.md](frontend/README.md )
-- **Phase 1 Complete**: [backend/PHASE1_COMPLETE.md](backend/PHASE1_COMPLETE.md )
-- **Phase 2 & 3 Complete**: [PHASE2_AND_3_COMPLETE.md](PHASE2_AND_3_COMPLETE.md )
-
----
-
-## 🛠️ Technology Stack
-
-### Backend
-- **FastAPI**: Modern async web framework
-- **SQLAlchemy**: ORM for PostgreSQL
-- **Pydantic**: Data validation
-- **Google Generative AI**: Gemini 3 Pro
-- **Uvicorn**: ASGI server
-
-### Frontend
-- **React 18**: UI library
-- **TypeScript**: Type safety
-- **Vite 7**: Build tool
-- **Tailwind CSS 3**: Utility-first styling
-- **Axios**: HTTP client
-
-### Database
-- **PostgreSQL**: Relational database (Neon.tech)
-- **Psycopg2**: PostgreSQL adapter
+| Metrika | Hodnota |
+|---------|---------|
+| Backend souborů | 45 |
+| Frontend souborů | 24 |
+| Celkem řádků | ~15,000 |
+| API endpointů | 15+ |
 
 ---
 
-## 🎯 Critical Business Logic
+## 📝 Changelog
 
-### FIDUCIARY_ANALYST_PROMPT
+### Leden 2026
 
-The system uses a specialized AI prompt:
-
-> "You are a Fiduciary Senior Financial Analyst acting as a guardian for a client with Multiple Sclerosis. This is not academic - your analysis directly impacts their family's financial security. AGGRESSIVE EXTRACTION: You MUST extract EVERY stock mentioned..."
-
-### The Gomes Rules
-
-1. **Information Arbitrage (Edge)**: What unique insight justifies this position?
-2. **Catalysts**: What specific events will drive stock movement?
-3. **Risk Assessment**: What could go wrong?
-
-### Scoring System
-
-- **Gomes Score (1-10)**: Overall opportunity quality
-- **Conviction Score (1-10)**: Analyst's confidence level
-
-### Data Preservation
-
-All 15 Stock model fields:
-- id, created_at, ticker, company_name
-- source_type, speaker, sentiment
-- gomes_score, conviction_score
-- price_target, time_horizon
-- edge, catalysts, risks, raw_notes
-
-**100% of original functionality preserved.**
+- ✅ Clean Code refaktoring celého backendu
+- ✅ Přechod na `from __future__ import annotations`
+- ✅ Type hints: `str | None` místo `Optional[str]`
+- ✅ Logging místo print()
+- ✅ Centralizované konstanty
+- ✅ Čištění projektové struktury
 
 ---
 
-## ⚠️ Critical Notes
+## 📄 Licence
 
-1. **Family Financial Security**: This application supports critical financial decisions for a client with MS. All features maintain the reliability and accuracy standards of the original system.
-
-2. **Zero Functionality Loss**: The migration preserves the exact AI prompts, scoring system, and Gomes Rules framework from the original Streamlit application.
-
-3. **Backend Dependency**: The frontend requires the FastAPI backend to be running.
-
----
-
-## 🐛 Troubleshooting
-
-### Backend Won't Start
-
-```powershell
-# Check Python version
-python --version  # Should be 3.14+
-
-# Verify dependencies
-cd backend
-pip install -r requirements.txt
-
-# Check environment variables
-cat .env  # or type .env on Windows
-
-# Test database connection
-python -c "from app.database.connection import is_connected; print(is_connected())"
-```
-
-### Frontend Won't Start
-
-```powershell
-# Check Node version
-node --version  # Should be 18+
-
-# Clear cache and reinstall
-cd frontend
-rm -rf node_modules package-lock.json
-npm install
-
-# Check environment variables
-cat .env  # or type .env on Windows
-```
-
-### API Connection Issues
-
-1. Verify backend is running: http://localhost:8000/health
-2. Check CORS settings in `backend/.env`
-3. Check API URL in `frontend/.env`
-4. Open browser dev tools → Network tab → Check for errors
-
----
-
-## 📈 Future Enhancements
-
-- [ ] Authentication & user accounts
-- [ ] Real-time stock price data integration
-- [ ] Alerts & notifications
-- [ ] Export to PDF/Excel
-- [ ] Mobile app (React Native)
-- [ ] Advanced charting & analytics
-- [ ] Multi-language support
-
----
-
-## 📄 License
-
-Proprietary - Family financial security application
-
----
-
-## 🙏 Acknowledgments
-
-Built with care for family financial security. This system maintains the fiduciary standard that protects important financial decisions for a client with Multiple Sclerosis.
-
----
-
-## 📞 Support
-
-For issues or questions:
-- Check documentation in `backend/` and `frontend/` folders
-- Review API docs: http://localhost:8000/docs
-- Check migration docs: PHASE2_AND_3_COMPLETE.md
-
----
-
-**✨ The Akcion Investment Analysis Platform is now a modern, scalable, three-tier application while maintaining the exact same fiduciary-grade analysis that supports your family's financial security.**
-
-**Status: Phase 1, 2, and 3 Complete** 🎉
+Proprietární - pouze pro interní použití.
