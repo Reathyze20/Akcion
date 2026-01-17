@@ -289,3 +289,98 @@ def _process_document_response(response: requests.Response) -> str:
         raise PermissionError(ERROR_MESSAGES.DOCUMENT_ACCESS_DENIED)
     
     raise RuntimeError(f"HTTP {response.status_code}: Failed to fetch document")
+
+
+# ==============================================================================
+# Ticker Extraction
+# ==============================================================================
+
+# Common words that look like tickers but aren't
+_TICKER_BLACKLIST: Final[frozenset[str]] = frozenset({
+    'AI', 'CEO', 'CFO', 'CTO', 'COO', 'IPO', 'ETF', 'GDP', 'USA', 'USD', 'EUR',
+    'UK', 'US', 'EU', 'FED', 'SEC', 'FBI', 'CIA', 'NASA', 'NATO', 'UN', 'WHO',
+    'IT', 'HR', 'PR', 'TV', 'PC', 'VR', 'AR', 'IOT', 'API', 'SaaS', 'B2B', 'B2C',
+    'PE', 'PB', 'PS', 'EPS', 'ROE', 'ROI', 'EBITDA', 'CAGR', 'YOY', 'QOQ', 'MOM',
+    'AM', 'PM', 'OK', 'VS', 'RE', 'IE', 'EG', 'AKA', 'FYI', 'TBD', 'TBA', 'NDA',
+    'LLC', 'INC', 'LTD', 'CO', 'CORP', 'THE', 'AND', 'FOR', 'BUT', 'NOT', 'YOU',
+    'ALL', 'CAN', 'HER', 'WAS', 'ONE', 'OUR', 'OUT', 'DAY', 'GET', 'HAS', 'HIM',
+    'HIS', 'HOW', 'ITS', 'MAY', 'NEW', 'NOW', 'OLD', 'SEE', 'WAY', 'WHO', 'BOY',
+    'DID', 'ITS', 'LET', 'PUT', 'SAY', 'SHE', 'TOO', 'USE', 'DAD', 'MOM', 'BIG',
+    # Trading terms that look like tickers
+    'BUY', 'SELL', 'HOLD', 'LONG', 'SHORT', 'CALL', 'PUT', 'ATH', 'ATL', 'DIP',
+    'FOMO', 'FUD', 'HODL', 'YOLO', 'DD', 'TA', 'FA', 'IV', 'OI', 'VOL', 'RSI',
+    'MACD', 'SMA', 'EMA', 'VWAP', 'MOAT', 'DCF', 'NPV', 'IRR', 'FCF', 'TTM',
+    # Common abbreviations
+    'HIGH', 'LOW', 'OPEN', 'CLOSE', 'VERY', 'ALSO', 'BOTH', 'THIS', 'THAT',
+    'WITH', 'FROM', 'HAVE', 'WILL', 'WHAT', 'WHEN', 'WHERE', 'WHICH', 'THEIR',
+})
+
+# Known valid tickers (expand as needed)
+_KNOWN_TICKERS: Final[frozenset[str]] = frozenset({
+    'TPCS', 'TSM', 'MU', 'NVDA', 'AMD', 'INTC', 'AAPL', 'MSFT', 'GOOG', 'GOOGL',
+    'AMZN', 'META', 'TSLA', 'NFLX', 'PYPL', 'SQ', 'SHOP', 'SNOW', 'CRM', 'ORCL',
+    'IBM', 'CSCO', 'QCOM', 'AVGO', 'TXN', 'ADI', 'MRVL', 'LRCX', 'AMAT', 'KLAC',
+    'ASML', 'ARM', 'SMCI', 'DELL', 'HPQ', 'HPE', 'PLTR', 'CRWD', 'ZS', 'OKTA',
+    'NET', 'DDOG', 'MDB', 'ESTC', 'CFLT', 'PATH', 'DOCN', 'S', 'PANW', 'FTNT',
+    'AEHR', 'AHR', 'CCHDD', 'PESI', 'SIDU', 'KRKNF', 'IWM', 'SPY', 'QQQ', 'DIA',
+    'RTX', 'GD', 'LMT', 'NOC', 'BA', 'GE', 'MMM', 'CAT', 'DE', 'HON', 'UNP',
+    # Canadian tickers
+    'GEO.TO', 'TD.TO', 'RY.TO', 'BMO.TO', 'BNS.TO', 'CM.TO', 'NA.TO',
+})
+
+
+def extract_tickers_from_text(text: str) -> list[str]:
+    """
+    Extract stock ticker symbols from text.
+    
+    Looks for:
+    - Explicit mentions like "$AAPL" or "AAPL"
+    - Known tickers from curated list
+    - Pattern matching for 1-5 uppercase letters
+    
+    Args:
+        text: Raw transcript or document text
+        
+    Returns:
+        List of unique ticker symbols found
+    """
+    if not text:
+        return []
+    
+    found_tickers: set[str] = set()
+    
+    # Pattern 1: Explicit $ prefix (most reliable)
+    dollar_pattern = re.compile(r'\$([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b')
+    for match in dollar_pattern.finditer(text.upper()):
+        ticker = match.group(1)
+        if ticker not in _TICKER_BLACKLIST:
+            found_tickers.add(ticker)
+    
+    # Pattern 2: Known tickers (case insensitive search)
+    text_upper = text.upper()
+    for known_ticker in _KNOWN_TICKERS:
+        # Look for word boundary matches
+        pattern = rf'\b{re.escape(known_ticker)}\b'
+        if re.search(pattern, text_upper):
+            found_tickers.add(known_ticker)
+    
+    # Pattern 3: Uppercase words 2-5 chars (be conservative)
+    # Only add if it looks like a ticker (all caps, standalone)
+    word_pattern = re.compile(r'\b([A-Z]{2,5})\b')
+    for match in word_pattern.finditer(text):
+        potential_ticker = match.group(1)
+        # Only include if not blacklisted and appears with stock context
+        if (potential_ticker not in _TICKER_BLACKLIST and
+            potential_ticker not in found_tickers):
+            # Check for nearby stock-related words
+            context_start = max(0, match.start() - 50)
+            context_end = min(len(text), match.end() + 50)
+            context = text[context_start:context_end].lower()
+            
+            stock_keywords = ['stock', 'share', 'buy', 'sell', 'price', 'target', 
+                            'bullish', 'bearish', 'long', 'short', 'position']
+            if any(keyword in context for keyword in stock_keywords):
+                found_tickers.add(potential_ticker)
+    
+    return sorted(found_tickers)
+
