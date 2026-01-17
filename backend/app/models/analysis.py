@@ -79,6 +79,88 @@ class AnalystTranscript(Base):
     
     def __repr__(self):
         return f"<AnalystTranscript {self.source_name} @ {self.date}: {self.ticker_count} tickers>"
+    
+    # Relationship to ticker mentions
+    ticker_mentions = relationship("TickerMention", back_populates="transcript", cascade="all, delete-orphan")
+
+
+class TickerMention(Base):
+    """
+    Jednotlivá zmínka tickeru v transcriptu.
+    
+    Umožňuje trackovat historii toho, co Mark Gomes říkal o každé akcii
+    v průběhu času. Novější zmínky mají vyšší váhu v analýze.
+    """
+    __tablename__ = "ticker_mentions"
+    
+    id = Column(Integer, primary_key=True)
+    ticker = Column(String(10), nullable=False, index=True)
+    transcript_id = Column(Integer, ForeignKey('analyst_transcripts.id', ondelete='CASCADE'), nullable=False)
+    stock_id = Column(Integer, ForeignKey('stocks.id', ondelete='SET NULL'))
+    
+    # Datum zmínky (z transcriptu)
+    mention_date = Column(Date, nullable=False, index=True)
+    
+    # Kontext zmínky
+    sentiment = Column(String(20), nullable=False, default='NEUTRAL')  # BULLISH, BEARISH, NEUTRAL
+    action_mentioned = Column(String(30))  # BUY, SELL, HOLD, ACCUMULATE, TRIM, WATCH
+    
+    # Extrahovaný kontext ze zmínky
+    context_snippet = Column(Text)  # Relevantní část transcriptu pro tento ticker
+    key_points = Column(JSONB)  # Seznam klíčových bodů: ["catalyst", "risk", "price_target", ...]
+    
+    # Číselné hodnoty (pokud zmíněny)
+    price_target = Column(Numeric(12, 2))  # Zmíněný cenový cíl
+    conviction_level = Column(String(20))  # HIGH, MEDIUM, LOW
+    
+    # Metadata
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow)
+    ai_extracted = Column(Boolean, default=True)  # Extrahováno AI vs manuálně
+    is_current = Column(Boolean, default=True, index=True)  # Nejaktuálnější zmínka pro ticker
+    
+    # Relationships
+    transcript = relationship("AnalystTranscript", back_populates="ticker_mentions")
+    stock = relationship("Stock")
+    
+    __table_args__ = (
+        CheckConstraint(
+            "sentiment IN ('BULLISH', 'BEARISH', 'NEUTRAL', 'VERY_BULLISH', 'VERY_BEARISH')",
+            name='check_mention_sentiment'
+        ),
+        CheckConstraint(
+            "action_mentioned IS NULL OR action_mentioned IN ('BUY', 'SELL', 'HOLD', 'ACCUMULATE', 'TRIM', 'WATCH', 'AVOID', 'BUY_NOW')",
+            name='check_mention_action'
+        ),
+        CheckConstraint(
+            "conviction_level IS NULL OR conviction_level IN ('HIGH', 'MEDIUM', 'LOW')",
+            name='check_mention_conviction'
+        ),
+        Index('idx_mentions_ticker_date', 'ticker', 'mention_date'),
+        Index('idx_mentions_current', 'ticker', 'is_current', postgresql_where="is_current = TRUE"),
+        Index('idx_mentions_sentiment', 'ticker', 'sentiment', 'mention_date'),
+    )
+    
+    @property
+    def age_days(self):
+        """Počet dní od zmínky"""
+        from datetime import date
+        return (date.today() - self.mention_date).days if self.mention_date else None
+    
+    @property
+    def weight(self):
+        """
+        Váha zmínky pro analýzu.
+        Novější zmínky mají vyšší váhu (exponenciální decay).
+        """
+        age = self.age_days
+        if age is None:
+            return 0.5
+        # Decay: 100% pro dnes, ~50% po 30 dnech, ~25% po 60 dnech
+        import math
+        return math.exp(-0.023 * age)  # ~30 day half-life
+    
+    def __repr__(self):
+        return f"<TickerMention {self.ticker} @ {self.mention_date}: {self.sentiment} - {self.action_mentioned}>"
 
 
 class SWOTAnalysis(Base):
