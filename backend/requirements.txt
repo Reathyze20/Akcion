@@ -5,6 +5,7 @@ fastapi==0.115.0
 uvicorn[standard]==0.32.0
 pydantic>=2.10.3  # Flexible version for Python 3.14 compatibility
 pydantic-settings==2.6.1
+python-multipart==0.0.9  # For file uploads
 
 # Database
 sqlalchemy==2.0.36
@@ -19,6 +20,10 @@ youtube-transcript-api>=1.2.3  # Compatible with Python 3.14+
 requests==2.32.3
 python-docx==1.1.0
 
+# Portfolio Management
+yfinance==0.2.49  # Real-time market data
+pandas==2.2.3  # CSV parsing
+
 # Environment & Config
 python-dotenv==1.0.1
 
@@ -26,3 +31,34 @@ python-dotenv==1.0.1
 pytest==8.3.4
 pytest-asyncio==0.24.0
 httpx==0.28.1  # For testing FastAPI endpoints
+
+# ============================================
+# TRADING INTELLIGENCE MODULE
+# ============================================
+
+# Time Series Database
+psycopg2-binary==2.9.9
+
+# Deep Learning & ML
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+
+# Time Series Forecasting
+neuralforecast==1.6.4
+statsforecast==1.6.0
+datasetsforecast==0.0.8
+
+# Data Processing (upgrade versions)
+numpy==1.26.2
+scikit-learn==1.3.2
+
+# Background Jobs & Scheduling
+apscheduler==3.10.4
+redis==5.0.1
+
+# Technical Analysis
+ta==0.11.0
+
+# Monitoring & Logging
+loguru==0.7.2

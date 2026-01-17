@@ -32,6 +32,10 @@ from .schemas import (
     StockAnalysisResult
 )
 
+# Import new routes
+from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analysis
+from .routes import intelligence_gomes
+
 # ==============================================================================
 # Application Setup
 # ==============================================================================
@@ -59,7 +63,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -74,9 +85,22 @@ async def startup_event():
     """Initialize database connection on startup"""
     success, error = initialize_database(settings.database_url)
     if not success:
-        print(f"⚠️ Database initialization failed: {error}")
+        print(f"WARNING: Database initialization failed: {error}")
     else:
-        print("✅ Database connected successfully")
+        print("SUCCESS: Database connected successfully")
+
+
+# ==============================================================================
+# Register Routers
+# ==============================================================================
+
+app.include_router(portfolio.router)
+app.include_router(gap_analysis.router)
+app.include_router(analysis.router)
+app.include_router(trading.router)
+app.include_router(intelligence.router)
+app.include_router(gomes.router)
+app.include_router(intelligence_gomes.router)
 
 
 # ==============================================================================
@@ -92,11 +116,11 @@ async def health_check():
     """
     Check API health and database connectivity.
     """
+    from datetime import datetime
     return HealthCheckResponse(
         status="healthy",
-        app_name=settings.app_name,
-        version=settings.app_version,
-        database_connected=is_connected()
+        message="API is operational",
+        timestamp=datetime.utcnow()
     )
 
 
@@ -126,8 +150,8 @@ async def analyze_text(
 ):
     """Analyze plain text transcript"""
     try:
-        # Initialize analyzer
-        analyzer = StockAnalyzer(request.api_key)
+        # Initialize analyzer with settings
+        analyzer = StockAnalyzer(settings.gemini_api_key)
         
         # Analyze transcript
         result = analyzer.analyze_transcript(request.transcript)
@@ -208,7 +232,7 @@ async def analyze_youtube(
             )
         
         # Analyze
-        analyzer = StockAnalyzer(request.api_key)
+        analyzer = StockAnalyzer(settings.gemini_api_key)
         result = analyzer.analyze_transcript(transcript)
         
         if not result or "stocks" not in result:

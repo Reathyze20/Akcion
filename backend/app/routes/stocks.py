@@ -2,22 +2,34 @@
 Stock Portfolio Routes
 
 FastAPI endpoints for retrieving and managing stock portfolio data.
+
+Clean Code Principles Applied:
+- Single Responsibility: Each endpoint handles one operation
+- Type hints throughout
+- Clear error handling
 """
+
+from __future__ import annotations
+
+import logging
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from ..database.connection import get_db
 from ..database.repositories import StockRepository
-from ..schemas.responses import StockResponse, PortfolioResponse
+from ..schemas.responses import StockPortfolioResponse, StockResponse
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/stocks", tags=["Portfolio"])
 
 
 @router.get(
     "",
-    response_model=PortfolioResponse,
+    response_model=StockPortfolioResponse,
     summary="Get portfolio stocks",
     description="Retrieve all stocks with optional filtering",
 )
@@ -27,7 +39,7 @@ async def get_stocks(
     min_conviction: Optional[int] = Query(None, ge=1, le=10, description="Minimum Conviction Score (1-10)"),
     speaker: Optional[str] = Query(None, description="Filter by speaker name"),
     db: Session = Depends(get_db),
-) -> PortfolioResponse:
+) -> StockPortfolioResponse:
     """
     Get all stocks from the portfolio with optional filters.
     
@@ -65,7 +77,7 @@ async def get_stocks(
         if speaker:
             filters_applied["speaker"] = speaker
         
-        return PortfolioResponse(
+        return StockPortfolioResponse(
             total_stocks=len(stock_responses),
             stocks=stock_responses,
             filters_applied=filters_applied if filters_applied else None,
@@ -80,13 +92,13 @@ async def get_stocks(
 
 @router.get(
     "/high-conviction",
-    response_model=PortfolioResponse,
+    response_model=StockPortfolioResponse,
     summary="Get high conviction stocks",
     description="Retrieve stocks with Gomes Score >= 7 and Conviction Score >= 7",
 )
 async def get_high_conviction_stocks(
     db: Session = Depends(get_db),
-) -> PortfolioResponse:
+) -> StockPortfolioResponse:
     """Get high-conviction stock picks (Gomes Score >= 7, Conviction >= 7)."""
     try:
         repository = StockRepository(db)
@@ -94,7 +106,7 @@ async def get_high_conviction_stocks(
         
         stock_responses = [StockResponse.model_validate(stock) for stock in stocks]
         
-        return PortfolioResponse(
+        return StockPortfolioResponse(
             total_stocks=len(stock_responses),
             stocks=stock_responses,
             filters_applied={

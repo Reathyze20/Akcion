@@ -9,28 +9,46 @@ Streamlit application.
 CRITICAL: This is part of a family financial security application for a client
 with Multiple Sclerosis. All analysis logic must remain identical to preserve
 accuracy and reliability.
+
+Clean Code Principles Applied:
+- Single Responsibility: Each endpoint does one thing
+- Explicit error handling with proper HTTP status codes
+- Type hints throughout
 """
+
+from __future__ import annotations
+
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
 
+from ..config import get_settings
 from ..core.analysis import StockAnalyzer
 from ..core.extractors import (
-    extract_video_id,
-    get_youtube_transcript,
     extract_google_doc_id,
+    extract_video_id,
     get_google_doc_content,
+    get_youtube_transcript,
 )
 from ..database.connection import get_db
 from ..database.repositories import StockRepository
+from ..models.portfolio import MarketStatus, MarketStatusEnum
 from ..schemas.requests import (
+    AnalyzeGoogleDocsRequest,
     AnalyzeTextRequest,
     AnalyzeYouTubeRequest,
-    AnalyzeGoogleDocsRequest,
 )
-from ..schemas.responses import AnalysisResponse, StockResponse, ErrorResponse
-from ..config import get_settings
+from ..schemas.responses import (
+    AnalysisResponse,
+    ErrorResponse,
+    StockAnalysisResult,
+    StockResponse,
+)
+from ..services.gomes_intelligence import GomesIntelligenceService
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analyze", tags=["Analysis"])
 
@@ -57,11 +75,7 @@ async def analyze_text(
         analyzer = StockAnalyzer(api_key=settings.gemini_api_key)
         
         # Run analysis using core business logic
-        stocks_data = analyzer.analyze_transcript(
-            transcript=request.transcript,
-            speaker=request.speaker,
-            source_type=request.source_type,
-        )
+        stocks_data = analyzer.analyze_transcript(transcript=request.transcript)
         
         if not stocks_data:
             return AnalysisResponse(
@@ -71,20 +85,86 @@ async def analyze_text(
                 stocks=[],
             )
         
+        # Update market status if AI detected it
+        if "market_status" in stocks_data and stocks_data["market_status"]:
+            market_data = stocks_data["market_status"]
+            if market_data.get("status"):
+                # Update legacy MarketStatus table
+                market_status = db.query(MarketStatus).first()
+                if not market_status:
+                    market_status = MarketStatus()
+                    db.add(market_status)
+                
+                # Map AI status to enum (4-state Mark Gomes system)
+                status_map = {
+                    "GREEN": MarketStatusEnum.GREEN,
+                    "YELLOW": MarketStatusEnum.YELLOW,
+                    "ORANGE": MarketStatusEnum.ORANGE,
+                    "RED": MarketStatusEnum.RED
+                }
+                
+                if market_data["status"] in status_map:
+                    market_status.status = status_map[market_data["status"]]
+                    market_status.note = market_data.get("quote", "")
+                    db.commit()
+                    
+                    # Also update Gomes Intelligence market_alerts table
+                    try:
+                        gomes_service = GomesIntelligenceService(db)
+                        gomes_service.set_market_alert(
+                            alert_level=market_data["status"],
+                            reason=f"Detected from transcript: {market_data.get('quote', 'No quote')[:200]}",
+                            source="transcript_analysis"
+                        )
+                        logger.info(f"Gomes Market Alert updated to {market_data['status']} from transcript")
+                    except Exception as e:
+                        logger.warning(f"Failed to update Gomes market alert: {e}")
+        
         # Save to database using repository pattern
         repository = StockRepository(db)
-        saved_stocks = repository.create_stocks(stocks_data)
+        success, error = repository.create_stocks(
+            stocks=stocks_data.get("stocks", []),
+            source_id="manual_" + str(hash(request.transcript[:100])),
+            source_type=request.source_type,
+            speaker=request.speaker
+        )
         
-        # Convert to response models
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save stocks: {error}"
+            )
+        
+        # Retrieve saved stocks
+        saved_stocks = repository.get_all_stocks()
+        
+        # Convert to StockAnalysisResult models
         stock_responses = [
-            StockResponse.model_validate(stock) for stock in saved_stocks
+            StockAnalysisResult(
+                ticker=stock.ticker,
+                company_name=stock.company_name,
+                sentiment=stock.sentiment or "Neutral",
+                gomes_score=stock.gomes_score or 5,
+                price_target=stock.price_target,
+                edge=stock.edge,
+                catalysts=stock.catalysts,
+                risks=stock.risks,
+                time_horizon=stock.time_horizon,
+                conviction_score=stock.conviction_score,
+                action_verdict=stock.action_verdict
+            )
+            for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks
         ]
+        
+        source_id = "manual_" + str(hash(request.transcript[:100]))
         
         return AnalysisResponse(
             success=True,
-            message=f"Successfully analyzed transcript and found {len(saved_stocks)} stock mention(s)",
-            stocks_found=len(saved_stocks),
+            message=f"Successfully analyzed transcript and found {len(stock_responses)} stock mention(s)",
+            stocks_found=len(stock_responses),
             stocks=stock_responses,
+            source_id=source_id,
+            source_type=request.source_type
         )
         
     except Exception as e:
@@ -133,11 +213,7 @@ async def analyze_youtube(
         # Run analysis
         settings = get_settings()
         analyzer = StockAnalyzer(api_key=settings.gemini_api_key)
-        stocks_data = analyzer.analyze_transcript(
-            transcript=transcript,
-            speaker=speaker,
-            source_type="youtube",
-        )
+        stocks_data = analyzer.analyze_transcript(transcript=transcript)
         
         if not stocks_data:
             return AnalysisResponse(
@@ -145,21 +221,85 @@ async def analyze_youtube(
                 message="Analysis completed but no stocks were found in the video",
                 stocks_found=0,
                 stocks=[],
+                source_id=video_id,
+                source_type="youtube"
             )
+        
+        # Update market status if AI detected it
+        if "market_status" in stocks_data and stocks_data["market_status"]:
+            market_data = stocks_data["market_status"]
+            if market_data.get("status"):
+                # Update legacy MarketStatus table
+                market_status = db.query(MarketStatus).first()
+                if not market_status:
+                    market_status = MarketStatus()
+                    db.add(market_status)
+                
+                # Map AI status to enum (4-state Mark Gomes system)
+                status_map = {
+                    "GREEN": MarketStatusEnum.GREEN,
+                    "YELLOW": MarketStatusEnum.YELLOW,
+                    "ORANGE": MarketStatusEnum.ORANGE,
+                    "RED": MarketStatusEnum.RED
+                }
+                
+                if market_data["status"] in status_map:
+                    market_status.status = status_map[market_data["status"]]
+                    market_status.note = market_data.get("quote", "")
+                    db.commit()
+                    
+                    # Also update Gomes Intelligence market_alerts table
+                    try:
+                        gomes_service = GomesIntelligenceService(db)
+                        gomes_service.set_market_alert(
+                            alert_level=market_data["status"],
+                            reason=f"Detected from YouTube: {market_data.get('quote', 'No quote')[:200]}",
+                            source="youtube_analysis"
+                        )
+                        logger.info(f"Gomes Market Alert updated to {market_data['status']} from YouTube")
+                    except Exception as e:
+                        logger.warning(f"Failed to update Gomes market alert: {e}")
         
         # Save to database
         repository = StockRepository(db)
-        saved_stocks = repository.create_stocks(stocks_data)
+        success, error = repository.create_stocks(
+            stocks=stocks_data.get("stocks", []),
+            source_id=video_id,
+            source_type="youtube",
+            speaker=request.speaker or "Unknown"
+        )
         
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save stocks: {error}"
+            )
+        
+        saved_stocks = repository.get_all_stocks()
         stock_responses = [
-            StockResponse.model_validate(stock) for stock in saved_stocks
+            StockAnalysisResult(
+                ticker=stock.ticker,
+                company_name=stock.company_name,
+                sentiment=stock.sentiment or "Neutral",
+                gomes_score=stock.gomes_score or 5,
+                price_target=stock.price_target,
+                edge=stock.edge,
+                catalysts=stock.catalysts,
+                risks=stock.risks,
+                time_horizon=stock.time_horizon,
+                conviction_score=stock.conviction_score,
+                action_verdict=stock.action_verdict
+            )
+            for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks
         ]
         
         return AnalysisResponse(
             success=True,
-            message=f"Successfully analyzed YouTube video and found {len(saved_stocks)} stock mention(s)",
-            stocks_found=len(saved_stocks),
+            message=f"Successfully analyzed YouTube video and found {len(stock_responses)} stock mention(s)",
+            stocks_found=len(stock_responses),
             stocks=stock_responses,
+            source_id=video_id,
+            source_type="youtube"
         )
         
     except HTTPException:
@@ -197,7 +337,7 @@ async def analyze_google_docs(
                 detail="Invalid Google Docs URL format",
             )
         
-        content = get_google_doc_content(doc_id)
+        content = get_google_doc_content(request.url)
         if not content:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -207,11 +347,7 @@ async def analyze_google_docs(
         # Run analysis
         settings = get_settings()
         analyzer = StockAnalyzer(api_key=settings.gemini_api_key)
-        stocks_data = analyzer.analyze_transcript(
-            transcript=content,
-            speaker=request.speaker,
-            source_type="google_docs",
-        )
+        stocks_data = analyzer.analyze_transcript(transcript=content)
         
         if not stocks_data:
             return AnalysisResponse(
@@ -219,21 +355,85 @@ async def analyze_google_docs(
                 message="Analysis completed but no stocks were found in the document",
                 stocks_found=0,
                 stocks=[],
+                source_id=doc_id,
+                source_type="google_docs"
             )
+        
+        # Update market status if AI detected it
+        if "market_status" in stocks_data and stocks_data["market_status"]:
+            market_data = stocks_data["market_status"]
+            if market_data.get("status"):
+                # Update legacy MarketStatus table
+                market_status = db.query(MarketStatus).first()
+                if not market_status:
+                    market_status = MarketStatus()
+                    db.add(market_status)
+                
+                # Map AI status to enum (4-state Mark Gomes system)
+                status_map = {
+                    "GREEN": MarketStatusEnum.GREEN,
+                    "YELLOW": MarketStatusEnum.YELLOW,
+                    "ORANGE": MarketStatusEnum.ORANGE,
+                    "RED": MarketStatusEnum.RED
+                }
+                
+                if market_data["status"] in status_map:
+                    market_status.status = status_map[market_data["status"]]
+                    market_status.note = market_data.get("quote", "")
+                    db.commit()
+                    
+                    # Also update Gomes Intelligence market_alerts table
+                    try:
+                        gomes_service = GomesIntelligenceService(db)
+                        gomes_service.set_market_alert(
+                            alert_level=market_data["status"],
+                            reason=f"Detected from Google Docs: {market_data.get('quote', 'No quote')[:200]}",
+                            source="google_docs_analysis"
+                        )
+                        logger.info(f"Gomes Market Alert updated to {market_data['status']} from Google Docs")
+                    except Exception as e:
+                        logger.warning(f"Failed to update Gomes market alert: {e}")
         
         # Save to database
         repository = StockRepository(db)
-        saved_stocks = repository.create_stocks(stocks_data)
+        success, error = repository.create_stocks(
+            stocks=stocks_data.get("stocks", []),
+            source_id=doc_id,
+            source_type="google_docs",
+            speaker=request.speaker or "Unknown"
+        )
         
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save stocks: {error}"
+            )
+        
+        saved_stocks = repository.get_all_stocks()
         stock_responses = [
-            StockResponse.model_validate(stock) for stock in saved_stocks
+            StockAnalysisResult(
+                ticker=stock.ticker,
+                company_name=stock.company_name,
+                sentiment=stock.sentiment or "Neutral",
+                gomes_score=stock.gomes_score or 5,
+                price_target=stock.price_target,
+                edge=stock.edge,
+                catalysts=stock.catalysts,
+                risks=stock.risks,
+                time_horizon=stock.time_horizon,
+                conviction_score=stock.conviction_score,
+                action_verdict=stock.action_verdict
+            )
+            for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks
         ]
         
         return AnalysisResponse(
             success=True,
-            message=f"Successfully analyzed Google Doc and found {len(saved_stocks)} stock mention(s)",
-            stocks_found=len(saved_stocks),
+            message=f"Successfully analyzed Google Doc and found {len(stock_responses)} stock mention(s)",
+            stocks_found=len(stock_responses),
             stocks=stock_responses,
+            source_id=doc_id,
+            source_type="google_docs"
         )
         
     except HTTPException:

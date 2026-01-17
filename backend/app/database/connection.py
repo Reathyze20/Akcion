@@ -2,30 +2,53 @@
 Database Connection Management
 
 Handles SQLAlchemy engine and session lifecycle.
-Designed to work with both Streamlit (secrets) and FastAPI (environment variables).
+Supports both FastAPI (environment variables) and Streamlit (secrets) contexts.
+
+Clean Code Principles Applied:
+- Single Responsibility: Only connection management
+- Dependency Injection ready: get_db for FastAPI
+- Explicit error handling
+- Type hints throughout
 """
 
-from typing import Optional
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session as SQLAlchemySession
-from sqlalchemy.exc import SQLAlchemyError
+from __future__ import annotations
 
-from ..models.stock import Base
+import logging
+from contextlib import contextmanager
+from typing import Final, Generator
+
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
+
+from ..models.base import Base
+
+
+logger = logging.getLogger(__name__)
+
+
+# ==============================================================================
+# Connection Pool Configuration
+# ==============================================================================
+
+DEFAULT_POOL_SIZE: Final[int] = 5
+DEFAULT_MAX_OVERFLOW: Final[int] = 10
 
 
 # ==============================================================================
 # Global Database State
 # ==============================================================================
 
-_engine = None
-_SessionFactory = None
+_engine: Engine | None = None
+_SessionFactory: sessionmaker[Session] | None = None
 
 
 # ==============================================================================
-# Connection Management
+# Connection Initialization
 # ==============================================================================
 
-def initialize_database(connection_url: str) -> tuple[bool, Optional[str]]:
+def initialize_database(connection_url: str) -> tuple[bool, str | None]:
     """
     Initialize database connection and create tables.
     
@@ -34,38 +57,71 @@ def initialize_database(connection_url: str) -> tuple[bool, Optional[str]]:
                        Format: postgresql://user:pass@host:port/dbname
     
     Returns:
-        Tuple of (success: bool, error_message: Optional[str])
+        Tuple of (success: bool, error_message: str | None)
+        
+    Example:
+        success, error = initialize_database("postgresql://...")
+        if not success:
+            logger.error(f"Database init failed: {error}")
     """
     global _engine, _SessionFactory
     
     try:
-        # Create engine with connection pooling
-        _engine = create_engine(
-            connection_url,
-            pool_pre_ping=True,  # Verify connections before using
-            pool_size=5,
-            max_overflow=10
-        )
-        
-        # Create session factory
+        _engine = _create_engine(connection_url)
         _SessionFactory = sessionmaker(bind=_engine)
+        _create_tables()
         
-        # Create tables if they don't exist
-        Base.metadata.create_all(_engine)
-        
+        logger.info("Database initialized successfully")
         return True, None
         
     except SQLAlchemyError as e:
-        _engine = None
-        _SessionFactory = None
-        return False, f"Database connection failed: {str(e)}"
+        _reset_globals()
+        error_msg = f"Database connection failed: {e}"
+        logger.error(error_msg)
+        return False, error_msg
     except Exception as e:
-        _engine = None
-        _SessionFactory = None
-        return False, f"Unexpected error: {str(e)}"
+        _reset_globals()
+        error_msg = f"Unexpected error: {e}"
+        logger.exception(error_msg)
+        return False, error_msg
 
 
-def get_engine():
+def _create_engine(connection_url: str) -> Engine:
+    """
+    Create SQLAlchemy engine with connection pooling.
+    
+    Args:
+        connection_url: Database connection URL
+        
+    Returns:
+        Configured SQLAlchemy Engine
+    """
+    return create_engine(
+        connection_url,
+        pool_pre_ping=True,  # Verify connections before using
+        pool_size=DEFAULT_POOL_SIZE,
+        max_overflow=DEFAULT_MAX_OVERFLOW,
+    )
+
+
+def _create_tables() -> None:
+    """Create all tables if they don't exist."""
+    if _engine is not None:
+        Base.metadata.create_all(_engine)
+
+
+def _reset_globals() -> None:
+    """Reset global state on initialization failure."""
+    global _engine, _SessionFactory
+    _engine = None
+    _SessionFactory = None
+
+
+# ==============================================================================
+# Session Management
+# ==============================================================================
+
+def get_engine() -> Engine | None:
     """
     Get the global database engine.
     
@@ -75,47 +131,84 @@ def get_engine():
     return _engine
 
 
-def get_session() -> Optional[SQLAlchemySession]:
+def get_session() -> Session | None:
     """
     Create a new database session.
     
     Returns:
         SQLAlchemy Session or None if database not initialized
         
-    Usage:
-        session = get_session()
-        if session:
-            try:
-                # Use session
-                session.add(object)
-                session.commit()
-            finally:
-                session.close()
+    Note:
+        Caller is responsible for closing the session.
+        Prefer using get_db() or session_scope() instead.
     """
     if _SessionFactory is None:
         return None
     return _SessionFactory()
 
 
-def get_db():
+def get_db() -> Generator[Session, None, None]:
     """
     Dependency injection helper for FastAPI.
     
     Yields a database session that is automatically closed.
     
-    Usage in FastAPI:
+    Yields:
+        Active database session
+        
+    Raises:
+        RuntimeError: If database not initialized
+        
+    Example:
         @app.get("/stocks")
         def get_stocks(db: Session = Depends(get_db)):
             return db.query(Stock).all()
     """
     session = get_session()
     if session is None:
-        raise RuntimeError("Database not initialized")
+        raise RuntimeError("Database not initialized. Call initialize_database() first.")
     try:
         yield session
     finally:
         session.close()
 
+
+@contextmanager
+def session_scope() -> Generator[Session, None, None]:
+    """
+    Context manager for database sessions with automatic commit/rollback.
+    
+    Provides a transactional scope around a series of operations.
+    
+    Yields:
+        Active database session
+        
+    Raises:
+        RuntimeError: If database not initialized
+        
+    Example:
+        with session_scope() as session:
+            stock = Stock(ticker="AAPL")
+            session.add(stock)
+            # Auto-commits on success, rollbacks on exception
+    """
+    session = get_session()
+    if session is None:
+        raise RuntimeError("Database not initialized. Call initialize_database() first.")
+    
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+# ==============================================================================
+# Status Checks
+# ==============================================================================
 
 def is_connected() -> bool:
     """

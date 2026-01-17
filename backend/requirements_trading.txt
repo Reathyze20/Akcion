@@ -1,0 +1,53 @@
+# Trading Module Requirements
+# Add to backend/requirements.txt
+
+# Existing dependencies
+# ...existing packages...
+
+# ============================================
+# TRADING INTELLIGENCE MODULE
+# ============================================
+
+# Time Series Database
+timescaledb==0.1.2
+psycopg2-binary==2.9.9
+
+# Deep Learning & ML
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+
+# Time Series Forecasting
+neuralforecast==1.6.4
+statsforecast==1.6.0
+datasetsforecast==0.0.8
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.2
+scikit-learn==1.3.2
+
+# Background Jobs & Scheduling
+apscheduler==3.10.4
+redis==5.0.1
+celery==5.3.4  # Alternative to APScheduler
+
+# Technical Analysis
+ta==0.11.0
+ta-lib==0.4.28  # Optional: Advanced indicators
+
+# API & HTTP
+requests==2.31.0
+aiohttp==3.9.1
+
+# Utilities
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Monitoring & Logging
+loguru==0.7.2
+
+# Testing (optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
