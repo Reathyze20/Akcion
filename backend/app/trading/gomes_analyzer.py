@@ -364,6 +364,42 @@ class GomesAnalyzer:
                     risk_factors.append(f"ML predicts decline: {predicted_return:.1f}%")
             
             # ----------------------------------------------------------------
+            # 5.5 HISTORICAL MENTIONS (Timeline Analysis)
+            # ----------------------------------------------------------------
+            history_score = 0
+            history_analysis = self._get_historical_mentions(ticker)
+            
+            if history_analysis["total_mentions"] > 0:
+                weighted_sentiment = history_analysis["weighted_sentiment"]
+                
+                # Add history context to reasoning
+                if weighted_sentiment > 0.3:
+                    history_score = 1  # Bonus for consistent bullish history
+                    reasoning_parts.append(
+                        f"📊 History: {history_analysis['total_mentions']} mentions, "
+                        f"sentiment +{weighted_sentiment*100:.0f}% (Bullish trend)"
+                    )
+                elif weighted_sentiment < -0.3:
+                    risk_factors.append(
+                        f"Historical sentiment negative ({weighted_sentiment*100:.0f}%)"
+                    )
+                    reasoning_parts.append(
+                        f"📊 History: {history_analysis['total_mentions']} mentions, "
+                        f"sentiment {weighted_sentiment*100:.0f}% (Bearish trend)"
+                    )
+                else:
+                    reasoning_parts.append(
+                        f"📊 History: {history_analysis['total_mentions']} mentions, "
+                        f"sentiment neutral"
+                    )
+                
+                # Add latest action if available
+                if history_analysis["latest_action"]:
+                    reasoning_parts.append(
+                        f"   Latest action: {history_analysis['latest_action']}"
+                    )
+            
+            # ----------------------------------------------------------------
             # 6. CALCULATE TOTAL SCORE
             # ----------------------------------------------------------------
             total_score = (
@@ -372,6 +408,7 @@ class GomesAnalyzer:
                 insider_score +
                 ml_score +
                 volume_score +
+                history_score +
                 earnings_penalty
             )
             
@@ -608,6 +645,91 @@ class GomesAnalyzer:
         except Exception as e:
             self.logger.error(f"ML prediction failed for {ticker}: {str(e)}")
             return None
+    
+    def _get_historical_mentions(self, ticker: str, limit: int = 10) -> Dict[str, Any]:
+        """
+        Get historical mentions for ticker from transcripts.
+        
+        Returns weighted sentiment analysis based on mention history.
+        Newer mentions have higher weight (exponential decay).
+        
+        Returns:
+            Dict with:
+            - total_mentions: int
+            - weighted_sentiment: float (-1 to +1)
+            - latest_sentiment: str
+            - latest_action: str
+            - mention_summary: List[Dict] - recent mentions with context
+        """
+        try:
+            from app.models.analysis import TickerMention
+            import math
+            from datetime import date
+            
+            mentions = (
+                self.db.query(TickerMention)
+                .filter(TickerMention.ticker == ticker)
+                .order_by(desc(TickerMention.mention_date))
+                .limit(limit)
+                .all()
+            )
+            
+            if not mentions:
+                return {
+                    "total_mentions": 0,
+                    "weighted_sentiment": 0.0,
+                    "latest_sentiment": None,
+                    "latest_action": None,
+                    "mention_summary": []
+                }
+            
+            sentiment_scores = {
+                'VERY_BULLISH': 1.0,
+                'BULLISH': 0.5,
+                'NEUTRAL': 0.0,
+                'BEARISH': -0.5,
+                'VERY_BEARISH': -1.0
+            }
+            
+            total_weight = 0.0
+            weighted_sentiment = 0.0
+            mention_summary = []
+            
+            for mention in mentions:
+                age_days = (date.today() - mention.mention_date).days
+                weight = math.exp(-0.023 * age_days)  # 30-day half-life
+                
+                sentiment_value = sentiment_scores.get(mention.sentiment, 0.0)
+                weighted_sentiment += sentiment_value * weight
+                total_weight += weight
+                
+                mention_summary.append({
+                    "date": mention.mention_date.isoformat(),
+                    "sentiment": mention.sentiment,
+                    "action": mention.action_mentioned,
+                    "weight": round(weight, 3),
+                    "context": mention.context_snippet[:100] if mention.context_snippet else None
+                })
+            
+            final_sentiment = weighted_sentiment / total_weight if total_weight > 0 else 0.0
+            
+            return {
+                "total_mentions": len(mentions),
+                "weighted_sentiment": round(final_sentiment, 3),
+                "latest_sentiment": mentions[0].sentiment,
+                "latest_action": mentions[0].action_mentioned,
+                "mention_summary": mention_summary
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to get historical mentions for {ticker}: {str(e)}")
+            return {
+                "total_mentions": 0,
+                "weighted_sentiment": 0.0,
+                "latest_sentiment": None,
+                "latest_action": None,
+                "mention_summary": []
+            }
     
     def _has_swot_analysis(self, ticker: str) -> bool:
         """Check if ticker has recent SWOT analysis"""
