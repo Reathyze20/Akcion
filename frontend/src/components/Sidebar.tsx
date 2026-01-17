@@ -17,7 +17,7 @@ export const Sidebar: React.FC = () => {
   const [inputType, setInputType] = useState<'text' | 'youtube' | 'google-docs'>('text');
   const [transcript, setTranscript] = useState('');
   const [url, setUrl] = useState('');
-  const [speaker, setSpeaker] = useState('Mark Gomes');
+  const [speaker, setSpeaker] = useState('');
 
   const handleAnalyze = async () => {
     setIsLoading(true);
@@ -28,23 +28,55 @@ export const Sidebar: React.FC = () => {
       if (inputType === 'text') {
         response = await apiClient.analyzeText({
           transcript,
-          speaker,
+          speaker: speaker.trim() || 'Unknown',
           source_type: 'manual_input',
         });
       } else if (inputType === 'youtube') {
         response = await apiClient.analyzeYouTube({
           url,
-          speaker,
+          speaker: speaker.trim() || 'Unknown',
         });
       } else {
         response = await apiClient.analyzeGoogleDocs({
           url,
-          speaker,
+          speaker: speaker.trim() || 'Unknown',
         });
       }
 
       if (response.success) {
-        setStocks((prev: Stock[]) => [...response.stocks, ...prev]);
+        // Convert StockAnalysisResult to Stock type
+        const newStocks: Stock[] = response.stocks.map((s: any) => ({
+          id: s.id || Date.now(),
+          ticker: s.ticker,
+          company_name: s.company_name || '',
+          action_verdict: s.action_verdict,
+          conviction_score: s.conviction_score || null,
+          gomes_score: s.gomes_score || null,
+          current_price: s.current_price || null,
+          created_at: new Date().toISOString(),
+          source_type: s.source_type || 'transcript',
+          speaker: s.speaker || '',
+          sentiment: s.sentiment || null,
+          price_target: s.price_target || null,
+          time_horizon: s.time_horizon || null,
+          edge: s.edge || null,
+          catalysts: s.catalysts || null,
+          risks: s.risks || null,
+          raw_notes: s.raw_notes || null,
+          entry_zone: s.entry_zone || null,
+          price_target_short: s.price_target_short || null,
+          price_target_long: s.price_target_long || null,
+          stop_loss_risk: s.stop_loss_risk || null,
+          moat_rating: s.moat_rating || null,
+          trade_rationale: s.trade_rationale || null,
+          chart_setup: s.chart_setup || null,
+          green_line: s.green_line || null,
+          red_line: s.red_line || null,
+          grey_line: s.grey_line || null,
+          price_position_pct: s.price_position_pct || null,
+          price_zone: s.price_zone || null,
+        }));
+        setStocks((prev: Stock[]) => [...newStocks, ...prev]);
         toast.success('Analysis Complete', {
           description: `Found ${response.stocks.length} stocks. ${response.message}`,
           duration: 4000,
@@ -68,7 +100,7 @@ export const Sidebar: React.FC = () => {
     }
   };
 
-  const isDisabled = !speaker || (inputType === 'text' ? !transcript : !url);
+  const isDisabled = (inputType === 'text' ? !transcript : !url);
 
   return (
     <aside className="w-80 bg-terminal-surface border-r border-terminal-border flex flex-col h-full shadow-xl">
@@ -160,13 +192,13 @@ export const Sidebar: React.FC = () => {
         {/* Speaker Input */}
         <div>
           <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
-            Analyst / Speaker
+            Analyst / Speaker <span className="text-text-muted font-normal">(optional)</span>
           </label>
           <input
             type="text"
             value={speaker}
             onChange={(e) => setSpeaker(e.target.value)}
-            placeholder="e.g., Mark Gomes"
+            placeholder="e.g., Mark Gomes (or leave empty for Unknown)"
             className="input"
           />
         </div>

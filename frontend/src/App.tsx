@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from './api/client';
 import { StockCard } from './components/StockCard';
 import { AnalysisView } from './components/AnalysisView';
+import TrafficLightWidget from './components/TrafficLightWidget';
+import PortfolioPage from './components/PortfolioPage';
+import GomesDashboard from './components/GomesDashboard';
+import { ToastProvider, useToast } from './context/ToastContext';
+import { ToastContainer } from './components/Toast';
 import type { Stock } from './types';
 
 // --- ICONS (Inline SVG) ---
@@ -220,6 +225,7 @@ const DetailView = ({ stock, onBack }: { stock: Stock, onBack: () => void }) => 
 
 // Modal pro novou analýzu
 const NewAnalysisModal = ({ isOpen, onClose, onSubmit }: { isOpen: boolean, onClose: () => void, onSubmit: (url: string) => void }) => {
+  const { showError } = useToast();
   const [inputType, setInputType] = useState<'url' | 'transcript'>('url');
   const [url, setUrl] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -243,7 +249,7 @@ const NewAnalysisModal = ({ isOpen, onClose, onSubmit }: { isOpen: boolean, onCl
       onClose();
     } catch (error) {
       console.error('Analysis failed:', error);
-      alert('Analýza selhala. Zkuste to prosím znovu.');
+      showError('Analýza selhala. Zkuste to prosím znovu.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -370,11 +376,18 @@ export default function App() {
   const loadStocks = async () => {
     try {
       setIsLoading(true);
-      const response = await apiClient.getStocks();
+      // Use enriched endpoint to get current prices and price lines
+      const response = await apiClient.getEnrichedStocks();
       setStocks(response.stocks || []);
     } catch (error) {
       console.error('Failed to load stocks:', error);
-      setStocks([]);
+      // Fallback to basic stocks if enriched fails
+      try {
+        const fallback = await apiClient.getStocks();
+        setStocks(fallback.stocks || []);
+      } catch {
+        setStocks([]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -389,7 +402,8 @@ export default function App() {
   const bullishCount = stocks.filter(s => s.sentiment?.toUpperCase() === 'BULLISH').length;
 
   return (
-    <div className="min-h-screen bg-[#0f111a] text-slate-200 font-sans selection:bg-indigo-500/30">
+    <ToastProvider>
+      <div className="min-h-screen bg-[#0f111a] text-slate-200 font-sans selection:bg-indigo-500/30">
         <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[120px]" />
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 rounded-full blur-[120px]" />
@@ -409,10 +423,11 @@ export default function App() {
 
                     <nav className="space-y-1">
                         {[
-                            { id: 'dashboard', icon: Icons.LayoutGrid, label: 'Dashboard' },
-                            { id: 'portfolio', icon: Icons.PieChart, label: 'Portfolio' },
-                            { id: 'watchlist', icon: Icons.List, label: 'Sledované' },
-                            { id: 'analysis', icon: Icons.BookOpen, label: 'Analýzy' },
+                            { id: 'dashboard', label: 'Dashboard' },
+                            { id: 'gomes', label: 'Gomes Committee' },
+                            { id: 'portfolio', label: 'Portfolio' },
+                            { id: 'watchlist', label: 'Sledované' },
+                            { id: 'analysis', label: 'Analýzy' },
                         ].map((item) => (
                             <button
                                 key={item.id}
@@ -423,7 +438,6 @@ export default function App() {
                                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                                 }`}
                             >
-                                <item.icon className="w-4 h-4 mr-3" />
                                 {item.label}
                             </button>
                         ))}
@@ -461,6 +475,7 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center gap-4">
+                         <TrafficLightWidget />
                          <button 
                            onClick={() => setIsModalOpen(true)}
                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
@@ -481,6 +496,20 @@ export default function App() {
                       <div className="flex items-center justify-center h-96">
                         <div className="text-slate-400">Načítám data...</div>
                       </div>
+                    ) : activeTab === 'gomes' ? (
+                        <GomesDashboard />
+                    ) : activeTab === 'portfolio' ? (
+                        <PortfolioPage />
+                    ) : activeTab === 'watchlist' ? (
+                        <div className="text-center py-20">
+                          <div className="text-slate-400 text-lg mb-4">👀 Watchlist</div>
+                          <p className="text-slate-500">Coming soon...</p>
+                        </div>
+                    ) : activeTab === 'analysis' ? (
+                        <div className="text-center py-20">
+                          <div className="text-slate-400 text-lg mb-4">📊 Analysis History</div>
+                          <p className="text-slate-500">Coming soon...</p>
+                        </div>
                     ) : selectedStock ? (
                         <DetailView stock={selectedStock} onBack={() => setSelectedStock(null)} />
                     ) : (
@@ -495,6 +524,8 @@ export default function App() {
           onClose={() => setIsModalOpen(false)} 
           onSubmit={handleAnalyzeUrl}
         />
-    </div>
+        <ToastContainer />
+      </div>
+    </ToastProvider>
   );
 }
