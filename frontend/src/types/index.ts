@@ -30,6 +30,14 @@ export interface Stock {
   moat_rating: number | null; // 1-5
   trade_rationale: string | null;
   chart_setup: string | null;
+  
+  // Price Lines data (from Gomes Intelligence)
+  current_price: number | null;
+  green_line: number | null;
+  red_line: number | null;
+  grey_line: number | null;
+  price_position_pct: number | null; // 0-100%, where 0=at green, 100=at red
+  price_zone: 'DEEP_VALUE' | 'BUY_ZONE' | 'ACCUMULATE' | 'FAIR_VALUE' | 'SELL_ZONE' | 'OVERVALUED' | null;
 }
 
 export interface StockAnalysisResult {
@@ -98,3 +106,232 @@ export interface ErrorResponse {
 
 export type ViewMode = 'grid' | 'list' | 'table';
 export type NavigationView = 'analysis' | 'portfolio';
+
+// Phase 2: Portfolio Management Types
+
+export type BrokerType = 'T212' | 'DEGIRO' | 'XTB';
+export type MarketStatus = 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED';
+export type MatchSignal = 
+  | 'OPPORTUNITY' 
+  | 'ACCUMULATE' 
+  | 'DANGER_EXIT' 
+  | 'WAIT_MARKET_BAD' 
+  | 'HOLD' 
+  | 'NO_ACTION';
+
+export interface Portfolio {
+  id: number;
+  name: string;
+  owner: string; // e.g., "Já", "Přítelkyně"
+  broker: BrokerType;
+  created_at: string;
+  updated_at: string;
+  cash_balance?: number;
+  position_count?: number;
+  total_value?: number;
+}
+
+export interface Position {
+  id: number;
+  portfolio_id: number;
+  ticker: string;
+  shares_count: number;
+  avg_cost: number;
+  current_price: number | null;
+  last_price_update: string | null;
+  cost_basis: number;
+  market_value: number;
+  unrealized_pl: number;
+  unrealized_pl_percent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PortfolioSummary {
+  portfolio: Portfolio;
+  positions: Position[];
+  total_cost_basis: number;
+  total_market_value: number;
+  total_unrealized_pl: number;
+  total_unrealized_pl_percent: number;
+  total_value: number; // total_market_value + cash_balance
+  cash_balance: number;
+  last_price_update: string | null;
+}
+
+export interface EnrichedStock extends Stock {
+  user_holding: boolean;
+  holding_quantity: number | null;
+  holding_avg_cost: number | null;
+  holding_current_price: number | null;
+  holding_unrealized_pl: number | null;
+  holding_unrealized_pl_percent: number | null;
+  match_signal: MatchSignal;
+  market_status: MarketStatus;
+}
+
+export interface MatchAnalysisResponse {
+  total_stocks: number;
+  opportunities: number;
+  accumulate: number;
+  danger_exits: number;
+  wait_market_bad: number;
+  market_status: MarketStatus;
+  stocks: EnrichedStock[];
+}
+
+export interface CSVUploadResponse {
+  success: boolean;
+  message: string;
+  positions_created: number;
+  positions_updated: number;
+  errors: string[];
+}
+
+export interface PriceRefreshResponse {
+  success: boolean;
+  updated_count: number;
+  failed_count: number;
+  tickers: string[];
+  prices: Record<string, number | null>;
+}
+
+export interface MarketStatusData {
+  id: number;
+  status: MarketStatus;
+  last_updated: string;
+  note: string | null;
+}
+
+// Gomes Analyzer Types
+
+export type GomesRating = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'AVOID' | 'HIGH_RISK';
+export type LifecyclePhase = 'GREAT_FIND' | 'WAIT_TIME' | 'GOLD_MINE' | 'UNKNOWN';
+export type MarketAlert = 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED';
+
+export interface GomesScoreResponse {
+  ticker: string;
+  total_score: number;
+  rating: GomesRating;
+  
+  // Score components
+  story_score: number;
+  breakout_score: number;
+  insider_score: number;
+  ml_score: number;
+  volume_score: number;
+  earnings_penalty: number;
+  
+  // Metadata
+  analysis_timestamp: string;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  reasoning: string;
+  risk_factors: string[];
+  
+  // Data sources
+  has_transcript: boolean;
+  has_swot: boolean;
+  has_ml_prediction: boolean;
+  earnings_date: string | null;
+  
+  // Extended Gomes fields (from AI analysis)
+  lifecycle_phase?: LifecyclePhase;
+  green_line?: number | null;
+  red_line?: number | null;
+  is_undervalued?: boolean;
+  firing_on_10_cylinders?: boolean | null;
+  market_alert?: MarketAlert | null;
+  catalysts?: string[];
+  bull_case?: string;
+  bear_case?: string;
+}
+
+export interface WatchlistRanking {
+  ticker: string;
+  score: number;
+  rating: GomesRating;
+  confidence: string;
+  reasoning: string;
+  last_analyzed: string;
+}
+
+export interface WatchlistRankingResponse {
+  total_tickers: number;
+  analyzed_tickers: number;
+  rankings: WatchlistRanking[];
+  timestamp: string;
+}
+
+export interface GomesAnalyzeRequest {
+  ticker: string;
+  transcript_text?: string;
+  market_data?: {
+    insider_buying?: boolean;
+    earnings_date?: string;
+  };
+  force_refresh?: boolean;
+}
+
+export interface BatchAnalyzeResponse {
+  total_requested: number;
+  successful: number;
+  failed: number;
+  results: GomesScoreResponse[];
+  errors: Array<{ ticker: string; error: string }>;
+}
+
+// ==================== Transcript & Timeline Types ====================
+
+export interface TickerMention {
+  id: number;
+  ticker: string;
+  mention_date: string;
+  sentiment: 'VERY_BULLISH' | 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'VERY_BEARISH';
+  action_mentioned: string | null;
+  context_snippet: string | null;
+  key_points: string[] | null;
+  price_target: number | null;
+  conviction_level: 'HIGH' | 'MEDIUM' | 'LOW' | null;
+  source_name: string;
+  video_url: string | null;
+  weight: number;
+  age_days: number;
+}
+
+export interface TickerTimelineResponse {
+  ticker: string;
+  total_mentions: number;
+  latest_sentiment: string | null;
+  latest_action: string | null;
+  weighted_sentiment_score: number;
+  mentions: TickerMention[];
+}
+
+export interface TranscriptImportRequest {
+  source_name: string;
+  video_date: string;
+  raw_text: string;
+  video_url?: string;
+  transcript_quality?: 'high' | 'medium' | 'low';
+}
+
+export interface TranscriptImportResponse {
+  transcript_id: number;
+  source_name: string;
+  video_date: string;
+  detected_tickers: string[];
+  ticker_mentions_created: number;
+  message: string;
+}
+
+export interface TranscriptSummary {
+  id: number;
+  source_name: string;
+  date: string;
+  video_url: string | null;
+  detected_tickers: string[];
+  ticker_count: number;
+  is_processed: boolean;
+  quality: string;
+  created_at: string | null;
+}
