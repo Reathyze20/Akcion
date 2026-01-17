@@ -10,11 +10,11 @@ Date: 2026-01-17
 """
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from pydantic import BaseModel, Field
 
 from app.database.connection import get_db
@@ -26,6 +26,7 @@ from app.trading.gomes_analyzer import (
 )
 from app.models.trading import ActiveWatchlist
 from app.models.stock import Stock
+from app.models.analysis import AnalystTranscript, TickerMention
 from app.config.settings import Settings
 
 
@@ -450,3 +451,330 @@ def analyze_batch_gomes(
             status_code=500,
             detail=f"Batch analysis failed: {str(e)}"
         )
+
+
+# ============================================================================
+# TRANSCRIPT IMPORT & TIMELINE
+# ============================================================================
+
+class TranscriptImportRequest(BaseModel):
+    """Request pro import transcriptu"""
+    source_name: str = Field("Mark Gomes", description="Zdroj (např. 'Mark Gomes', 'Breakout Investors')")
+    video_date: date = Field(..., description="Datum videa/transcriptu (YYYY-MM-DD)")
+    raw_text: str = Field(..., min_length=100, description="Celý text transcriptu")
+    video_url: Optional[str] = Field(None, description="URL videa")
+    transcript_quality: Optional[str] = Field("medium", description="Kvalita: high, medium, low")
+
+
+class TranscriptImportResponse(BaseModel):
+    """Response z importu transcriptu"""
+    transcript_id: int
+    source_name: str
+    video_date: date
+    detected_tickers: List[str]
+    ticker_mentions_created: int
+    message: str
+
+
+class TickerMentionResponse(BaseModel):
+    """Jednotlivá zmínka tickeru"""
+    id: int
+    ticker: str
+    mention_date: date
+    sentiment: str
+    action_mentioned: Optional[str]
+    context_snippet: Optional[str]
+    key_points: Optional[List[str]]
+    price_target: Optional[float]
+    conviction_level: Optional[str]
+    source_name: str
+    video_url: Optional[str]
+    weight: float
+    age_days: int
+
+
+class TickerTimelineResponse(BaseModel):
+    """Timeline zmínek pro ticker"""
+    ticker: str
+    total_mentions: int
+    latest_sentiment: Optional[str]
+    latest_action: Optional[str]
+    weighted_sentiment_score: float  # -1 to +1
+    mentions: List[TickerMentionResponse]
+
+
+@router.post("/transcripts/import", response_model=TranscriptImportResponse)
+def import_transcript(
+    request: TranscriptImportRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Import transcriptu s možností zadat historické datum.
+    
+    Automaticky:
+    - Detekuje tickery v textu
+    - Vytvoří zmínky pro každý ticker
+    - Extrahuje sentiment a akce pomocí AI (pokud dostupné)
+    
+    **Use case**: Import starších videí pro budování historické databáze.
+    """
+    try:
+        from app.core.extractors import extract_tickers_from_text
+        
+        # Detect tickers in transcript
+        detected_tickers = extract_tickers_from_text(request.raw_text)
+        
+        # Create transcript record
+        transcript = AnalystTranscript(
+            source_name=request.source_name,
+            raw_text=request.raw_text,
+            detected_tickers=detected_tickers,
+            date=request.video_date,
+            video_url=request.video_url,
+            transcript_quality=request.transcript_quality,
+            is_processed=False
+        )
+        db.add(transcript)
+        db.flush()  # Get ID
+        
+        # Create basic ticker mentions (can be enhanced by AI later)
+        mentions_created = 0
+        for ticker in detected_tickers:
+            # Find stock if exists
+            stock = db.query(Stock).filter(
+                Stock.ticker == ticker,
+                Stock.is_latest == True
+            ).first()
+            
+            mention = TickerMention(
+                ticker=ticker,
+                transcript_id=transcript.id,
+                stock_id=stock.id if stock else None,
+                mention_date=request.video_date,
+                sentiment='NEUTRAL',  # Will be updated by AI processing
+                ai_extracted=False,
+                is_current=True
+            )
+            db.add(mention)
+            mentions_created += 1
+        
+        # Mark older mentions as not current
+        for ticker in detected_tickers:
+            db.query(TickerMention).filter(
+                TickerMention.ticker == ticker,
+                TickerMention.transcript_id != transcript.id,
+                TickerMention.is_current == True
+            ).update({"is_current": False})
+        
+        db.commit()
+        
+        return TranscriptImportResponse(
+            transcript_id=transcript.id,
+            source_name=request.source_name,
+            video_date=request.video_date,
+            detected_tickers=detected_tickers,
+            ticker_mentions_created=mentions_created,
+            message=f"Transcript imported successfully. Found {len(detected_tickers)} tickers."
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Transcript import failed: {str(e)}"
+        )
+
+
+@router.get("/ticker/{ticker}/timeline", response_model=TickerTimelineResponse)
+def get_ticker_timeline(
+    ticker: str,
+    limit: int = Query(20, ge=1, le=100, description="Max mentions to return"),
+    db: Session = Depends(get_db)
+):
+    """
+    Získat historickou timeline zmínek pro ticker.
+    
+    Vrací všechny zmínky seřazené od nejnovější, včetně:
+    - Sentiment a doporučená akce
+    - Kontext ze transcriptu
+    - Váha zmínky (novější = vyšší)
+    - Agregovaný weighted sentiment score
+    
+    **Use case**: Zobrazit historii co Mark Gomes říkal o akcii.
+    """
+    try:
+        import math
+        
+        ticker = ticker.upper()
+        
+        # Fetch all mentions for ticker
+        mentions = (
+            db.query(TickerMention, AnalystTranscript)
+            .join(AnalystTranscript)
+            .filter(TickerMention.ticker == ticker)
+            .order_by(desc(TickerMention.mention_date))
+            .limit(limit)
+            .all()
+        )
+        
+        if not mentions:
+            return TickerTimelineResponse(
+                ticker=ticker,
+                total_mentions=0,
+                latest_sentiment=None,
+                latest_action=None,
+                weighted_sentiment_score=0.0,
+                mentions=[]
+            )
+        
+        # Build response
+        mention_responses = []
+        total_weight = 0.0
+        weighted_sentiment = 0.0
+        
+        sentiment_scores = {
+            'VERY_BULLISH': 1.0,
+            'BULLISH': 0.5,
+            'NEUTRAL': 0.0,
+            'BEARISH': -0.5,
+            'VERY_BEARISH': -1.0
+        }
+        
+        for mention, transcript in mentions:
+            # Calculate weight (exponential decay, 30-day half-life)
+            age_days = (date.today() - mention.mention_date).days
+            weight = math.exp(-0.023 * age_days)
+            
+            mention_responses.append(TickerMentionResponse(
+                id=mention.id,
+                ticker=mention.ticker,
+                mention_date=mention.mention_date,
+                sentiment=mention.sentiment,
+                action_mentioned=mention.action_mentioned,
+                context_snippet=mention.context_snippet,
+                key_points=mention.key_points if mention.key_points else None,
+                price_target=float(mention.price_target) if mention.price_target else None,
+                conviction_level=mention.conviction_level,
+                source_name=transcript.source_name,
+                video_url=transcript.video_url,
+                weight=round(weight, 3),
+                age_days=age_days
+            ))
+            
+            # Accumulate weighted sentiment
+            sentiment_value = sentiment_scores.get(mention.sentiment, 0.0)
+            weighted_sentiment += sentiment_value * weight
+            total_weight += weight
+        
+        # Calculate final weighted sentiment
+        final_sentiment = weighted_sentiment / total_weight if total_weight > 0 else 0.0
+        
+        # Get latest values
+        latest_mention = mentions[0][0]
+        
+        return TickerTimelineResponse(
+            ticker=ticker,
+            total_mentions=len(mention_responses),
+            latest_sentiment=latest_mention.sentiment,
+            latest_action=latest_mention.action_mentioned,
+            weighted_sentiment_score=round(final_sentiment, 3),
+            mentions=mention_responses
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get ticker timeline: {str(e)}"
+        )
+
+
+@router.get("/transcripts", response_model=List[dict])
+def list_transcripts(
+    source: Optional[str] = Query(None, description="Filter by source name"),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    Seznam všech importovaných transcriptů.
+    """
+    try:
+        query = db.query(AnalystTranscript).order_by(desc(AnalystTranscript.date))
+        
+        if source:
+            query = query.filter(AnalystTranscript.source_name == source)
+        
+        transcripts = query.limit(limit).all()
+        
+        return [
+            {
+                "id": t.id,
+                "source_name": t.source_name,
+                "date": t.date.isoformat(),
+                "video_url": t.video_url,
+                "detected_tickers": t.detected_tickers,
+                "ticker_count": len(t.detected_tickers) if t.detected_tickers else 0,
+                "is_processed": t.is_processed,
+                "quality": t.transcript_quality,
+                "created_at": t.created_at.isoformat() if t.created_at else None
+            }
+            for t in transcripts
+        ]
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list transcripts: {str(e)}"
+        )
+
+
+@router.post("/transcripts/{transcript_id}/process")
+def process_transcript_ai(
+    transcript_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Zpracovat transcript pomocí AI.
+    
+    Aktualizuje všechny ticker mentions s:
+    - Extrahovaným sentimentem
+    - Doporučenou akcí
+    - Klíčovými body
+    - Kontextovým snippetem
+    
+    **Use case**: Přidat AI analýzu k manuálně importovanému transcriptu.
+    """
+    try:
+        transcript = db.query(AnalystTranscript).filter(
+            AnalystTranscript.id == transcript_id
+        ).first()
+        
+        if not transcript:
+            raise HTTPException(status_code=404, detail="Transcript not found")
+        
+        # Get mentions for this transcript
+        mentions = db.query(TickerMention).filter(
+            TickerMention.transcript_id == transcript_id
+        ).all()
+        
+        if not mentions:
+            return {"message": "No ticker mentions to process", "processed": 0}
+        
+        # TODO: Implement AI processing
+        # For now, return placeholder
+        # This would call the LLM to extract sentiment, actions, key points
+        
+        return {
+            "message": "AI processing not yet implemented. Mentions created with NEUTRAL sentiment.",
+            "transcript_id": transcript_id,
+            "mentions_count": len(mentions),
+            "tickers": [m.ticker for m in mentions]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process transcript: {str(e)}"
+        )
+
