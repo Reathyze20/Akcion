@@ -80,20 +80,68 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
               </p>
             </div>
             <div className="card p-4">
-              <p className="text-xs text-text-muted mb-1">Time Horizon</p>
-              <p className="text-sm font-medium text-text-primary">
-                {stock.time_horizon || 'N/A'}
+              <p className="text-xs text-text-muted mb-1">Action</p>
+              <p className={`text-sm font-bold ${
+                stock.action_verdict === 'BUY_NOW' ? 'text-green-400' :
+                stock.action_verdict === 'ACCUMULATE' ? 'text-emerald-400' :
+                stock.action_verdict === 'WATCH_LIST' ? 'text-yellow-400' :
+                stock.action_verdict === 'TRIM' ? 'text-orange-400' :
+                stock.action_verdict === 'SELL' ? 'text-red-400' :
+                stock.action_verdict === 'AVOID' ? 'text-gray-400' :
+                'text-text-secondary'
+              }`}>
+                {stock.action_verdict?.replace('_', ' ') || 'ANALYZE'}
               </p>
             </div>
           </div>
 
-          {/* Price Target */}
-          {stock.price_target && (
+          {/* Trading Levels */}
+          {(stock.entry_zone || stock.stop_loss_risk) && (
+            <div className="grid grid-cols-2 gap-4">
+              {stock.entry_zone && (
+                <div className="card p-4 border-l-4 border-accent-blue">
+                  <p className="text-xs text-text-muted mb-1">📍 Entry Zone</p>
+                  <p className="text-lg font-bold text-accent-blue">{stock.entry_zone}</p>
+                </div>
+              )}
+              {stock.stop_loss_risk && (
+                <div className="card p-4 border-l-4 border-accent-red">
+                  <p className="text-xs text-text-muted mb-1">🛑 Stop Loss / Risk</p>
+                  <p className="text-sm font-medium text-accent-red">{stock.stop_loss_risk}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Price Targets Section */}
+          {(stock.price_target || stock.price_target_short || stock.price_target_long) && (
             <div className="card p-4">
-              <h3 className="text-sm font-semibold text-accent-blue mb-2">
-                Price Target
+              <h3 className="text-sm font-semibold text-accent-blue mb-3">
+                💰 Price Targets
               </h3>
-              <p className="text-text-primary">{stock.price_target}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {stock.price_target && (
+                  <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-blue/30">
+                    <p className="text-xs text-text-muted mb-1">General Target</p>
+                    <p className="text-lg font-bold text-accent-blue">{stock.price_target}</p>
+                    {stock.time_horizon && (
+                      <p className="text-xs text-text-secondary mt-1">⏱️ {stock.time_horizon}</p>
+                    )}
+                  </div>
+                )}
+                {stock.price_target_short && (
+                  <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-green/30">
+                    <p className="text-xs text-text-muted mb-1">Short-Term Target</p>
+                    <p className="text-lg font-bold text-accent-green">{stock.price_target_short}</p>
+                  </div>
+                )}
+                {stock.price_target_long && (
+                  <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-purple/30">
+                    <p className="text-xs text-text-muted mb-1">Long-Term Target</p>
+                    <p className="text-lg font-bold text-accent-purple">{stock.price_target_long}</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

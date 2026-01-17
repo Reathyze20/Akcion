@@ -48,8 +48,23 @@ export const PortfolioView: React.FC = () => {
       if (sentimentFilter) filters.sentiment = sentimentFilter;
       if (minGomesScore) filters.min_gomes_score = minGomesScore;
 
-      const response = await apiClient.getStocks(filters);
-      setStocks(response.stocks);
+      // Try enriched endpoint first for price data, fall back to basic if it fails
+      try {
+        const response = await apiClient.getEnrichedStocks();
+        // Apply client-side filters since enriched doesn't support server-side filters
+        let filteredStocks = response.stocks;
+        if (sentimentFilter) {
+          filteredStocks = filteredStocks.filter(s => s.sentiment?.toUpperCase() === sentimentFilter.toUpperCase());
+        }
+        if (minGomesScore) {
+          filteredStocks = filteredStocks.filter(s => (s.gomes_score || 0) >= minGomesScore);
+        }
+        setStocks(filteredStocks);
+      } catch {
+        // Fallback to basic stocks API
+        const response = await apiClient.getStocks(filters);
+        setStocks(response.stocks);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load portfolio';
       setError(errorMessage);
