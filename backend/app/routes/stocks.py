@@ -20,11 +20,111 @@ from sqlalchemy.orm import Session
 from ..database.connection import get_db
 from ..database.repositories import StockRepository
 from ..schemas.responses import StockPortfolioResponse, StockResponse
+from ..services.market_data import MarketDataService
+from ..trading.price_lines_data import EXTRACTED_LINES
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/stocks", tags=["Portfolio"])
+
+
+# ==============================================================================
+# Price Data Helpers
+# ==============================================================================
+
+def get_price_lines_for_ticker(ticker: str) -> dict:
+    """Get price lines data for a ticker from extracted data."""
+    for line in EXTRACTED_LINES:
+        if line.ticker.upper() == ticker.upper():
+            return {
+                "green_line": line.green_line,
+                "red_line": line.red_line,
+                "grey_line": line.grey_line,
+            }
+    return {"green_line": None, "red_line": None, "grey_line": None}
+
+
+def calculate_price_position(current_price: float | None, green_line: float | None, red_line: float | None) -> tuple[float | None, str | None]:
+    """
+    Calculate where current price sits within green-red range.
+    
+    Gomes Logic:
+    - GREEN LINE = Buy zone (undervalued price)
+    - RED LINE = Fair/overvalued price (time to trim/sell)
+    
+    Returns:
+        (position_pct, zone) where:
+        - position_pct: 0% = at green line, 100% = at red line
+        - zone: "DEEP_VALUE", "BUY_ZONE", "FAIR_VALUE", "SELL_ZONE", "OVERVALUED"
+    """
+    if current_price is None or green_line is None or red_line is None:
+        return None, None
+    
+    if red_line <= green_line:
+        return None, None  # Invalid range
+    
+    # Calculate position as percentage of the range
+    range_size = red_line - green_line
+    position = current_price - green_line
+    position_pct = (position / range_size) * 100
+    
+    # Determine zone based on Gomes methodology
+    if current_price < green_line:
+        # Below green line = DEEP VALUE (exceptional opportunity)
+        zone = "DEEP_VALUE"
+        pct_below = ((green_line - current_price) / green_line) * 100
+        position_pct = -pct_below
+    elif position_pct <= 25:
+        # 0-25% of range = BUY ZONE (strong opportunity)
+        zone = "BUY_ZONE"
+    elif position_pct <= 50:
+        # 25-50% = ACCUMULATE (good value)
+        zone = "ACCUMULATE"
+    elif position_pct <= 75:
+        # 50-75% = FAIR VALUE (hold, don't add)
+        zone = "FAIR_VALUE"
+    elif position_pct <= 100:
+        # 75-100% = SELL ZONE (trim positions)
+        zone = "SELL_ZONE"
+    else:
+        # Above red line = OVERVALUED
+        zone = "OVERVALUED"
+        pct_above = ((current_price - red_line) / range_size) * 100
+        position_pct = 100 + pct_above
+    
+    return round(position_pct, 1), zone
+
+
+def enrich_stock_with_price_data(stock_response: StockResponse, prices_cache: dict[str, float | None] = None) -> StockResponse:
+    """Enrich stock response with current price and price lines data."""
+    ticker = stock_response.ticker
+    
+    # Get price lines
+    price_lines = get_price_lines_for_ticker(ticker)
+    
+    # Get current price (from cache or fetch)
+    if prices_cache and ticker in prices_cache:
+        current_price = prices_cache[ticker]
+    else:
+        current_price = MarketDataService.get_current_price(ticker)
+    
+    # Calculate position
+    position_pct, zone = calculate_price_position(
+        current_price,
+        price_lines["green_line"],
+        price_lines["red_line"]
+    )
+    
+    # Update the response with price data
+    stock_response.current_price = current_price
+    stock_response.green_line = price_lines["green_line"]
+    stock_response.red_line = price_lines["red_line"]
+    stock_response.grey_line = price_lines["grey_line"]
+    stock_response.price_position_pct = position_pct
+    stock_response.price_zone = zone
+    
+    return stock_response
 
 
 @router.get(
@@ -87,6 +187,53 @@ async def get_stocks(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve stocks: {str(e)}",
+        )
+
+
+@router.get(
+    "/enriched",
+    response_model=StockPortfolioResponse,
+    summary="Get stocks with price data",
+    description="Retrieve all stocks enriched with current price and price lines",
+)
+async def get_enriched_stocks(
+    db: Session = Depends(get_db),
+) -> StockPortfolioResponse:
+    """
+    Get all stocks with current price data and price position.
+    
+    This endpoint fetches live prices and calculates where each stock
+    sits within its green-red price range.
+    """
+    try:
+        repository = StockRepository(db)
+        stocks = repository.get_all_stocks()
+        
+        # Get unique tickers
+        tickers = list(set(s.ticker for s in stocks))
+        
+        # Batch fetch prices
+        logger.info(f"Fetching prices for {len(tickers)} tickers")
+        prices_cache = MarketDataService.get_multiple_prices(tickers)
+        
+        # Convert to response models and enrich
+        stock_responses = []
+        for stock in stocks:
+            response = StockResponse.model_validate(stock)
+            enriched = enrich_stock_with_price_data(response, prices_cache)
+            stock_responses.append(enriched)
+        
+        return StockPortfolioResponse(
+            total_stocks=len(stock_responses),
+            stocks=stock_responses,
+            filters_applied={"enriched": True},
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get enriched stocks: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve enriched stocks: {str(e)}",
         )
 
 

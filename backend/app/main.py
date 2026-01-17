@@ -33,7 +33,7 @@ from .schemas import (
 )
 
 # Import new routes
-from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analysis
+from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analysis, stocks
 from .routes import intelligence_gomes
 
 # ==============================================================================
@@ -95,6 +95,7 @@ async def startup_event():
 # ==============================================================================
 
 app.include_router(portfolio.router)
+app.include_router(stocks.router)
 app.include_router(gap_analysis.router)
 app.include_router(analysis.router)
 app.include_router(trading.router)

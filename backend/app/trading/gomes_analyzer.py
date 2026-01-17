@@ -38,7 +38,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func, cast
+from sqlalchemy.dialects.postgresql import ARRAY, TEXT
 
 from app.models.analysis import AnalystTranscript, SWOTAnalysis
 from app.models.trading import ActiveWatchlist, MLPrediction, OHLCVData
@@ -443,11 +444,12 @@ class GomesAnalyzer:
         """
         # Fetch from database if not provided
         if not transcript_text:
+            # Use any() for array containment check - works with text[] in PostgreSQL
             transcript = (
                 self.db.query(AnalystTranscript)
-                .filter(AnalystTranscript.detected_tickers.contains([ticker]))
+                .filter(func.array_position(AnalystTranscript.detected_tickers, ticker).isnot(None))
                 .filter(AnalystTranscript.is_processed == True)
-                .order_by(desc(AnalystTranscript.video_date))
+                .order_by(desc(AnalystTranscript.date))
                 .first()
             )
             

@@ -25,6 +25,7 @@ from app.trading.gomes_analyzer import (
     GomesRating
 )
 from app.models.trading import ActiveWatchlist
+from app.models.stock import Stock
 from app.config.settings import Settings
 
 
@@ -237,20 +238,23 @@ def scan_watchlist_gomes(
     """
     Scanovat celý watchlist a rank podle Gomes skóre.
     
-    Analyzuje všechny Bullish tickery na watchlistu a vrací je
-    seřazené podle total_score (highest first).
+    Analyzuje všechny akcie z tabulky stocks a vrací je
+    seřazené podle gomes_score (highest first).
     
     **Use case**: Daily scan pro identifikaci top setups.
     """
     try:
-        # Fetch Bullish watchlist (using action_verdict instead of signal_type)
-        watchlist = (
-            db.query(ActiveWatchlist)
-            .filter(ActiveWatchlist.action_verdict == "Bullish")
+        # Fetch all stocks from database with is_latest=True
+        stocks_list = (
+            db.query(Stock)
+            .filter(Stock.is_latest == True)
+            .filter(Stock.gomes_score >= min_score)
+            .order_by(desc(Stock.gomes_score))
+            .limit(limit)
             .all()
         )
         
-        if not watchlist:
+        if not stocks_list:
             return WatchlistRankingResponse(
                 total_tickers=0,
                 analyzed_tickers=0,
@@ -258,47 +262,32 @@ def scan_watchlist_gomes(
                 timestamp=datetime.now()
             )
         
-        # Create analyzer
-        analyzer = create_gomes_analyzer(
-            db_session=db,
-            llm_api_key=getattr(settings, "openai_api_key", None),
-            llm_provider="openai"
-        )
-        
-        # Analyze all tickers
+        # Convert stocks to rankings
         rankings = []
         
-        for item in watchlist:
-            try:
-                score = analyzer.analyze_ticker(
-                    ticker=item.ticker,
-                    force_refresh=force_refresh
-                )
-                
-                # Filter by min_score
-                if score.total_score >= min_score:
-                    rankings.append(WatchlistRanking(
-                        ticker=score.ticker,
-                        score=score.total_score,
-                        rating=score.rating.value,
-                        confidence=score.confidence,
-                        reasoning=score.reasoning,
-                        last_analyzed=score.analysis_timestamp
-                    ))
-                    
-            except Exception as e:
-                # Log but continue with other tickers
-                print(f"Failed to analyze {item.ticker}: {str(e)}")
-                continue
-        
-        # Sort by score (descending)
-        rankings.sort(key=lambda x: x.score, reverse=True)
-        
-        # Limit results
-        rankings = rankings[:limit]
+        for stock in stocks_list:
+            # Determine rating based on action_verdict and gomes_score
+            rating = "HOLD"
+            if stock.action_verdict == "BUY_NOW":
+                rating = "STRONG_BUY"
+            elif stock.action_verdict == "ACCUMULATE":
+                rating = "BUY"
+            elif stock.action_verdict in ["WATCH_LIST"]:
+                rating = "HOLD"
+            elif stock.action_verdict in ["TRIM", "SELL", "AVOID"]:
+                rating = "AVOID"
+            
+            rankings.append(WatchlistRanking(
+                ticker=stock.ticker,
+                score=stock.gomes_score or 0,
+                rating=rating,
+                confidence="HIGH" if (stock.gomes_score or 0) >= 8 else "MEDIUM" if (stock.gomes_score or 0) >= 6 else "LOW",
+                reasoning=stock.trade_rationale or stock.edge or "From transcript analysis",
+                last_analyzed=stock.created_at
+            ))
         
         return WatchlistRankingResponse(
-            total_tickers=len(watchlist),
+            total_tickers=db.query(Stock).filter(Stock.is_latest == True).count(),
             analyzed_tickers=len(rankings),
             rankings=rankings,
             timestamp=datetime.now()
