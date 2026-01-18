@@ -1,0 +1,141 @@
+# GitHub Actions CI/CD Pipeline
+# ================================
+#
+# Automated testing and validation for Akcion Trading Intelligence
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # =============================================================================
+  # Backend Tests
+  # =============================================================================
+
+  backend-tests:
+    name: Backend Tests (Python 3.12)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements_trading.txt
+          pip install -r requirements_test.txt
+
+      - name: Run syntax checks
+        run: |
+          cd backend
+          python -m py_compile app/trading/master_signal.py
+          python -m py_compile app/trading/ml_learning.py
+          python -m py_compile app/trading/sentiment.py
+          python -m py_compile app/trading/backtest.py
+          python -m py_compile app/services/notifications.py
+
+      - name: Run unit tests
+        run: |
+          cd backend
+          pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./backend/coverage.xml
+          flags: backend
+
+  # =============================================================================
+  # Frontend Tests
+  # =============================================================================
+
+  frontend-tests:
+    name: Frontend Tests (Node 18)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Type check
+        run: |
+          cd frontend
+          npm run type-check || npx tsc --noEmit
+
+      - name: Lint
+        run: |
+          cd frontend
+          npm run lint || echo "Lint warnings detected"
+
+      - name: Build
+        run: |
+          cd frontend
+          npm run build
+
+  # =============================================================================
+  # Code Quality
+  # =============================================================================
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff linter
+        run: |
+          cd backend
+          ruff check app/ --select E,F,W || echo "Linting warnings detected"
+
+      - name: Check formatting
+        run: |
+          cd backend
+          ruff format --check app/ || echo "Formatting issues detected"

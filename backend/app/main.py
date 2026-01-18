@@ -34,7 +34,7 @@ from .schemas import (
 
 # Import new routes
 from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analysis, stocks
-from .routes import intelligence_gomes
+from .routes import intelligence_gomes, master_signal, ml_learning, backtest, notifications
 
 # ==============================================================================
 # Application Setup
@@ -102,6 +102,11 @@ app.include_router(trading.router)
 app.include_router(intelligence.router)
 app.include_router(gomes.router)
 app.include_router(intelligence_gomes.router)
+app.include_router(master_signal.router)
+app.include_router(master_signal.action_router)
+app.include_router(ml_learning.router)
+app.include_router(backtest.router)
+app.include_router(notifications.router)
 
 
 # ==============================================================================
