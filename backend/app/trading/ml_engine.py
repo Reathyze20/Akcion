@@ -26,6 +26,14 @@ except ImportError:
     NEURALFORECAST_AVAILABLE = False
     logger.warning("NeuralForecast not available. Install: pip install neuralforecast")
 
+# Learning Engine import
+try:
+    from app.trading.ml_learning import MLLearningEngine
+    LEARNING_ENGINE_AVAILABLE = True
+except ImportError:
+    LEARNING_ENGINE_AVAILABLE = False
+    logger.warning("ML Learning Engine not available")
+
 
 class MLEngineError(Exception):
     """Custom exception for ML Engine errors"""
@@ -67,7 +75,8 @@ class MLPredictionEngine:
         input_size: int = 60,
         confidence_levels: List[int] = [80, 90],
         quality_threshold_pct: float = 10.0,
-        min_data_points: int = 60
+        min_data_points: int = 60,
+        enable_learning: bool = True
     ):
         """
         Initialize ML Prediction Engine
@@ -79,6 +88,7 @@ class MLPredictionEngine:
             confidence_levels: CI levels to compute (default [80, 90])
             quality_threshold_pct: Max acceptable 90% CI width as % of price (default 10%)
             min_data_points: Minimum required data points (default 60)
+            enable_learning: Enable self-learning confidence adjustment (default True)
         """
         if not NEURALFORECAST_AVAILABLE:
             logger.error("❌ NeuralForecast not installed - ML predictions disabled")
@@ -92,6 +102,16 @@ class MLPredictionEngine:
         self.min_data_points = min_data_points
         self.model_version = "PatchTST-v1.0"
         self.lookback_days = input_size  # Alias for compatibility
+        
+        # Initialize Learning Engine
+        self.enable_learning = enable_learning
+        if enable_learning and LEARNING_ENGINE_AVAILABLE:
+            self.learning_engine = MLLearningEngine(db)
+            logger.info("🧠 Learning Engine ENABLED - confidence will be adjusted")
+        else:
+            self.learning_engine = None
+            if enable_learning:
+                logger.warning("⚠️  Learning Engine requested but not available")
         
         # PatchTST model configuration
         self.model_config = {
@@ -165,7 +185,7 @@ class MLPredictionEngine:
             price_change_pct = ((predicted_price - current_price) / current_price) * 100
             
             prediction_type, confidence = self._determine_direction(
-                price_change_pct, quality
+                price_change_pct, quality, ticker=ticker
             )
             
             # Step 7: Prepare result
@@ -435,7 +455,8 @@ class MLPredictionEngine:
     def _determine_direction(
         self,
         price_change_pct: float,
-        quality: str
+        quality: str,
+        ticker: Optional[str] = None
     ) -> Tuple[str, float]:
         """
         Determine prediction direction and confidence
@@ -443,6 +464,7 @@ class MLPredictionEngine:
         Args:
             price_change_pct: Predicted price change percentage
             quality: Prediction quality level
+            ticker: Stock ticker (for learning adjustment)
         
         Returns:
             Tuple of (prediction_type, confidence)
@@ -464,7 +486,27 @@ class MLPredictionEngine:
         
         # Scale confidence by magnitude of change (more change = more confidence)
         magnitude_factor = min(abs(price_change_pct) / 10.0, 1.0)
-        confidence = base_confidence * (0.7 + 0.3 * magnitude_factor)
+        raw_confidence = base_confidence * (0.7 + 0.3 * magnitude_factor)
+        
+        # Apply learning-based adjustment if enabled
+        if self.learning_engine and ticker:
+            adjustment = self.learning_engine.adjust_confidence(
+                ticker=ticker,
+                raw_confidence=raw_confidence,
+                prediction_type=prediction_type,
+                model_version=self.model_version
+            )
+            
+            confidence = adjustment.adjusted_confidence
+            
+            if adjustment.adjustment_factor != 1.0:
+                logger.info(
+                    f"  📊 Learning adjustment for {ticker}: "
+                    f"{raw_confidence:.1%} → {confidence:.1%} "
+                    f"({adjustment.reason})"
+                )
+        else:
+            confidence = raw_confidence
         
         return prediction_type, round(confidence, 4)
     

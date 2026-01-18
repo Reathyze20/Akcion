@@ -24,10 +24,12 @@ try:
     from .intelligence import router as intelligence_router
     from .trading import router as trading_router
     from .intelligence_gomes import router as intelligence_gomes_router
+    from .master_signal import router as master_signal_router
 except ImportError:
     intelligence_router = None
     trading_router = None
     intelligence_gomes_router = None
+    master_signal_router = None
 
 
 __all__ = [
