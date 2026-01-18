@@ -15,9 +15,16 @@ from app.schemas.trading import (
 )
 from app.trading.watchlist import WatchlistBuilder
 from app.trading.data_fetcher import DataFetcher
-from app.trading.ml_engine import MLPredictionEngine
 from app.trading.signals import SignalGenerator
 from loguru import logger
+
+# Import ML engine with graceful fallback
+try:
+    from app.trading.ml_engine import MLPredictionEngine
+    ML_ENGINE_AVAILABLE = True
+except (ImportError, AttributeError):
+    MLPredictionEngine = None
+    ML_ENGINE_AVAILABLE = False
 
 
 router = APIRouter(prefix="/api/trading", tags=["trading"])
@@ -123,6 +130,13 @@ async def generate_prediction(
     Returns prediction with Kelly position size
     """
     try:
+        # Check if ML engine is available
+        if not ML_ENGINE_AVAILABLE or MLPredictionEngine is None:
+            raise HTTPException(
+                status_code=503,
+                detail="ML prediction engine is not available due to dependency issues"
+            )
+        
         # Run ML prediction
         ml_engine = MLPredictionEngine(db)
         prediction = ml_engine.predict(ticker)
@@ -178,6 +192,12 @@ async def generate_predictions_batch(
         
         if not tickers:
             raise HTTPException(status_code=400, detail="No tickers in active watchlist")
+        
+        if not ML_ENGINE_AVAILABLE or MLPredictionEngine is None:
+            raise HTTPException(
+                status_code=503,
+                detail="ML prediction engine is not available due to dependency issues"
+            )
         
         async def predict_all():
             ml_engine = MLPredictionEngine(db)

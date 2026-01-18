@@ -43,7 +43,14 @@ from sqlalchemy.dialects.postgresql import ARRAY, TEXT
 
 from app.models.analysis import AnalystTranscript, SWOTAnalysis
 from app.models.trading import ActiveWatchlist, MLPrediction, OHLCVData
-from app.trading.ml_engine import MLPredictionEngine
+
+# Import ML engine with graceful fallback
+try:
+    from app.trading.ml_engine import MLPredictionEngine
+    ML_ENGINE_AVAILABLE = True
+except (ImportError, AttributeError):
+    MLPredictionEngine = None
+    ML_ENGINE_AVAILABLE = False
 
 
 # ============================================================================
@@ -245,7 +252,13 @@ class GomesAnalyzer:
             logger: Logger instance
         """
         self.db = db_session
-        self.ml_engine = ml_engine or MLPredictionEngine(db_session)
+        # Initialize ML engine only if available
+        if ML_ENGINE_AVAILABLE and MLPredictionEngine is not None:
+            self.ml_engine = ml_engine or MLPredictionEngine(db_session)
+        else:
+            self.ml_engine = None
+            if not ml_engine:  # Only log if not explicitly provided
+                logging.warning("ML Engine not available - predictions will be skipped")
         self.llm_client = llm_client
         self.logger = logger or logging.getLogger(__name__)
         
