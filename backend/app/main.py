@@ -35,6 +35,7 @@ from .schemas import (
 # Import new routes
 from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analysis, stocks
 from .routes import intelligence_gomes, master_signal, ml_learning, backtest, notifications
+from .routes import investment  # Investment Intelligence
 
 # Import alert scheduler
 from .services.alert_scheduler import start_scheduler, stop_scheduler
@@ -128,6 +129,7 @@ app.include_router(master_signal.action_router)
 app.include_router(ml_learning.router)
 app.include_router(backtest.router)
 app.include_router(notifications.router)
+app.include_router(investment.router)  # Investment Intelligence
 
 
 # ==============================================================================

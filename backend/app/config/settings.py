@@ -57,6 +57,18 @@ class Settings(BaseSettings):
         description="Finnhub.io API key for global market data (non-US stocks)",
     )
     
+    # Telegram Notifications
+    TELEGRAM_BOT_TOKEN: str | None = Field(
+        default=None,
+        alias="TELEGRAM_BOT_TOKEN",
+        description="Telegram Bot API token from @BotFather",
+    )
+    TELEGRAM_CHAT_ID: str | None = Field(
+        default=None,
+        alias="TELEGRAM_CHAT_ID",
+        description="Your Telegram chat ID for receiving alerts",
+    )
+    
     # Application Settings
     app_name: str = Field(default="Akcion", alias="APP_NAME")
     app_version: str = Field(default="1.0.0", alias="APP_VERSION")
