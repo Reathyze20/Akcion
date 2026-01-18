@@ -112,6 +112,66 @@ async def sync_historical_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/ohlcv/{ticker}")
+async def get_ohlcv_data(
+    ticker: str,
+    days: int = 60,
+    db: Session = Depends(get_db)
+):
+    """
+    Get historical OHLCV data for a ticker
+    
+    Args:
+        ticker: Stock ticker symbol
+        days: Number of days of history (default 60)
+    
+    Returns:
+        List of OHLCV data points
+    """
+    from app.models.trading import OHLCVData
+    from sqlalchemy import desc
+    
+    try:
+        data = (
+            db.query(OHLCVData)
+            .filter(OHLCVData.ticker == ticker.upper())
+            .order_by(desc(OHLCVData.time))
+            .limit(days)
+            .all()
+        )
+        
+        if not data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No OHLCV data found for {ticker}"
+            )
+        
+        # Return in chronological order (oldest first)
+        result = [
+            {
+                "date": d.time.strftime("%Y-%m-%d"),
+                "open": float(d.open),
+                "high": float(d.high),
+                "low": float(d.low),
+                "close": float(d.close),
+                "volume": d.volume
+            }
+            for d in reversed(data)
+        ]
+        
+        return {
+            "ticker": ticker.upper(),
+            "count": len(result),
+            "data": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching OHLCV for {ticker}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/predict/{ticker}")
 async def generate_prediction(
     ticker: str,
@@ -133,18 +193,22 @@ async def generate_prediction(
                 detail=f"Cannot generate prediction for {ticker} - insufficient data"
             )
         
-        # Generate trading signal
+        # Generate trading signal - prediction is a dict
         signal_gen = SignalGenerator(db)
-        signal = signal_gen.generate_signal(prediction)
+        signal = signal_gen.generate_signal_from_dict(prediction)
         
         return {
             "ticker": ticker,
             "prediction": {
-                "type": prediction.prediction_type,
-                "confidence": float(prediction.confidence),
-                "predicted_price": float(prediction.predicted_price),
-                "current_price": float(prediction.current_price),
-                "kelly_size": float(prediction.kelly_position_size) if prediction.kelly_position_size else 0.0
+                "type": prediction['prediction_type'],
+                "confidence": float(prediction['confidence']),
+                "predicted_price": float(prediction['predicted_price']),
+                "current_price": float(prediction['current_price']),
+                "price_change_pct": float(prediction['price_change_pct']),
+                "horizon_days": prediction['horizon_days'],
+                "quality": prediction['quality'],
+                "ci_80": [float(prediction['ci_80_lower']), float(prediction['ci_80_upper'])],
+                "ci_90": [float(prediction['ci_90_lower']), float(prediction['ci_90_upper'])]
             },
             "signal": {
                 "generated": signal is not None,
@@ -221,4 +285,101 @@ async def expire_old_signals(
         
     except Exception as e:
         logger.error(f"Failed to expire signals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/predictions/{ticker}")
+async def get_prediction(
+    ticker: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get the latest ML prediction for a specific ticker with Gomes analysis context.
+    
+    Returns prediction with confidence intervals and analyst insights for charting.
+    """
+    from app.models.trading import MLPrediction, ActiveWatchlist
+    from app.models.stock import Stock
+    from datetime import datetime
+    
+    try:
+        # Get latest prediction from database
+        prediction = db.query(MLPrediction).filter(
+            MLPrediction.ticker == ticker.upper(),
+            MLPrediction.valid_until > datetime.utcnow()
+        ).order_by(MLPrediction.created_at.desc()).first()
+        
+        if not prediction:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No valid prediction found for {ticker}"
+            )
+        
+        # Get Gomes/analyst context from watchlist -> stock
+        watchlist = db.query(ActiveWatchlist).filter(
+            ActiveWatchlist.ticker == ticker.upper(),
+            ActiveWatchlist.is_active == True
+        ).first()
+        
+        gomes_context = None
+        if watchlist and watchlist.stock_id:
+            stock = db.query(Stock).filter(Stock.id == watchlist.stock_id).first()
+            if stock:
+                gomes_context = {
+                    "company_name": stock.company_name,
+                    "analyst": stock.speaker or "Mark Gomes",
+                    "sentiment": stock.sentiment,
+                    "action_verdict": stock.action_verdict,
+                    "gomes_score": stock.gomes_score,
+                    "edge": stock.edge,
+                    "catalysts": stock.catalysts,
+                    "risks": stock.risks,
+                    "price_target": stock.price_target,
+                    "price_target_short": stock.price_target_short,
+                    "price_target_long": stock.price_target_long,
+                    "time_horizon": stock.time_horizon,
+                    "entry_zone": stock.entry_zone,
+                    "trade_rationale": stock.trade_rationale,
+                    "source_type": stock.source_type,
+                }
+        
+        # Calculate confidence intervals
+        current = float(prediction.current_price)
+        predicted = float(prediction.predicted_price)
+        confidence = float(prediction.confidence)
+        
+        # Wider intervals for lower confidence
+        spread_80 = abs(predicted - current) * (1 - confidence) * 1.5
+        spread_90 = abs(predicted - current) * (1 - confidence) * 2.0
+        
+        # Determine quality based on CI width
+        ci_width_pct = (spread_90 * 2 / current) * 100 if current > 0 else 100
+        if ci_width_pct < 10:
+            quality = "HIGH_CONFIDENCE"
+        elif ci_width_pct < 20:
+            quality = "MEDIUM_CONFIDENCE"
+        else:
+            quality = "LOW_CONFIDENCE"
+        
+        return {
+            "ticker": prediction.ticker,
+            "prediction_type": prediction.prediction_type,
+            "confidence": confidence,
+            "current_price": current,
+            "predicted_price": predicted,
+            "horizon_days": prediction.horizon_days or 30,
+            "quality": quality,
+            "ci_80_lower": predicted - spread_80,
+            "ci_80_upper": predicted + spread_80,
+            "ci_90_lower": predicted - spread_90,
+            "ci_90_upper": predicted + spread_90,
+            "created_at": prediction.created_at.isoformat(),
+            "valid_until": prediction.valid_until.isoformat() if prediction.valid_until else None,
+            "analyst_context": gomes_context,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get prediction for {ticker}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -5,6 +5,8 @@ import { AnalysisView } from './components/AnalysisView';
 import TrafficLightWidget from './components/TrafficLightWidget';
 import PortfolioPage from './components/PortfolioPage';
 import GomesDashboard from './components/GomesDashboard';
+import ActionCenter from './components/ActionCenter';
+import MLPredictionChart from './components/MLPredictionChart';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { ToastContainer } from './components/Toast';
 import type { Stock } from './types';
@@ -424,7 +426,9 @@ export default function App() {
                     <nav className="space-y-1">
                         {[
                             { id: 'dashboard', label: 'Dashboard' },
+                            { id: 'action-center', label: 'Action Center' },
                             { id: 'gomes', label: 'Gomes Committee' },
+                            { id: 'ml-predictions', label: 'ML Predictions' },
                             { id: 'portfolio', label: 'Portfolio' },
                             { id: 'watchlist', label: 'Sledované' },
                             { id: 'analysis', label: 'Analýzy' },
@@ -496,6 +500,18 @@ export default function App() {
                       <div className="flex items-center justify-center h-96">
                         <div className="text-slate-400">Načítám data...</div>
                       </div>
+                    ) : activeTab === 'action-center' ? (
+                        <div className="space-y-6">
+                          <h1 className="text-2xl font-bold text-white">🎯 Action Center</h1>
+                          <p className="text-slate-400">Today's top trading opportunities with Buy Confidence scores.</p>
+                          <ActionCenter minConfidence={60} limit={10} />
+                        </div>
+                    ) : activeTab === 'ml-predictions' ? (
+                        <div className="space-y-6">
+                          <h1 className="text-2xl font-bold text-white">🤖 ML Predictions</h1>
+                          <p className="text-slate-400">PatchTST neural network price predictions with confidence intervals.</p>
+                          <MLPredictionChart ticker={selectedStock?.ticker || "AAPL"} />
+                        </div>
                     ) : activeTab === 'gomes' ? (
                         <GomesDashboard />
                     ) : activeTab === 'portfolio' ? (

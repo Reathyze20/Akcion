@@ -19,7 +19,7 @@ import logging
 import os
 from datetime import datetime, time
 
-from app.database.connection import get_db_session
+from app.database.connection import session_scope
 from app.services.notifications import check_and_send_alerts
 
 
@@ -58,7 +58,7 @@ async def run_alert_check():
         logger.info("Running alert check...")
         
         # Get database session
-        with get_db_session() as db:
+        with session_scope() as db:
             alerts = await check_and_send_alerts(
                 db=db,
                 min_confidence=MIN_CONFIDENCE,
@@ -102,6 +102,48 @@ async def scheduler_loop():
 # ==============================================================================
 # Entry Point
 # ==============================================================================
+
+# Global scheduler task
+_scheduler_task: asyncio.Task | None = None
+
+
+async def start_scheduler() -> None:
+    """
+    Start the background alert scheduler.
+    
+    Called on application startup to begin monitoring watchlist.
+    """
+    global _scheduler_task
+    
+    if _scheduler_task is not None and not _scheduler_task.done():
+        logger.warning("Scheduler already running")
+        return
+    
+    _scheduler_task = asyncio.create_task(scheduler_loop())
+    logger.info("🚀 Alert scheduler started as background task")
+
+
+async def stop_scheduler() -> None:
+    """
+    Stop the background alert scheduler.
+    
+    Called on application shutdown for graceful cleanup.
+    """
+    global _scheduler_task
+    
+    if _scheduler_task is None:
+        logger.warning("Scheduler not running")
+        return
+    
+    _scheduler_task.cancel()
+    try:
+        await _scheduler_task
+    except asyncio.CancelledError:
+        pass
+    
+    _scheduler_task = None
+    logger.info("🛑 Alert scheduler stopped")
+
 
 if __name__ == "__main__":
     asyncio.run(scheduler_loop())

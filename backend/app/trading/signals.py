@@ -101,6 +101,98 @@ class SignalGenerator:
         logger.info(f"Generated BUY signal for {prediction.ticker}: Kelly {kelly_size:.1%}, R/R {risk_reward:.2f}")
         return signal
     
+    def generate_signal_from_dict(
+        self,
+        prediction: dict,
+        stop_loss_pct: float = 0.10,
+        risk_reward_min: float = 2.0
+    ) -> Optional[TradingSignal]:
+        """
+        Generate trading signal from ML prediction dict (not ORM object)
+        
+        Args:
+            prediction: Dict with prediction data from ml_engine.predict()
+            stop_loss_pct: Stop loss percentage (default 10%)
+            risk_reward_min: Minimum risk/reward ratio (default 2.0)
+        
+        Returns:
+            TradingSignal or None if signal doesn't meet criteria
+        """
+        ticker = prediction['ticker']
+        logger.info(f"Generating signal for {ticker} from dict")
+        
+        # Only generate BUY signals for UP predictions
+        if prediction['prediction_type'] != 'UP':
+            logger.debug(f"Skipping {ticker} - prediction type is {prediction['prediction_type']}")
+            return None
+        
+        # Calculate Kelly position size
+        kelly_result = self.kelly_calc.calculate_from_prediction(
+            confidence=float(prediction['confidence']),
+            current_price=float(prediction['current_price']),
+            predicted_price=float(prediction['predicted_price']),
+            stop_loss_pct=stop_loss_pct
+        )
+        
+        kelly_size = kelly_result['kelly_size']
+        risk_reward = kelly_result['risk_reward_ratio']
+        
+        # Filter out weak signals
+        if kelly_size < 0.05:  # Less than 5% position
+            logger.debug(f"Skipping {ticker} - Kelly size too small ({kelly_size:.2%})")
+            return None
+        
+        if risk_reward < risk_reward_min:
+            logger.debug(f"Skipping {ticker} - R/R ratio too low ({risk_reward:.2f})")
+            return None
+        
+        # Calculate entry/target/stop prices
+        entry_price = float(prediction['current_price'])
+        target_price = float(prediction['predicted_price'])
+        stop_loss = entry_price * (1 - stop_loss_pct)
+        
+        # Get watchlist entry for context
+        watchlist = self.db.query(ActiveWatchlist).filter(
+            ActiveWatchlist.ticker == ticker,
+            ActiveWatchlist.is_active == True
+        ).first()
+        
+        analyst_source_id = watchlist.stock_id if watchlist else None
+        
+        # Get the ML prediction record from DB (if saved)
+        ml_prediction = self.db.query(MLPrediction).filter(
+            MLPrediction.ticker == ticker
+        ).order_by(MLPrediction.created_at.desc()).first()
+        
+        # Create signal
+        valid_until = datetime.utcnow() + timedelta(days=prediction.get('horizon_days', 7))
+        
+        signal = TradingSignal(
+            ticker=ticker,
+            signal_type='BUY',
+            ml_prediction_id=ml_prediction.id if ml_prediction else None,
+            analyst_source_id=analyst_source_id,
+            confidence=prediction['confidence'],
+            kelly_size=kelly_size,
+            entry_price=entry_price,
+            target_price=target_price,
+            stop_loss=stop_loss,
+            risk_reward_ratio=risk_reward,
+            expires_at=valid_until,
+            notes=f"ML: {prediction['prediction_type']} | Kelly: {kelly_size:.1%} | R/R: {risk_reward:.2f} | Quality: {prediction.get('quality', 'N/A')}"
+        )
+        
+        # Update ML prediction with Kelly size if exists
+        if ml_prediction:
+            ml_prediction.kelly_position_size = kelly_size
+        
+        self.db.add(signal)
+        self.db.commit()
+        self.db.refresh(signal)
+        
+        logger.info(f"Generated BUY signal for {ticker}: Kelly {kelly_size:.1%}, R/R {risk_reward:.2f}")
+        return signal
+
     def generate_signals_batch(
         self,
         predictions: List[MLPrediction],
