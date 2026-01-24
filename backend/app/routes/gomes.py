@@ -206,9 +206,72 @@ def analyze_ticker_simple(
     """
     Analyzovat ticker (simplified GET endpoint).
     
-    Použije data z databáze (transcripts, SWOT, ML predictions).
+    Primárně používá data z tabulky Stock, kde je uložený gomes_score.
+    Fallback na real-time analýzu pouze pokud není v DB.
     """
     try:
+        ticker_upper = ticker.upper()
+        
+        # First, try to get data from Stock table (pre-analyzed)
+        stock = (
+            db.query(Stock)
+            .filter(Stock.ticker == ticker_upper)
+            .filter(Stock.is_latest == True)
+            .first()
+        )
+        
+        if stock and stock.gomes_score is not None:
+            # Use stored data from Stock table
+            # Determine rating from action_verdict and score
+            rating = "HOLD"
+            if stock.action_verdict == "BUY_NOW":
+                rating = "STRONG_BUY"
+            elif stock.action_verdict == "ACCUMULATE":
+                rating = "BUY"
+            elif stock.action_verdict in ["WATCH_LIST"]:
+                rating = "HOLD"
+            elif stock.action_verdict in ["TRIM", "SELL", "AVOID"]:
+                rating = "AVOID"
+            elif stock.gomes_score >= 9:
+                rating = "STRONG_BUY"
+            elif stock.gomes_score >= 7:
+                rating = "BUY"
+            elif stock.gomes_score >= 5:
+                rating = "HOLD"
+            else:
+                rating = "AVOID"
+            
+            confidence = "HIGH" if (stock.gomes_score or 0) >= 8 else "MEDIUM" if (stock.gomes_score or 0) >= 6 else "LOW"
+            
+            # Build reasoning from available fields
+            reasoning = stock.trade_rationale or stock.edge or "From transcript analysis"
+            
+            # Build risk factors
+            risk_factors = []
+            if stock.risks:
+                risk_factors = [r.strip() for r in stock.risks.split(",") if r.strip()]
+            
+            return GomesScoreResponse(
+                ticker=stock.ticker,
+                total_score=stock.gomes_score or 0,
+                rating=rating,
+                story_score=2 if stock.edge else 0,  # Has story/edge
+                breakout_score=0,  # Would need OHLCV check
+                insider_score=0,   # Would need external data
+                ml_score=0,        # Needs ML prediction check
+                volume_score=0,    # Would need OHLCV check
+                earnings_penalty=0,
+                analysis_timestamp=stock.created_at or datetime.now(),
+                confidence=confidence,
+                reasoning=reasoning,
+                risk_factors=risk_factors,
+                has_transcript=bool(stock.edge or stock.trade_rationale),
+                has_swot=False,
+                has_ml_prediction=False,
+                earnings_date=None
+            )
+        
+        # Fallback: run real-time analysis if not in Stock table
         analyzer = create_gomes_analyzer(
             db_session=db,
             llm_api_key=getattr(settings, "openai_api_key", None),
@@ -216,7 +279,7 @@ def analyze_ticker_simple(
         )
         
         score = analyzer.analyze_ticker(
-            ticker=ticker.upper(),
+            ticker=ticker_upper,
             force_refresh=force_refresh
         )
         
@@ -450,6 +513,98 @@ def analyze_batch_gomes(
         raise HTTPException(
             status_code=500,
             detail=f"Batch analysis failed: {str(e)}"
+        )
+
+
+# ============================================================================
+# PRICE LINES HISTORY
+# ============================================================================
+
+class PriceLinesHistoryItem(BaseModel):
+    """Historický záznam price lines"""
+    id: int
+    ticker: str
+    green_line: Optional[float]
+    red_line: Optional[float]
+    effective_from: date
+    valid_until: Optional[date]
+    source: Optional[str]
+    source_reference: Optional[str]
+
+
+class PriceLinesHistoryResponse(BaseModel):
+    """Response s historií price lines"""
+    ticker: str
+    total_records: int
+    current_green_line: Optional[float]
+    current_red_line: Optional[float]
+    history: List[PriceLinesHistoryItem]
+
+
+@router.get("/ticker/{ticker}/price-lines-history", response_model=PriceLinesHistoryResponse)
+def get_price_lines_history(
+    ticker: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Získat historii price lines pro ticker.
+    
+    Vrací všechny historické záznamy green/red lines, seřazené od nejnovějšího.
+    Ukazuje, jak se cenové zóny měnily v čase.
+    
+    **Use case**: Sledovat vývoj Mark Gomes hodnocení akcie.
+    """
+    from app.models.gomes import PriceLinesModel
+    
+    try:
+        ticker = ticker.upper()
+        
+        # Get all price lines for ticker (including historical)
+        lines = (
+            db.query(PriceLinesModel)
+            .filter(PriceLinesModel.ticker == ticker)
+            .order_by(desc(PriceLinesModel.effective_from))
+            .all()
+        )
+        
+        if not lines:
+            return PriceLinesHistoryResponse(
+                ticker=ticker,
+                total_records=0,
+                current_green_line=None,
+                current_red_line=None,
+                history=[]
+            )
+        
+        # Get current (active) lines
+        current = next((l for l in lines if l.valid_until is None), None)
+        
+        history = [
+            PriceLinesHistoryItem(
+                id=l.id,
+                ticker=l.ticker,
+                green_line=float(l.green_line) if l.green_line else None,
+                red_line=float(l.red_line) if l.red_line else None,
+                effective_from=l.effective_from.date() if hasattr(l.effective_from, 'date') else l.effective_from,
+                valid_until=l.valid_until.date() if l.valid_until and hasattr(l.valid_until, 'date') else l.valid_until,
+                source=l.source,
+                source_reference=l.source_reference
+            )
+            for l in lines
+        ]
+        
+        return PriceLinesHistoryResponse(
+            ticker=ticker,
+            total_records=len(lines),
+            current_green_line=float(current.green_line) if current and current.green_line else None,
+            current_red_line=float(current.red_line) if current and current.red_line else None,
+            history=history
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get price lines history: {str(e)}"
         )
 
 
@@ -740,9 +895,17 @@ def process_transcript_ai(
     - Doporučenou akcí
     - Klíčovými body
     - Kontextovým snippetem
+    - Green/Red price lines (pokud zmíněny)
     
     **Use case**: Přidat AI analýzu k manuálně importovanému transcriptu.
     """
+    import json
+    import google.generativeai as genai
+    from decimal import Decimal
+    from app.core.prompts import TICKER_EXTRACTION_PROMPT, GEMINI_MODEL_NAME
+    from app.models.gomes import PriceLinesModel
+    from app.config.settings import settings
+    
     try:
         transcript = db.query(AnalystTranscript).filter(
             AnalystTranscript.id == transcript_id
@@ -759,22 +922,508 @@ def process_transcript_ai(
         if not mentions:
             return {"message": "No ticker mentions to process", "processed": 0}
         
-        # TODO: Implement AI processing
-        # For now, return placeholder
-        # This would call the LLM to extract sentiment, actions, key points
+        tickers = [m.ticker for m in mentions]
+        
+        # Configure Gemini
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+        
+        # Build prompt
+        prompt = TICKER_EXTRACTION_PROMPT.format(
+            tickers=", ".join(tickers),
+            transcript=transcript.raw_text[:50000]  # Limit transcript length
+        )
+        
+        # Call AI
+        response = model.generate_content(prompt)
+        response_text = response.text
+        
+        # Clean response (remove markdown code blocks)
+        if response_text.startswith("```"):
+            response_text = response_text.strip("```json\n").strip("```")
+        
+        # Parse JSON
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError:
+            return {
+                "message": "AI response was not valid JSON",
+                "raw_response": response_text[:500],
+                "processed": 0
+            }
+        
+        # Update mentions and create price lines
+        processed_count = 0
+        price_lines_created = 0
+        
+        for ticker_data in data.get("tickers", []):
+            ticker = ticker_data.get("ticker", "").upper()
+            
+            # Find mention for this ticker
+            mention = next((m for m in mentions if m.ticker == ticker), None)
+            if not mention:
+                continue
+            
+            # Update mention
+            if ticker_data.get("sentiment"):
+                mention.sentiment = ticker_data["sentiment"]
+            if ticker_data.get("action_mentioned"):
+                mention.action_mentioned = ticker_data["action_mentioned"]
+            if ticker_data.get("conviction_level"):
+                mention.conviction_level = ticker_data["conviction_level"]
+            if ticker_data.get("price_target"):
+                mention.price_target = Decimal(str(ticker_data["price_target"]))
+            if ticker_data.get("context_snippet"):
+                mention.context_snippet = ticker_data["context_snippet"]
+            if ticker_data.get("key_points"):
+                mention.key_points = ticker_data["key_points"]
+            
+            mention.ai_extracted = True
+            processed_count += 1
+            
+            # Create price lines if mentioned
+            green_line = ticker_data.get("green_line")
+            red_line = ticker_data.get("red_line")
+            
+            if green_line or red_line:
+                # Deactivate previous price lines for this ticker
+                db.query(PriceLinesModel).filter(
+                    PriceLinesModel.ticker == ticker,
+                    PriceLinesModel.valid_until.is_(None)
+                ).update({"valid_until": transcript.date})
+                
+                # Create new price lines with transcript date
+                new_lines = PriceLinesModel(
+                    ticker=ticker,
+                    stock_id=mention.stock_id,
+                    green_line=Decimal(str(green_line)) if green_line else None,
+                    red_line=Decimal(str(red_line)) if red_line else None,
+                    source="transcript_ai",
+                    source_reference=f"Transcript #{transcript_id}: {transcript.source_name}",
+                    transcript_id=transcript_id,
+                    effective_from=transcript.date
+                )
+                db.add(new_lines)
+                price_lines_created += 1
+        
+        # Mark transcript as processed
+        transcript.is_processed = True
+        transcript.processing_notes = f"AI processed: {processed_count} tickers, {price_lines_created} price lines"
+        
+        db.commit()
         
         return {
-            "message": "AI processing not yet implemented. Mentions created with NEUTRAL sentiment.",
+            "message": f"Successfully processed transcript with AI",
             "transcript_id": transcript_id,
-            "mentions_count": len(mentions),
-            "tickers": [m.ticker for m in mentions]
+            "mentions_processed": processed_count,
+            "price_lines_created": price_lines_created,
+            "tickers": tickers
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to process transcript: {str(e)}"
         )
+
+
+# ============================================================================
+# DEEP DUE DILIGENCE ENDPOINTS (v2.0 - The Treasure Hunter)
+# ============================================================================
+
+@router.post("/deep-dd")
+async def run_deep_due_diligence(
+    transcript: str = Query(..., min_length=100, description="Raw transcript text"),
+    ticker: Optional[str] = Query(None, description="Force specific ticker"),
+    include_existing: bool = Query(True, description="Include existing data for drift comparison"),
+    save_to_db: bool = Query(True, description="Save results to database"),
+    db: Session = Depends(get_db),
+):
+    """
+    Run Gomes Deep Due Diligence Analysis.
+    
+    This is the "Treasure Hunter" endpoint - it analyzes transcripts using
+    Mark Gomes' 6-pillar methodology and returns:
+    
+    1. **Human-readable analysis** (Czech) - for you to read
+    2. **Structured JSON data** - for the app to update cards
+    
+    The 6 Gomes Pillars:
+    - ZÁKLADNÍ FILTR: Size & liquidity (under Wall Street radar?)
+    - BOD ZVRATU: Inflection point (contract, profitability, mandate)
+    - SKIN IN THE GAME: Management ownership, insider buying
+    - FINANČNÍ ODOLNOST: Cash runway (12-18 months), debt, dilution risk
+    - ASYMETRICKÝ RISK/ZISK: 2x-10x upside vs defined downside
+    - THESIS DRIFT: Is the story improving or is management failing?
+    
+    Example:
+        POST /api/gomes/deep-dd?transcript=Mark%20says%20GKPRF%20is...
+        
+    Returns:
+        {
+            "analysis_text": "ZÁKLADNÍ FILTR: Gatekeeper...",
+            "data": {
+                "ticker": "GKPRF",
+                "gomes_score": 8,
+                "thesis_status": "IMPROVED",
+                "action_signal": "ACCUMULATE",
+                "kelly_criterion_hint": 10,
+                ...
+            },
+            "thesis_drift": "IMPROVED",
+            "score_change": 2
+        }
+    """
+    from app.services.gomes_deep_dd import GomesDeepDueDiligenceService
+    from app.schemas.gomes import DeepDueDiligenceRequest
+    
+    try:
+        service = GomesDeepDueDiligenceService(db)
+        
+        request = DeepDueDiligenceRequest(
+            transcript=transcript,
+            ticker=ticker,
+            include_existing_data=include_existing,
+        )
+        
+        result = await service.analyze(request)
+        
+        # Optionally save to database
+        if save_to_db:
+            stock = await service.update_stock_from_analysis(result)
+            
+            # Also update price lines if provided
+            if result.data.green_line or result.data.red_line:
+                from app.models.gomes import PriceLinesModel
+                from decimal import Decimal
+                
+                # Deactivate old lines
+                db.query(PriceLinesModel).filter(
+                    PriceLinesModel.ticker == result.data.ticker.upper(),
+                    PriceLinesModel.valid_until.is_(None)
+                ).update({"valid_until": datetime.utcnow()})
+                
+                # Create new lines
+                new_lines = PriceLinesModel(
+                    ticker=result.data.ticker.upper(),
+                    stock_id=stock.id,
+                    green_line=Decimal(str(result.data.green_line)) if result.data.green_line else None,
+                    red_line=Decimal(str(result.data.red_line)) if result.data.red_line else None,
+                    source="deep_dd_ai",
+                    source_reference=f"Deep DD {datetime.utcnow().strftime('%Y-%m-%d')}",
+                    effective_from=datetime.utcnow()
+                )
+                db.add(new_lines)
+                db.commit()
+        
+        return {
+            "analysis_text": result.analysis_text,
+            "data": result.data.model_dump(),
+            "thesis_drift": result.thesis_drift,
+            "score_change": result.score_change,
+            "analyzed_at": result.analyzed_at.isoformat(),
+            "source_length": result.source_length,
+            "saved_to_db": save_to_db,
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.post("/deep-dd/batch")
+async def run_deep_due_diligence_batch(
+    transcripts: List[str] = Query(..., description="List of transcripts to analyze"),
+    save_to_db: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    """
+    Run Deep Due Diligence on multiple transcripts.
+    
+    Useful for processing multiple webinar transcripts at once.
+    """
+    from app.services.gomes_deep_dd import GomesDeepDueDiligenceService
+    from app.schemas.gomes import DeepDueDiligenceRequest
+    
+    service = GomesDeepDueDiligenceService(db)
+    results = []
+    
+    for transcript in transcripts[:10]:  # Limit to 10
+        try:
+            request = DeepDueDiligenceRequest(
+                transcript=transcript,
+                include_existing_data=True,
+            )
+            result = await service.analyze(request)
+            
+            if save_to_db:
+                await service.update_stock_from_analysis(result)
+            
+            results.append({
+                "ticker": result.data.ticker,
+                "gomes_score": result.data.gomes_score,
+                "action_signal": result.data.action_signal,
+                "thesis_status": result.data.thesis_status,
+                "success": True,
+            })
+        except Exception as e:
+            results.append({
+                "ticker": "UNKNOWN",
+                "error": str(e),
+                "success": False,
+            })
+    
+    return {
+        "processed": len(results),
+        "successful": sum(1 for r in results if r.get("success")),
+        "results": results,
+    }
+
+
+@router.post("/update-stock/{ticker}")
+async def update_stock_analysis(
+    ticker: str,
+    transcript: str = Query(..., min_length=50, description="New information text (earnings, news, chat)"),
+    source_type: str = Query("manual", description="Source: earnings, news, chat, transcript, manual"),
+    db: Session = Depends(get_db),
+):
+    """
+    Update existing stock with new information.
+    
+    Use this to add:
+    - Earnings report summaries
+    - News updates
+    - Chat/discussion notes
+    - New video transcripts
+    
+    The AI will:
+    1. Load existing stock data
+    2. Analyze new information in context
+    3. Update Gomes score if warranted
+    4. Track changes in score_history
+    5. Create drift alerts if significant change
+    
+    Example:
+        POST /api/gomes/update-stock/GKPRF?transcript=Q4%20earnings%20beat...&source_type=earnings
+    """
+    from app.services.gomes_deep_dd import GomesDeepDueDiligenceService
+    from app.schemas.gomes import DeepDueDiligenceRequest
+    
+    try:
+        service = GomesDeepDueDiligenceService(db)
+        
+        # Always include existing data for context
+        request = DeepDueDiligenceRequest(
+            transcript=transcript,
+            ticker=ticker.upper(),
+            include_existing_data=True,
+        )
+        
+        result = await service.analyze(request)
+        
+        # Update stock with source tracking
+        stock = await service.update_stock_from_analysis(result, analysis_source=source_type)
+        
+        # Update price lines if provided
+        if result.data.green_line or result.data.red_line:
+            from app.models.gomes import PriceLinesModel
+            from decimal import Decimal
+            
+            # Deactivate old lines
+            db.query(PriceLinesModel).filter(
+                PriceLinesModel.ticker == ticker.upper(),
+                PriceLinesModel.valid_until.is_(None)
+            ).update({"valid_until": datetime.utcnow()})
+            
+            # Create new lines
+            new_lines = PriceLinesModel(
+                ticker=ticker.upper(),
+                stock_id=stock.id,
+                green_line=Decimal(str(result.data.green_line)) if result.data.green_line else None,
+                red_line=Decimal(str(result.data.red_line)) if result.data.red_line else None,
+                source=source_type,
+                source_reference=f"{source_type.title()} Update {datetime.utcnow().strftime('%Y-%m-%d')}",
+                effective_from=datetime.utcnow()
+            )
+            db.add(new_lines)
+            db.commit()
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "previous_score": result.score_change + result.data.gomes_score if result.score_change else None,
+            "new_score": result.data.gomes_score,
+            "score_change": result.score_change,
+            "thesis_drift": result.thesis_drift,
+            "action_signal": result.data.action_signal,
+            "source_type": source_type,
+            "analysis_summary": result.analysis_text[:500] + "..." if len(result.analysis_text) > 500 else result.analysis_text,
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
+
+
+# ============================================================================
+# THESIS DRIFT & SCORE HISTORY ENDPOINTS
+# ============================================================================
+
+@router.get("/score-history/{ticker}")
+def get_score_history(
+    ticker: str,
+    limit: int = 30,
+    db: Session = Depends(get_db),
+):
+    """
+    Get historical Gomes scores for a ticker.
+    
+    Used for Thesis Drift visualization - shows how the score
+    evolved over time compared to price movements.
+    
+    Args:
+        ticker: Stock ticker symbol
+        limit: Max number of records (default 30)
+        
+    Returns:
+        List of score history records with timestamps
+    """
+    from sqlalchemy import desc
+    
+    try:
+        # Try to get from score_history table first
+        from app.models.score_history import GomesScoreHistory
+        
+        history = db.query(GomesScoreHistory).filter(
+            GomesScoreHistory.ticker == ticker.upper()
+        ).order_by(desc(GomesScoreHistory.recorded_at)).limit(limit).all()
+        
+        if history:
+            return {
+                "ticker": ticker.upper(),
+                "count": len(history),
+                "history": [
+                    {
+                        "date": h.recorded_at.isoformat() if h.recorded_at else None,
+                        "gomes_score": h.gomes_score,
+                        "thesis_status": h.thesis_status,
+                        "action_signal": h.action_signal,
+                        "price_at_analysis": float(h.price_at_analysis) if h.price_at_analysis else None,
+                        "source": h.analysis_source,
+                    }
+                    for h in history
+                ]
+            }
+    except Exception:
+        pass  # Table may not exist yet, fall back to stocks table
+    
+    # Fallback: Get historical scores from stocks table (versioned records)
+    from app.models.stock import Stock
+    
+    stocks = db.query(Stock).filter(
+        Stock.ticker == ticker.upper()
+    ).order_by(desc(Stock.created_at)).limit(limit).all()
+    
+    return {
+        "ticker": ticker.upper(),
+        "count": len(stocks),
+        "history": [
+            {
+                "date": s.created_at.isoformat() if s.created_at else None,
+                "gomes_score": s.gomes_score,
+                "thesis_status": None,  # Not tracked in stocks table
+                "action_signal": s.action_verdict,
+                "price_at_analysis": None,
+                "source": s.source_type,
+            }
+            for s in stocks
+        ]
+    }
+
+
+@router.get("/drift-alerts")
+def get_drift_alerts(
+    acknowledged: Optional[bool] = None,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+):
+    """
+    Get thesis drift alerts.
+    
+    Returns alerts generated when:
+    - Price rises but score falls (HYPE_AHEAD_OF_FUNDAMENTALS)
+    - Score drops significantly (THESIS_BREAKING)
+    - New accumulation opportunity (ACCUMULATE_SIGNAL)
+    
+    Args:
+        acknowledged: Filter by acknowledgment status
+        limit: Max alerts to return
+    """
+    try:
+        from app.models.score_history import ThesisDriftAlert
+        from sqlalchemy import desc
+        
+        query = db.query(ThesisDriftAlert)
+        
+        if acknowledged is not None:
+            query = query.filter(ThesisDriftAlert.is_acknowledged == acknowledged)
+        
+        alerts = query.order_by(desc(ThesisDriftAlert.created_at)).limit(limit).all()
+        
+        return {
+            "count": len(alerts),
+            "alerts": [
+                {
+                    "id": a.id,
+                    "ticker": a.ticker,
+                    "alert_type": a.alert_type,
+                    "severity": a.severity,
+                    "old_score": a.old_score,
+                    "new_score": a.new_score,
+                    "price_change_pct": float(a.price_change_pct) if a.price_change_pct else None,
+                    "message": a.message,
+                    "is_acknowledged": a.is_acknowledged,
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                }
+                for a in alerts
+            ]
+        }
+    except Exception as e:
+        return {"count": 0, "alerts": [], "note": "Alerts table not initialized yet"}
+
+
+@router.post("/drift-alerts/{alert_id}/acknowledge")
+def acknowledge_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+):
+    """Mark a thesis drift alert as acknowledged"""
+    try:
+        from app.models.score_history import ThesisDriftAlert
+        from datetime import datetime
+        
+        alert = db.query(ThesisDriftAlert).filter(
+            ThesisDriftAlert.id == alert_id
+        ).first()
+        
+        if not alert:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        
+        alert.is_acknowledged = True
+        alert.acknowledged_at = datetime.utcnow()
+        db.commit()
+        
+        return {"success": True, "alert_id": alert_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 

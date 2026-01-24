@@ -20,15 +20,15 @@ interface TopPicksWidgetProps {
 const getRatingBadge = (rating: GomesRating) => {
   switch (rating) {
     case 'STRONG_BUY':
-      return { bg: 'bg-green-500', text: 'text-white', icon: '🚀', label: 'STRONG BUY' };
+      return { bg: 'bg-green-500', text: 'text-white', icon: '', label: 'SILNÝ NÁKUP' };
     case 'BUY':
-      return { bg: 'bg-green-600', text: 'text-white', icon: '✅', label: 'BUY' };
+      return { bg: 'bg-green-600', text: 'text-white', icon: '', label: 'NÁKUP' };
     case 'HOLD':
-      return { bg: 'bg-yellow-600', text: 'text-white', icon: '⏸️', label: 'HOLD' };
+      return { bg: 'bg-yellow-600', text: 'text-white', icon: '', label: 'DRŽET' };
     case 'HIGH_RISK':
-      return { bg: 'bg-red-500', text: 'text-white', icon: '🚨', label: 'HIGH RISK' };
+      return { bg: 'bg-red-500', text: 'text-white', icon: '', label: 'VYSOKÉ RIZIKO' };
     default:
-      return { bg: 'bg-gray-600', text: 'text-white', icon: '❌', label: 'AVOID' };
+      return { bg: 'bg-gray-600', text: 'text-white', icon: '', label: 'VYHNOUT SE' };
   }
 };
 
@@ -72,7 +72,7 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-white">🏆 Top Picks</h3>
+          <h3 className="text-lg font-bold text-white">Nejlepší týpky</h3>
           <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
         </div>
         <div className="space-y-3">
@@ -87,13 +87,13 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
   if (error) {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-red-500/30">
-        <h3 className="text-lg font-bold text-white mb-2">🏆 Top Picks</h3>
+        <h3 className="text-lg font-bold text-white mb-2">Nejlepší týpky</h3>
         <div className="text-red-400 text-sm">{error}</div>
         <button
           onClick={fetchTopPicks}
           className="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition-colors"
         >
-          Retry
+          Zkusit znovu
         </button>
       </div>
     );
@@ -102,15 +102,15 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
   if (rankings.length === 0) {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
-        <h3 className="text-lg font-bold text-white mb-2">🏆 Top Picks</h3>
+        <h3 className="text-lg font-bold text-white mb-2">Nejlepší týpky</h3>
         <p className="text-gray-400 text-sm">
-          No picks matching criteria ({minRating} or better)
+          Žádné týpky odpovídající kritériím ({minRating} nebo lepší)
         </p>
         <button
           onClick={fetchTopPicks}
           className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
         >
-          Refresh
+          Obnovit
         </button>
       </div>
     );
@@ -122,14 +122,14 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            🏆 Top Picks
+            Nejlepší týpky
             <span className="text-sm font-normal text-gray-400">
               ({rankings.length})
             </span>
           </h3>
           {lastUpdate && (
             <div className="text-xs text-gray-500 mt-1">
-              Updated: {lastUpdate.toLocaleTimeString()}
+              Aktualizováno: {lastUpdate.toLocaleTimeString()}
             </div>
           )}
         </div>

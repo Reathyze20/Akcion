@@ -23,6 +23,8 @@ from app.schemas.gomes import (
     ClassifyLifecycleRequest,
     GenerateVerdictRequest,
     GomesDashboardResponse,
+    GomesStockItem,
+    GomesStocksListResponse,
     GomesVerdictResponse,
     ImageLinesImportResponse,
     LifecyclePhaseResponse,
@@ -108,10 +110,10 @@ def get_market_alert(db: Session = Depends(get_db)):
     Get current market alert level and portfolio allocation.
     
     **Alert Levels:**
-    - 🟢 GREEN ALERT (OFFENSE): Aggressively deploying capital - Good time to buy
-    - 🟡 YELLOW ALERT (SELECTIVE): Only best setups
-    - 🟠 ORANGE ALERT (DEFENSE): Reducing exposure
-    - 🔴 RED ALERT (CASH IS KING): Preserve capital
+    - GREEN ALERT (OFFENSE): Aggressively deploying capital - Good time to buy
+    - YELLOW ALERT (SELECTIVE): Only best setups
+    - ORANGE ALERT (DEFENSE): Reducing exposure
+    - RED ALERT (CASH IS KING): Preserve capital
     
     **Ref:** Minute 15:00-18:00 - Market Alert System
     """
@@ -141,7 +143,7 @@ def set_market_alert(
     """
     Set new market alert level.
     
-    ⚠️ This affects ALL investment decisions!
+    WARNING: This affects ALL investment decisions!
     
     **Impact:**
     - YELLOW (SELECTIVE): Speculative positions blocked
@@ -188,9 +190,9 @@ def get_lifecycle_phase(
     Get current lifecycle phase for a stock.
     
     **Phases:**
-    - 🌟 GREAT_FIND: Early opportunity, unknown gem
-    - ⏳ WAIT_TIME: Dead money - DO NOT INVEST
-    - 💰 GOLD_MINE: Proven execution, safe buy
+    - GREAT_FIND: Early opportunity, unknown gem
+    - WAIT_TIME: Dead money - DO NOT INVEST
+    - GOLD_MINE: Proven execution, safe buy
     
     **Ref:** Minute 25:00-31:28 - Stock Life Phases
     """
@@ -263,9 +265,9 @@ def get_price_lines(
     Get price target lines for a stock.
     
     **Lines:**
-    - 🟢 Green Line: Buy zone (undervalued)
-    - 🔴 Red Line: Sell zone (overvalued)
-    - ⚪ Grey Line: Neutral zone
+    - Green Line: Buy zone (undervalued)
+    - Red Line: Sell zone (overvalued)
+    - Grey Line: Neutral zone
     
     **Ref:** Minute 35:00 - Price Target Lines
     """
@@ -394,14 +396,14 @@ def generate_verdict(
     6. ML prediction integration
     
     **Verdict Types:**
-    - ✅ STRONG_BUY: Score 9-10, all filters pass
-    - ✅ BUY: Score 7-8
-    - 📊 ACCUMULATE: Buy on dips
-    - ⏸️ HOLD: Keep position
-    - ✂️ TRIM: Reduce position
-    - 🚫 SELL: Exit
-    - ❌ AVOID: Don't enter
-    - 🔒 BLOCKED: Failed Gomes filter
+    - STRONG_BUY: Score 9-10, all filters pass
+    - BUY: Score 7-8
+    - ACCUMULATE: Buy on dips
+    - HOLD: Keep position
+    - TRIM: Reduce position
+    - SELL: Exit
+    - AVOID: Don't enter
+    - BLOCKED: Failed Gomes filter
     """
     try:
         service = GomesIntelligenceService(db)
@@ -588,6 +590,67 @@ def calculate_position_size(
             allowed_at_current_alert=limit.max_portfolio_pct > 0,
             current_alert=market_alert.value,
             reasoning=limit.reasoning
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# ML STOCKS LIST ENDPOINT
+# ============================================================================
+
+@router.get("/ml-stocks", response_model=GomesStocksListResponse)
+def get_ml_stocks_list(db: Session = Depends(get_db)):
+    """
+    Get all Gomes stocks with price lines for ML prediction page.
+    
+    Returns list of stocks from Gomes videos with:
+    - Gomes score and sentiment
+    - Green/Red price lines
+    - Current ML prediction status
+    - Lifecycle phase
+    
+    **Use Case:** ML Prediction page with stock list and chart detail.
+    """
+    try:
+        service = GomesIntelligenceService(db)
+        
+        # Get market alert
+        market_alert = service.get_current_market_alert()
+        
+        # Get stocks with lines
+        stocks_data = service.get_gomes_stocks_with_lines()
+        
+        # Convert to response models
+        stocks = [
+            GomesStockItem(
+                ticker=s["ticker"],
+                company_name=s.get("company_name"),
+                gomes_score=s.get("gomes_score"),
+                sentiment=s.get("sentiment"),
+                action_verdict=s.get("action_verdict"),
+                lifecycle_phase=s.get("lifecycle_phase"),
+                green_line=s.get("green_line"),
+                red_line=s.get("red_line"),
+                current_price=s.get("current_price"),
+                price_zone=s.get("price_zone"),
+                price_position_pct=s.get("price_position_pct"),
+                has_ml_prediction=s.get("has_ml_prediction", False),
+                ml_direction=s.get("ml_direction"),
+                ml_confidence=s.get("ml_confidence"),
+                video_date=s.get("video_date"),
+                notes=s.get("notes"),
+            )
+            for s in stocks_data
+        ]
+        
+        return GomesStocksListResponse(
+            stocks=stocks,
+            total_count=len(stocks),
+            stocks_with_lines=len([s for s in stocks if s.green_line or s.red_line]),
+            stocks_with_ml=len([s for s in stocks if s.has_ml_prediction]),
+            market_alert=market_alert.value
         )
         
     except Exception as e:

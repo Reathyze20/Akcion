@@ -121,7 +121,7 @@ class NewsMonitorService:
         self.settings = Settings()
         self.polygon_api_key = self.settings.massive_api_key  # Polygon.io API key
         
-        logger.info("📰 News Monitor Service initialized")
+        logger.info("News Monitor Service initialized")
     
     async def fetch_news_polygon(
         self, 
@@ -165,7 +165,7 @@ class NewsMonitorService:
                 data = response.json()
                 
                 articles = data.get('results', [])
-                logger.info(f"📰 Fetched {len(articles)} news articles for {ticker}")
+                logger.info(f"Fetched {len(articles)} news articles for {ticker}")
                 return articles
                 
         except Exception as e:
@@ -318,7 +318,7 @@ class NewsMonitorService:
                         }
                     ))
                     
-                    logger.info(f"🎯 ENTRY ZONE ALERT: {item.ticker} at ${current_price:.2f}")
+                    logger.info(f"ENTRY ZONE ALERT: {item.ticker} at ${current_price:.2f}")
             
             return alerts
             
@@ -374,7 +374,7 @@ class NewsMonitorService:
             ActiveWatchlist.is_active == True
         ).all()
         
-        logger.info(f"📡 Scanning {len(watchlist)} watchlist items...")
+        logger.info(f"Scanning {len(watchlist)} watchlist items...")
         
         for item in watchlist:
             # Get Gomes context if available
@@ -411,7 +411,7 @@ class NewsMonitorService:
         ), reverse=True)
         
         logger.info(
-            f"📊 Scan complete: {len(news_alerts)} news alerts, "
+            f"Scan complete: {len(news_alerts)} news alerts, "
             f"{len(price_alerts)} price alerts"
         )
         

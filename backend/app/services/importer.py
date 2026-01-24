@@ -21,7 +21,6 @@ from io import StringIO
 from typing import Final
 
 import pandas as pd
-import yfinance as yf
 
 from ..models.portfolio import BrokerType
 from .market_data import MarketDataService
@@ -101,7 +100,7 @@ def resolve_ticker_from_isin(isin: str) -> str:
     """
     Resolve ticker symbol from ISIN code.
     
-    Uses local mapping first, then tries yfinance for US stocks.
+    Uses local mapping only (no external API calls).
     
     Args:
         isin: ISIN code (e.g., US0378331005)
@@ -113,17 +112,8 @@ def resolve_ticker_from_isin(isin: str) -> str:
     if isin in ISIN_TO_TICKER:
         return ISIN_TO_TICKER[isin]
     
-    # For US stocks, try yfinance lookup
-    if isin.startswith("US"):
-        try:
-            ticker_obj = yf.Ticker(isin)
-            info = ticker_obj.info
-            if info and "symbol" in info:
-                return info["symbol"]
-        except Exception as e:
-            logger.debug(f"yfinance lookup failed for {isin}: {e}")
-    
     # Return ISIN as-is if we can't resolve it
+    logger.debug(f"No local mapping for ISIN {isin}")
     return isin
 
 
@@ -243,8 +233,11 @@ class BrokerCSVParser:
             ValueError: If required columns are missing or parsing fails
         """
         try:
-            # Read CSV with latin-1 encoding (robust for Czech characters)
-            df = pd.read_csv(StringIO(content), encoding="latin-1")
+            # Try UTF-8 first (most common), fallback to latin-1
+            try:
+                df = pd.read_csv(StringIO(content), encoding="utf-8")
+            except UnicodeDecodeError:
+                df = pd.read_csv(StringIO(content), encoding="latin-1")
             logger.debug(f"Loaded Degiro CSV with {len(df)} rows")
             
             # Normalize column names
@@ -265,8 +258,14 @@ class BrokerCSVParser:
                 df.columns, ["množství", "mno", "qty", "quantity", "aantal", "amount", "shares"],
                 partial_match=True,
             )
-            price_col = BrokerCSVParser._find_column(
-                df.columns, ["hodnota v eur", "value in eur", "uzav", "closing"],
+            # DEGIRO: "Uzavírací" = closing price per share, "Hodnota v EUR" = total value
+            # We need price per share, not total value
+            price_per_share_col = BrokerCSVParser._find_column(
+                df.columns, ["uzavírací", "uzav", "closing", "close price", "koers"],
+                partial_match=True,
+            )
+            total_value_col = BrokerCSVParser._find_column(
+                df.columns, ["hodnota v eur", "value in eur", "waarde in eur", "hodnota v"],
                 partial_match=True,
             )
             currency_col = BrokerCSVParser._find_column(
@@ -279,10 +278,19 @@ class BrokerCSVParser:
                 raise ValueError(f"Could not find ticker/symbol column. Available: {list(df.columns)}")
             if not quantity_col:
                 raise ValueError(f"Could not find quantity column. Available: {list(df.columns)}")
+            
+            # Prefer price per share, fallback to calculating from total value
+            price_col = price_per_share_col
+            use_total_value = False
+            if not price_col and total_value_col:
+                price_col = total_value_col
+                use_total_value = True
+                logger.info("Using total value column - will divide by shares")
+            
             if not price_col:
                 raise ValueError(f"Could not find price column. Available: {list(df.columns)}")
             
-            logger.debug(f"Detected columns: ticker={ticker_col}, qty={quantity_col}, price={price_col}")
+            logger.debug(f"Detected columns: ticker={ticker_col}, qty={quantity_col}, price={price_col}, use_total_value={use_total_value}")
             
             # Extract currencies before renaming
             extracted_currencies = BrokerCSVParser._extract_currencies_from_column(df, currency_col)
@@ -291,7 +299,7 @@ class BrokerCSVParser:
             rename_map = {
                 ticker_col: "ticker",
                 quantity_col: "shares_count",
-                price_col: "avg_cost",
+                price_col: "price_value",  # Could be per-share or total
             }
             if product_col:
                 rename_map[product_col] = "company_name"
@@ -300,7 +308,7 @@ class BrokerCSVParser:
             # Parse rows
             positions = []
             for idx, row in df.iterrows():
-                position = BrokerCSVParser._parse_degiro_row(row, idx, extracted_currencies)
+                position = BrokerCSVParser._parse_degiro_row(row, idx, extracted_currencies, use_total_value)
                 if position:
                     positions.append(position)
             
@@ -315,23 +323,67 @@ class BrokerCSVParser:
         row: pd.Series,
         idx: int,
         extracted_currencies: dict[int, str],
+        use_total_value: bool = False,
     ) -> dict | None:
         """Parse a single Degiro CSV row."""
         try:
             ticker_raw = str(row["ticker"]).strip().upper()
             
-            # Skip empty/invalid tickers
+            # Skip empty/invalid tickers or cash positions
             if not ticker_raw or ticker_raw == "NAN" or pd.isna(ticker_raw):
                 return None
             
+            # Get company name from Produkt column
+            company_name = str(row.get("company_name", "")).strip()
+            if company_name.lower() == "nan" or not company_name:
+                company_name = None
+            
+            # Skip cash positions
+            if company_name and "CASH" in company_name.upper():
+                return None
+            
+            # DEGIRO format: Could be "AEHR | US00760J1088" or just "US00760J1088"
+            if "|" in ticker_raw:
+                parts = ticker_raw.split("|")
+                symbol_part = parts[0].strip()
+                isin_part = parts[1].strip() if len(parts) > 1 else ""
+                ticker_raw = symbol_part if symbol_part else isin_part
+            
+            # Try to resolve ISIN to ticker using company name
+            ticker = ticker_raw
+            if MarketDataService._is_isin(ticker_raw) and company_name:
+                # Try to get ticker from company name
+                resolved = MarketDataService.resolve_ticker_by_name(company_name)
+                if resolved:
+                    ticker = resolved
+                    logger.debug(f"Resolved {ticker_raw} -> {ticker} via company name '{company_name}'")
+            
             # Handle Czech number format (comma as decimal separator)
             shares_str = str(row["shares_count"]).replace(",", ".").strip()
-            price_str = str(row["avg_cost"]).replace(",", ".").strip()
+            price_str = str(row["price_value"]).replace(",", ".").strip()
             
-            # Remove currency suffix from price (e.g., "28.76 EUR" -> "28.76")
+            # Remove currency prefix/suffix (e.g., "$ 28.04" or "28.76 EUR")
+            price_str = price_str.replace("$", "").replace("€", "").replace("£", "").strip()
             price_parts = price_str.split()
             if len(price_parts) > 1:
-                price_str = price_parts[0]
+                # Could be "28.76 EUR" or "EUR 28.76"
+                for part in price_parts:
+                    try:
+                        price_str = part.replace(",", ".")
+                        float(price_str)
+                        break
+                    except ValueError:
+                        continue
+            
+            shares = float(shares_str)
+            price_value = float(price_str)
+            
+            # If using total value column, calculate per-share price
+            if use_total_value and shares > 0:
+                avg_cost = price_value / shares
+                logger.debug(f"Row {idx}: total_value={price_value}, shares={shares}, avg_cost={avg_cost:.4f}")
+            else:
+                avg_cost = price_value
             
             # Determine currency (prefer extracted, fallback to column, then USD)
             currency = extracted_currencies.get(idx, "USD")
@@ -340,17 +392,14 @@ class BrokerCSVParser:
                 if currency_val and currency_val != "NAN" and not pd.isna(currency_val):
                     currency = currency_val
             
-            # Resolve ticker from ISIN if needed
-            company_name = str(row.get("company_name", "")).strip()
-            ticker = MarketDataService.fix_ticker(ticker_raw, company_name) or ticker_raw
-            
-            logger.debug(f"Row {idx}: {ticker_raw} -> {ticker} ({currency})")
+            logger.info(f"Parsed: {ticker} ({company_name}), {shares} shares @ {avg_cost:.2f} {currency}")
             
             return {
                 "ticker": ticker,
-                "shares_count": float(shares_str),
-                "avg_cost": float(price_str),
+                "shares_count": shares,
+                "avg_cost": avg_cost,
                 "currency": currency,
+                "company_name": company_name,
             }
         except (ValueError, KeyError) as e:
             logger.warning(f"Degiro row {idx} parse error: {e}")
@@ -549,9 +598,10 @@ def validate_position_data(positions: list[dict]) -> list[dict]:
                 "shares_count": shares,
                 "avg_cost": cost,
                 "currency": currency,
+                "company_name": pos.get("company_name"),  # Preserve company name
             })
         except (ValueError, TypeError):
             continue
     
-    logger.debug(f"Validated {len(validated)} of {len(positions)} positions")
+    logger.info(f"Validated {len(validated)} of {len(positions)} positions")
     return validated

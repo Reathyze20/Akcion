@@ -1,16 +1,21 @@
 """
-Master Signal API Routes
-=========================
+Master Signal API Routes v2.0
+==============================
 
-API endpoints for Master Signal Aggregator and Action Center.
+Simplified API endpoints using 3-pillar system:
+1. Thesis Tracker (60%) - Gomes Intelligence
+2. Valuation & Cash (25%) - Cash runway, dilution risk
+3. Weinstein Guard (15%) - 30-week moving average
 
-Endpoints:
-- GET /api/master-signal/{ticker} - Get buy confidence for a ticker
-- GET /api/action-center/opportunities - Today's top opportunities
-- GET /api/action-center/watchlist - Full watchlist with confidence scores
+REMOVED:
+- ML Predictions (micro-caps are unpredictable)
+- Sentiment Analysis (no Bloomberg for micro-caps)
+- Complex Technical Analysis (RSI/MACD useless for low volume)
+- Backtesting (spreads distort results)
 
-Author: GitHub Copilot with Claude Sonnet 4.5
-Date: 2026-01-17
+Author: GitHub Copilot with Claude Opus 4.5
+Date: 2026-01-24
+Version: 2.0.0
 """
 
 from typing import Optional
@@ -20,10 +25,10 @@ from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
 from app.trading.master_signal import (
-    MasterSignalAggregator,
-    MasterSignalResult,
-    calculate_buy_confidence,
-    get_top_opportunities,
+    MasterSignalAggregatorV2,
+    MasterSignalResultV2,
+    calculate_master_signal_v2,
+    get_top_opportunities_v2,
 )
 
 
@@ -43,40 +48,38 @@ async def get_master_signal(
     db: Session = Depends(get_db),
 ) -> dict:
     """
-    Get Master Signal (Buy Confidence) for a ticker.
+    Get Master Signal v2.0 (Buy Confidence) for a ticker.
+    
+    Uses 3-pillar system:
+    - Thesis Tracker (60%): Gomes Intelligence + milestones + red flags
+    - Valuation & Cash (25%): Cash runway, burn rate, dilution risk
+    - Weinstein Guard (15%): 30-week moving average trend filter
     
     Returns:
-        MasterSignalResult with buy_confidence (0-100) and component breakdown
+        MasterSignalResultV2 with buy_confidence (0-100) and component breakdown
         
     Example:
-        GET /api/master-signal/AAPL?user_id=1
+        GET /api/master-signal/GKPRF
         
         Response:
         {
-            "ticker": "AAPL",
-            "buy_confidence": 82.5,
-            "signal_strength": "STRONG_BUY",
+            "ticker": "GKPRF",
+            "buy_confidence": 72.5,
+            "signal_strength": "BUY",
             "components": {
-                "gomes_score": 90.0,
-                "ml_confidence": 78.5,
-                "technical_score": 75.0,
-                "gap_score": 100.0,
-                "risk_reward_score": 80.0
+                "thesis_tracker": {"score": 85.0, "verdict": "BUY", ...},
+                "valuation_cash": {"score": 70.0, "runway_months": 18, ...},
+                "weinstein_guard": {"score": 55.0, "phase": "PHASE_2_ADVANCE", ...}
             },
-            "verdict": "STRONG_BUY",
-            "entry_price": 185.50,
-            "target_price": 205.00,
-            "stop_loss": 167.00,
-            "risk_reward_ratio": 2.3,
-            "kelly_size": 0.15
+            "blocked": false,
+            "verdict": "BUY"
         }
     """
     try:
-        result = calculate_buy_confidence(
+        result = calculate_master_signal_v2(
             db=db,
             ticker=ticker.upper(),
             user_id=user_id,
-            current_price=current_price,
         )
         
         return result.to_dict()
@@ -117,7 +120,7 @@ async def get_master_signals_batch(
             detail="Maximum 50 tickers per request"
         )
     
-    aggregator = MasterSignalAggregator(db)
+    aggregator = MasterSignalAggregatorV2(db)
     results = []
     
     for ticker in ticker_list:
@@ -182,18 +185,26 @@ async def get_action_center_opportunities(
         GET /api/action-center/opportunities?user_id=1&min_confidence=70
     """
     try:
-        opportunities = get_top_opportunities(
+        # Get tickers from watchlist
+        from app.models.trading import ActiveWatchlist
+        watchlist_items = db.query(ActiveWatchlist).filter(
+            ActiveWatchlist.is_active == True
+        ).all()
+        
+        tickers = [item.ticker for item in watchlist_items]
+        
+        opportunities = get_top_opportunities_v2(
             db=db,
-            user_id=user_id,
+            tickers=tickers,
             min_confidence=min_confidence,
-            limit=limit,
+            exclude_blocked=True,
         )
         
         from datetime import datetime
         
         return {
-            "opportunities": [opp.to_dict() for opp in opportunities],
-            "count": len(opportunities),
+            "opportunities": [opp.to_dict() for opp in opportunities[:limit]],
+            "count": len(opportunities[:limit]),
             "last_updated": datetime.utcnow().isoformat(),
         }
         
@@ -237,7 +248,7 @@ async def get_action_center_watchlist(
             ActiveWatchlist.is_active == True
         ).all()
         
-        aggregator = MasterSignalAggregator(db)
+        aggregator = MasterSignalAggregatorV2(db)
         results = []
         
         for item in watchlist_items:

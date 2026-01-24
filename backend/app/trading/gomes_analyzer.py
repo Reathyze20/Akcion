@@ -42,8 +42,7 @@ from sqlalchemy import desc, func, cast
 from sqlalchemy.dialects.postgresql import ARRAY, TEXT
 
 from app.models.analysis import AnalystTranscript, SWOTAnalysis
-from app.models.trading import ActiveWatchlist, MLPrediction, OHLCVData
-from app.trading.ml_engine import MLPredictionEngine
+from app.models.trading import ActiveWatchlist, OHLCVData
 
 
 # ============================================================================
@@ -70,7 +69,6 @@ class GomesScore:
     story_score: int          # 0-2 (catalyst detected)
     breakout_score: int       # 0-2 (near 52w high + volume)
     insider_score: int        # 0-2 (insider buying)
-    ml_score: int            # 0-2 (PatchTST > 5%)
     volume_score: int        # 0-1 (volume trend)
     earnings_penalty: int    # 0 or -5
     
@@ -83,7 +81,6 @@ class GomesScore:
     # Data sources
     has_transcript: bool
     has_swot: bool
-    has_ml_prediction: bool
     earnings_date: Optional[datetime]
 
 
@@ -233,19 +230,16 @@ class GomesAnalyzer:
     def __init__(
         self,
         db_session: Session,
-        ml_engine: Optional[MLPredictionEngine] = None,
-        llm_client: Optional[Any] = None,  # OpenAI/Anthropic client
+        llm_client: Optional[Any] = None,  # Gemini/OpenAI/Anthropic client
         logger: Optional[logging.Logger] = None
     ):
         """
         Args:
             db_session: SQLAlchemy database session
-            ml_engine: ML prediction engine (pro PatchTST predikce)
-            llm_client: LLM client pro AI analýzu (OpenAI/Claude)
+            llm_client: LLM client pro AI analýzu (Gemini/OpenAI/Claude)
             logger: Logger instance
         """
         self.db = db_session
-        self.ml_engine = ml_engine or MLPredictionEngine(db_session)
         self.llm_client = llm_client
         self.logger = logger or logging.getLogger(__name__)
         
@@ -272,14 +266,13 @@ class GomesAnalyzer:
             ValueError: Invalid ticker
             RuntimeError: Critical error během analýzy
         """
-        self.logger.info(f"🎯 Gomes Investment Committee: Analyzing {ticker}")
+        self.logger.info(f"Gomes Investment Committee: Analyzing {ticker}")
         
         try:
             # Initialize score components
             story_score = 0
             breakout_score = 0
             insider_score = 0
-            ml_score = 0
             volume_score = 0
             earnings_penalty = 0
             
@@ -295,11 +288,11 @@ class GomesAnalyzer:
             if catalyst_analysis and catalyst_analysis.get("has_strong_catalyst"):
                 story_score = 2
                 reasoning_parts.append(
-                    f"✅ Strong Catalyst: {catalyst_analysis['catalyst_description']}"
+                    f"Strong Catalyst: {catalyst_analysis['catalyst_description']}"
                 )
                 confidence = catalyst_analysis.get("conviction_level", "MEDIUM")
             else:
-                reasoning_parts.append("❌ No compelling catalyst identified")
+                reasoning_parts.append("No compelling catalyst identified")
                 risk_factors.append("Weak story - no clear catalyst")
             
             # ----------------------------------------------------------------
@@ -309,7 +302,7 @@ class GomesAnalyzer:
             
             if insider_buying:
                 insider_score = 2
-                reasoning_parts.append("✅ Insider Buying detected (Bullish)")
+                reasoning_parts.append("Insider Buying detected (Bullish)")
             
             # ----------------------------------------------------------------
             # 3. EARNINGS DATE CHECK (CRITICAL)
@@ -323,7 +316,7 @@ class GomesAnalyzer:
                 if days_to_earnings < 14:
                     earnings_penalty = -5
                     reasoning_parts.append(
-                        f"⚠️ EARNINGS RISK: {days_to_earnings} days until earnings"
+                        f"EARNINGS RISK: {days_to_earnings} days until earnings"
                     )
                     risk_factors.append(
                         f"Earnings in {days_to_earnings} days - Gomes rule: EXIT"
@@ -338,33 +331,17 @@ class GomesAnalyzer:
             if breakout_analysis.get("near_52w_high") and breakout_analysis.get("volume_surge"):
                 breakout_score = 2
                 reasoning_parts.append(
-                    f"✅ Breakout Pattern: {breakout_analysis['distance_from_high']:.1f}% from 52w high, "
+                    f"Breakout Pattern: {breakout_analysis['distance_from_high']:.1f}% from 52w high, "
                     f"Volume +{breakout_analysis['volume_increase']:.0f}%"
                 )
             
             # Volume trend bonus
             if breakout_analysis.get("volume_trend_positive"):
                 volume_score = 1
-                reasoning_parts.append("✅ Volume trend positive (20d)")
+                reasoning_parts.append("Volume trend positive (20d)")
             
             # ----------------------------------------------------------------
-            # 5. ML PREDICTION (PatchTST)
-            # ----------------------------------------------------------------
-            ml_prediction = self._get_ml_prediction(ticker, force_refresh)
-            
-            if ml_prediction:
-                predicted_return = ml_prediction.get("predicted_return", 0)
-                
-                if predicted_return > 5.0:  # > 5% growth
-                    ml_score = 2
-                    reasoning_parts.append(
-                        f"✅ ML Prediction: +{predicted_return:.1f}% (5-day)"
-                    )
-                elif predicted_return < -5.0:
-                    risk_factors.append(f"ML predicts decline: {predicted_return:.1f}%")
-            
-            # ----------------------------------------------------------------
-            # 5.5 HISTORICAL MENTIONS (Timeline Analysis)
+            # 5. HISTORICAL MENTIONS (Timeline Analysis)
             # ----------------------------------------------------------------
             history_score = 0
             history_analysis = self._get_historical_mentions(ticker)
@@ -376,7 +353,7 @@ class GomesAnalyzer:
                 if weighted_sentiment > 0.3:
                     history_score = 1  # Bonus for consistent bullish history
                     reasoning_parts.append(
-                        f"📊 History: {history_analysis['total_mentions']} mentions, "
+                        f"History: {history_analysis['total_mentions']} mentions, "
                         f"sentiment +{weighted_sentiment*100:.0f}% (Bullish trend)"
                     )
                 elif weighted_sentiment < -0.3:
@@ -384,12 +361,12 @@ class GomesAnalyzer:
                         f"Historical sentiment negative ({weighted_sentiment*100:.0f}%)"
                     )
                     reasoning_parts.append(
-                        f"📊 History: {history_analysis['total_mentions']} mentions, "
+                        f"History: {history_analysis['total_mentions']} mentions, "
                         f"sentiment {weighted_sentiment*100:.0f}% (Bearish trend)"
                     )
                 else:
                     reasoning_parts.append(
-                        f"📊 History: {history_analysis['total_mentions']} mentions, "
+                        f"History: {history_analysis['total_mentions']} mentions, "
                         f"sentiment neutral"
                     )
                 
@@ -406,7 +383,6 @@ class GomesAnalyzer:
                 story_score +
                 breakout_score +
                 insider_score +
-                ml_score +
                 volume_score +
                 history_score +
                 earnings_penalty
@@ -441,7 +417,6 @@ class GomesAnalyzer:
                 story_score=story_score,
                 breakout_score=breakout_score,
                 insider_score=insider_score,
-                ml_score=ml_score,
                 volume_score=volume_score,
                 earnings_penalty=earnings_penalty,
                 analysis_timestamp=datetime.now(),
@@ -450,18 +425,17 @@ class GomesAnalyzer:
                 risk_factors=risk_factors,
                 has_transcript=bool(catalyst_analysis),
                 has_swot=self._has_swot_analysis(ticker),
-                has_ml_prediction=bool(ml_prediction),
                 earnings_date=earnings_date
             )
             
             self.logger.info(
-                f"✅ {ticker} Analysis Complete: {total_score}/10 ({rating.value})"
+                f"{ticker} Analysis Complete: {total_score}/10 ({rating.value})"
             )
             
             return gomes_score
             
         except Exception as e:
-            self.logger.error(f"❌ Error analyzing {ticker}: {str(e)}")
+            self.logger.error(f"Error analyzing {ticker}: {str(e)}")
             raise RuntimeError(f"Gomes analysis failed for {ticker}: {str(e)}")
     
     # ========================================================================
@@ -610,41 +584,6 @@ class GomesAnalyzer:
         except Exception as e:
             self.logger.error(f"Breakout analysis failed for {ticker}: {str(e)}")
             return result
-    
-    def _get_ml_prediction(
-        self,
-        ticker: str,
-        force_refresh: bool
-    ) -> Optional[Dict[str, Any]]:
-        """Get ML prediction from PatchTST"""
-        try:
-            if force_refresh:
-                return self.ml_engine.predict(ticker, save_to_db=True)
-            else:
-                # Try to get recent prediction from DB
-                recent_pred = (
-                    self.db.query(MLPrediction)
-                    .filter(MLPrediction.ticker == ticker)
-                    .filter(
-                        MLPrediction.prediction_date >= datetime.now() - timedelta(hours=24)
-                    )
-                    .order_by(desc(MLPrediction.prediction_date))
-                    .first()
-                )
-                
-                if recent_pred:
-                    return {
-                        "predicted_return": float(recent_pred.predicted_return),
-                        "confidence": recent_pred.confidence_score,
-                        "quality": recent_pred.prediction_type
-                    }
-                else:
-                    # Generate new prediction
-                    return self.ml_engine.predict(ticker, save_to_db=True)
-                    
-        except Exception as e:
-            self.logger.error(f"ML prediction failed for {ticker}: {str(e)}")
-            return None
     
     def _get_historical_mentions(self, ticker: str, limit: int = 10) -> Dict[str, Any]:
         """

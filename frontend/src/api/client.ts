@@ -36,6 +36,19 @@ import type {
   TranscriptImportRequest,
   TranscriptImportResponse,
   TranscriptSummary,
+  // ML Stocks types
+  GomesMLStocksResponse,
+  // Price Lines History
+  PriceLinesHistoryResponse,
+  // Score History & Kelly
+  ScoreHistoryResponse,
+  DriftAlertsResponse,
+  AllocationPlanResponse,
+  FamilyAuditResponse,
+  // Deep DD
+  DeepDDResponse,
+  StockUpdateResponse,
+  PriceUpdateResponse,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002';
@@ -225,6 +238,44 @@ class ApiClient {
     return response.data;
   }
 
+  async addPosition(
+    portfolioId: number,
+    data: {
+      ticker: string;
+      shares_count: number;
+      avg_cost: number;
+      current_price?: number;
+      company_name?: string;
+    }
+  ): Promise<{
+    success: boolean;
+    action: 'created' | 'updated';
+    position: {
+      id: number;
+      ticker: string;
+      shares_count: number;
+      avg_cost: number;
+      current_price: number;
+      market_value: number;
+    };
+  }> {
+    const response = await this.client.post(
+      `/api/portfolio/portfolios/${portfolioId}/positions`,
+      data
+    );
+    return response.data;
+  }
+
+  async removePosition(
+    portfolioId: number,
+    ticker: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.delete(
+      `/api/portfolio/portfolios/${portfolioId}/positions/${ticker}`
+    );
+    return response.data;
+  }
+
   async refreshPrices(portfolioId?: number): Promise<PriceRefreshResponse> {
     const response = await this.client.post<PriceRefreshResponse>(
       '/api/portfolio/refresh',
@@ -246,7 +297,14 @@ class ApiClient {
 
   async updatePosition(
     positionId: number,
-    data: { shares_count?: number; avg_cost?: number }
+    data: {
+      shares_count?: number;
+      avg_cost?: number;
+      current_price?: number;
+      currency?: string;
+      company_name?: string;
+      ticker?: string;
+    }
   ): Promise<Position> {
     const response = await this.client.put<Position>(
       `/api/portfolio/positions/${positionId}`,
@@ -457,9 +515,154 @@ class ApiClient {
    */
   async processTranscriptAI(
     transcriptId: number
-  ): Promise<{ message: string; transcript_id: number; mentions_count: number; tickers: string[] }> {
+  ): Promise<{ message: string; transcript_id: number; mentions_processed: number; price_lines_created: number; tickers: string[] }> {
     const response = await this.client.post(
       `/api/gomes/transcripts/${transcriptId}/process`
+    );
+    return response.data;
+  }
+
+  /**
+   * Get price lines history for a ticker
+   */
+  async getPriceLinesHistory(ticker: string): Promise<PriceLinesHistoryResponse> {
+    const response = await this.client.get<PriceLinesHistoryResponse>(
+      `/api/gomes/ticker/${ticker}/price-lines-history`
+    );
+    return response.data;
+  }
+
+  // ==================== Gomes Intelligence ML Stocks ====================
+
+  /**
+   * Get all Gomes stocks with price lines for ML prediction page
+   */
+  async getGomesMLStocks(): Promise<GomesMLStocksResponse> {
+    const response = await this.client.get<GomesMLStocksResponse>(
+      '/api/intelligence/ml-stocks'
+    );
+    return response.data;
+  }
+
+  // ==================== Score History & Thesis Drift ====================
+
+  /**
+   * Get score history for a ticker
+   */
+  async getScoreHistory(ticker: string): Promise<ScoreHistoryResponse> {
+    const response = await this.client.get<ScoreHistoryResponse>(
+      `/api/gomes/score-history/${ticker}`
+    );
+    return response.data;
+  }
+
+  /**
+   * Get unacknowledged thesis drift alerts
+   */
+  async getDriftAlerts(unacknowledgedOnly: boolean = true): Promise<DriftAlertsResponse> {
+    const response = await this.client.get<DriftAlertsResponse>(
+      '/api/gomes/drift-alerts',
+      { params: { unacknowledged_only: unacknowledgedOnly } }
+    );
+    return response.data;
+  }
+
+  /**
+   * Acknowledge a drift alert
+   */
+  async acknowledgeDriftAlert(alertId: number): Promise<{ success: boolean }> {
+    const response = await this.client.post(`/api/gomes/drift-alerts/${alertId}/acknowledge`);
+    return response.data;
+  }
+
+  // ==================== Kelly Allocator ====================
+
+  /**
+   * Get allocation recommendations for a portfolio
+   */
+  async getAllocationPlan(
+    portfolioId: number, 
+    availableCzk: number, 
+    availableEur: number
+  ): Promise<AllocationPlanResponse> {
+    const response = await this.client.post<AllocationPlanResponse>(
+      `/api/portfolio/allocate/${portfolioId}`,
+      null,
+      { 
+        params: { 
+          available_czk: availableCzk, 
+          available_eur: availableEur 
+        } 
+      }
+    );
+    return response.data;
+  }
+
+  /**
+   * Get family audit - gaps between portfolios
+   */
+  async getFamilyAudit(): Promise<FamilyAuditResponse> {
+    const response = await this.client.get<FamilyAuditResponse>(
+      '/api/portfolio/family-audit'
+    );
+    return response.data;
+  }
+
+  // ==================== Deep Due Diligence ====================
+
+  /**
+   * Run Deep Due Diligence analysis on a transcript
+   */
+  async runDeepDD(
+    transcript: string, 
+    ticker?: string,
+    saveToDb: boolean = true
+  ): Promise<DeepDDResponse> {
+    const params = new URLSearchParams();
+    params.append('transcript', transcript);
+    if (ticker) params.append('ticker', ticker);
+    params.append('save_to_db', String(saveToDb));
+    
+    const response = await this.client.post<DeepDDResponse>(
+      `/api/gomes/deep-dd?${params.toString()}`
+    );
+    return response.data;
+  }
+
+  /**
+   * Update existing stock with new analysis (earnings, news, chat)
+   */
+  async updateStockAnalysis(
+    ticker: string,
+    transcript: string,
+    sourceType: 'earnings' | 'news' | 'chat' | 'transcript' | 'manual' = 'manual'
+  ): Promise<StockUpdateResponse> {
+    const params = new URLSearchParams();
+    params.append('transcript', transcript);
+    params.append('source_type', sourceType);
+    
+    const response = await this.client.post<StockUpdateResponse>(
+      `/api/gomes/update-stock/${ticker}?${params.toString()}`
+    );
+    return response.data;
+  }
+
+  /**
+   * Manually update stock price (when API is unavailable)
+   */
+  async updateStockPrice(
+    ticker: string,
+    currentPrice: number,
+    greenLine?: number,
+    redLine?: number
+  ): Promise<PriceUpdateResponse> {
+    const response = await this.client.put<PriceUpdateResponse>(
+      `/api/stocks/${ticker}/price`,
+      {
+        current_price: currentPrice,
+        green_line: greenLine,
+        red_line: redLine,
+      }
     );
     return response.data;
   }
@@ -468,6 +671,24 @@ class ApiClient {
 
   async healthCheck(): Promise<{ status: string; services: Record<string, string> }> {
     const response = await this.client.get('/health');
+    return response.data;
+  }
+
+  // ==================== Currency Exchange Rates ====================
+
+  /**
+   * Get all exchange rates to CZK from Czech National Bank
+   */
+  async getExchangeRates(): Promise<{ rates: Record<string, number>; base: string }> {
+    const response = await this.client.get('/api/currency/rates');
+    return response.data;
+  }
+
+  /**
+   * Get exchange rate for specific currency to CZK
+   */
+  async getExchangeRate(currency: string): Promise<{ currency: string; rate_to_czk: number; base: string }> {
+    const response = await this.client.get(`/api/currency/rate/${currency}`);
     return response.data;
   }
 }

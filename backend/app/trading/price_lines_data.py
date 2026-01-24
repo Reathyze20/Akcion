@@ -386,7 +386,7 @@ def print_verification_report():
     print("="*70)
     
     for lines in EXTRACTED_LINES:
-        status = "✅ VERIFIED" if lines.verified else "⚠️ NEEDS REVIEW"
+        status = "VERIFIED" if lines.verified else "NEEDS REVIEW"
         print(f"\n{lines.ticker} - {status}")
         print(f"  Image: {lines.image_path}")
         print(f"  Green Line: ${lines.green_line:.2f}" if lines.green_line else "  Green Line: N/A")

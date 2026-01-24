@@ -10,12 +10,12 @@ Akcion je fiduciární investiční platforma využívající AI (Google Gemini)
 
 ### Klíčové funkce
 
-- **AI Analýza** - Gemini Pro s Google Search pro real-time data
+- **AI Analýza** - Gemini 2.5 Pro s Deep Due Diligence
 - **The Gomes Rules** - Information Arbitrage, Catalysts, Risk Assessment
 - **Fiduciární standard** - Agresivní extrakce se scoring systémem 1-10
 - **Multi-Portfolio** - Správa portfolií pro více majitelů
 - **Multi-Broker** - Import z Degiro, Trading212, XTB
-- **Real-Time ceny** - Massive.com API + yfinance fallback
+- **Kelly Allocator** - Doporučení velikosti pozice podle skóre
 
 ### Technologie
 
@@ -24,8 +24,8 @@ Akcion je fiduciární investiční platforma využívající AI (Google Gemini)
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | Backend | FastAPI, Python 3.12, SQLAlchemy 2.0 |
 | Databáze | PostgreSQL (Neon.tech) |
-| AI | Google Gemini Pro |
-| Market Data | Massive.com API, yfinance |
+| AI | Google Gemini 2.5 Pro |
+| Market Data | DB + Deep DD Analysis |
 
 ---
 

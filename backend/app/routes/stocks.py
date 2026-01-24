@@ -15,10 +15,12 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database.connection import get_db
 from ..database.repositories import StockRepository
+from ..models.stock import Stock
 from ..schemas.responses import StockPortfolioResponse, StockResponse
 from ..services.market_data import MarketDataService
 from ..trading.price_lines_data import EXTRACTED_LINES
@@ -374,4 +376,163 @@ async def get_portfolio_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to calculate portfolio stats: {str(e)}",
+        )
+
+
+# ==============================================================================
+# Manual Price Update Endpoint
+# ==============================================================================
+
+from pydantic import BaseModel, Field
+
+class PriceUpdateRequest(BaseModel):
+    """Request model for manual price update."""
+    current_price: float = Field(..., gt=0, description="Current market price")
+    green_line: float | None = Field(None, gt=0, description="Conservative target (buy zone)")
+    red_line: float | None = Field(None, gt=0, description="Optimistic target (sell zone)")
+
+
+@router.put(
+    "/{ticker}/price",
+    summary="Update stock price manually",
+    description="Manually update the current price and price targets for a stock",
+)
+async def update_stock_price(
+    ticker: str,
+    price_data: PriceUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Manually update stock price and targets.
+    
+    Use this when:
+    - API price fetching is unavailable
+    - You want to set specific price targets
+    - Importing from broker (DEGIRO CSV)
+    """
+    try:
+        from ..models.stock import Stock
+        
+        # Find the stock
+        stock = db.query(Stock).filter(Stock.ticker.ilike(ticker)).first()
+        
+        if not stock:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stock '{ticker}' not found",
+            )
+        
+        # Update prices
+        stock.current_price = price_data.current_price
+        
+        if price_data.green_line is not None:
+            stock.green_line = price_data.green_line
+        
+        if price_data.red_line is not None:
+            stock.red_line = price_data.red_line
+        
+        db.commit()
+        db.refresh(stock)
+        
+        # Calculate new position
+        position_pct, zone = calculate_price_position(
+            stock.current_price,
+            stock.green_line,
+            stock.red_line
+        )
+        
+        logger.info(f"Updated price for {ticker}: ${price_data.current_price}")
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "current_price": stock.current_price,
+            "green_line": stock.green_line,
+            "red_line": stock.red_line,
+            "price_position_pct": position_pct,
+            "price_zone": zone,
+            "message": f"Price updated successfully for {ticker}",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update price for {ticker}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update price: {str(e)}",
+        )
+
+
+# ==============================================================================
+# Manual Gomes Score Update Endpoint
+# ==============================================================================
+
+class ScoreUpdateRequest(BaseModel):
+    """Request model for manual score update."""
+    gomes_score: int = Field(..., ge=0, le=10, description="Gomes score (0-10)")
+    edge: Optional[str] = Field(None, description="Investment thesis/edge summary")
+    action_verdict: Optional[str] = Field(None, description="BUY, HOLD, SELL, WAIT")
+    company_name: Optional[str] = Field(None, description="Company name")
+
+
+@router.put(
+    "/{ticker}/score",
+    summary="Update stock Gomes score manually",
+    description="Manually update the Gomes score and related data for a stock",
+)
+async def update_stock_score(
+    ticker: str,
+    score_data: ScoreUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Manually update stock Gomes score.
+    
+    Use this for quick score updates without running full Deep DD.
+    """
+    try:
+        # Find or create stock
+        stock = db.query(Stock).filter(Stock.ticker == ticker.upper()).first()
+        
+        if not stock:
+            # Create new stock entry
+            stock = Stock(
+                ticker=ticker.upper(),
+                company_name=score_data.company_name or ticker.upper(),
+                gomes_score=score_data.gomes_score,
+                edge=score_data.edge,
+                action_verdict=score_data.action_verdict or ("BUY" if score_data.gomes_score >= 7 else "HOLD" if score_data.gomes_score >= 5 else "SELL"),
+            )
+            db.add(stock)
+            logger.info(f"Created new stock {ticker} with score {score_data.gomes_score}")
+        else:
+            # Update existing
+            stock.gomes_score = score_data.gomes_score
+            if score_data.edge:
+                stock.edge = score_data.edge
+            if score_data.action_verdict:
+                stock.action_verdict = score_data.action_verdict
+            if score_data.company_name:
+                stock.company_name = score_data.company_name
+            logger.info(f"Updated score for {ticker}: {score_data.gomes_score}/10")
+        
+        db.commit()
+        db.refresh(stock)
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "gomes_score": stock.gomes_score,
+            "action_verdict": stock.action_verdict,
+            "message": f"Score updated successfully for {ticker}",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update score for {ticker}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update score: {str(e)}",
         )

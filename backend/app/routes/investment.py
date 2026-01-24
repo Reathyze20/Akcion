@@ -208,7 +208,38 @@ async def test_notification(
     
     return {
         "success": success,
-        "message": "Test notification sent" if success else "Failed to send notification"
+        "email_enabled": notifier.email_enabled,
+        "email_recipient": notifier.email_recipient,
+        "telegram_enabled": notifier.telegram_enabled,
+        "message": "Test notification sent" if success else "Failed to send - check SMTP credentials"
+    }
+
+
+@router.get("/notify/status")
+async def notification_status(
+    db: Session = Depends(get_db)
+):
+    """
+    Check notification configuration status.
+    """
+    from app.services.notification_service import NotificationService
+    
+    notifier = NotificationService(db)
+    
+    return {
+        "email": {
+            "enabled": notifier.email_enabled,
+            "recipient": notifier.email_recipient,
+            "smtp_server": notifier.smtp_server,
+            "smtp_port": notifier.smtp_port,
+            "username_set": bool(notifier.smtp_username),
+            "password_set": bool(notifier.smtp_password)
+        },
+        "telegram": {
+            "enabled": notifier.telegram_enabled,
+            "token_set": bool(notifier.telegram_token),
+            "chat_id_set": bool(notifier.telegram_chat_id)
+        }
     }
 
 

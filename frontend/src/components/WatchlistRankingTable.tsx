@@ -68,10 +68,10 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
   if (loading) {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
-        <h3 className="text-xl font-bold text-white mb-4">📊 Watchlist Rankings</h3>
+        <h3 className="text-xl font-bold text-white mb-4">Žebříček sledování</h3>
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin h-8 w-8 border-3 border-blue-500 border-t-transparent rounded-full" />
-          <span className="ml-3 text-gray-400">Scanning watchlist...</span>
+          <span className="ml-3 text-gray-400">Skenování sledovaných...</span>
         </div>
       </div>
     );
@@ -80,13 +80,13 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
   if (error) {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-red-500/30">
-        <h3 className="text-xl font-bold text-white mb-4">📊 Watchlist Rankings</h3>
+        <h3 className="text-xl font-bold text-white mb-4">Žebříček sledování</h3>
         <div className="text-red-400 mb-4">{error}</div>
         <button
           onClick={() => scanWatchlist(false)}
           className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
         >
-          Retry
+          Zkusit znovu
         </button>
       </div>
     );
@@ -98,27 +98,27 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            📊 Watchlist Rankings
+            Žebříček sledování
             {scanning && <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />}
           </h3>
           <p className="text-sm text-gray-400 mt-1">
-            Showing {rankings.length} of {totalTickers} tickers
+            Zobrazeno {rankings.length} z {totalTickers} tickerů
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           {/* Filter */}
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-400">Min Score:</label>
+            <label className="text-sm text-gray-400">Min. skóre:</label>
             <select
               value={filterScore}
               onChange={(e) => setFilterScore(Number(e.target.value))}
               className="bg-gray-800 text-white border border-gray-600 rounded px-3 py-1.5 text-sm"
             >
-              <option value="0">All (0+)</option>
+              <option value="0">Vše (0+)</option>
               <option value="5">5+</option>
-              <option value="7">7+ (BUY)</option>
-              <option value="9">9+ (STRONG BUY)</option>
+              <option value="7">7+ (NÁKUP)</option>
+              <option value="9">9+ (SILNÝ NÁKUP)</option>
             </select>
           </div>
 
@@ -128,7 +128,7 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
             disabled={scanning}
             className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded transition-colors disabled:opacity-50 text-sm"
           >
-            Refresh
+            Obnovit
           </button>
           <button
             onClick={() => scanWatchlist(true)}
@@ -138,11 +138,11 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
             {scanning ? (
               <>
                 <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                Scanning...
+                Skenování...
               </>
             ) : (
               <>
-                🔄 Force Scan
+                Vynucené skenování
               </>
             )}
           </button>
@@ -152,8 +152,8 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
       {/* Empty State */}
       {rankings.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          <p className="text-lg mb-2">No tickers match your criteria</p>
-          <p className="text-sm">Try lowering the minimum score filter</p>
+          <p className="text-lg mb-2">Žádné tickery neodpovídají vašim kritériím</p>
+          <p className="text-sm">Zkuste snížit minimální skóre</p>
         </div>
       ) : (
         /* Table */
@@ -161,13 +161,13 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-700 text-left">
-                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Rank</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Pořadí</th>
                 <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Ticker</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Score</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Rating</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Confidence</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase w-1/3">Analysis</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Analyzed</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Skóre</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Hodnocení</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Spolehlivost</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase w-1/3">Analýza</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-400 uppercase">Analyzováno</th>
               </tr>
             </thead>
             <tbody>

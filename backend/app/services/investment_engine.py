@@ -106,7 +106,7 @@ class InvestmentDecisionEngine:
         self.db = db
         self.news_service = NewsMonitorService(db)
         
-        logger.info("🧠 Investment Decision Engine initialized")
+        logger.info("Investment Decision Engine initialized")
     
     async def analyze_stock(self, ticker: str) -> Optional[InvestmentDecision]:
         """
@@ -119,7 +119,7 @@ class InvestmentDecisionEngine:
         4. Recent news and sentiment
         """
         try:
-            logger.info(f"🔍 Analyzing {ticker} for investment decision...")
+            logger.info(f"Analyzing {ticker} for investment decision...")
             
             # Get watchlist and stock data
             watchlist = self.db.query(ActiveWatchlist).filter(
@@ -177,7 +177,7 @@ class InvestmentDecisionEngine:
             )
             
             logger.info(
-                f"✅ {ticker}: {decision.action.value} "
+                f"{ticker}: {decision.action.value} "
                 f"(confidence: {decision.confidence:.0%}, thesis: {decision.thesis_status.value})"
             )
             
@@ -222,7 +222,7 @@ class InvestmentDecisionEngine:
             reasoning.append("Gomes sentiment: Bullish")
         elif gomes_sentiment == 'Bearish':
             thesis_points -= 2
-            reasoning.append("⚠️ Gomes sentiment: Bearish")
+            reasoning.append("Gomes sentiment: Bearish")
         
         # =================================================================
         # 2. ENTRY ZONE ANALYSIS
@@ -235,7 +235,7 @@ class InvestmentDecisionEngine:
             if entry_price and current_price <= entry_price:
                 in_entry_zone = True
                 thesis_points += 2
-                reasoning.append(f"✅ IN ENTRY ZONE: ${current_price:.2f} ≤ ${entry_price:.2f}")
+                reasoning.append(f"IN ENTRY ZONE: ${current_price:.2f} <= ${entry_price:.2f}")
             elif entry_price:
                 pct_above = ((current_price - entry_price) / entry_price) * 100
                 reasoning.append(f"Price {pct_above:.1f}% above entry zone")
@@ -257,7 +257,7 @@ class InvestmentDecisionEngine:
                 reasoning.append(f"ML prediction: UP ({ml_confidence:.0%} confidence)")
             elif ml_pred_type == 'DOWN' and ml_confidence > 0.5:
                 thesis_points -= 1
-                reasoning.append(f"⚠️ ML prediction: DOWN ({ml_confidence:.0%} confidence)")
+                reasoning.append(f"ML prediction: DOWN ({ml_confidence:.0%} confidence)")
         
         # =================================================================
         # 4. NEWS SENTIMENT ANALYSIS
@@ -279,7 +279,7 @@ class InvestmentDecisionEngine:
         elif bearish_news > bullish_news:
             news_sentiment = 'BEARISH'
             thesis_points -= 0.5
-            reasoning.append(f"⚠️ Recent news: {bearish_news} bearish vs {bullish_news} bullish")
+            reasoning.append(f"Recent news: {bearish_news} bearish vs {bullish_news} bullish")
         
         if catalyst_matches:
             thesis_points += 0.5
@@ -287,7 +287,7 @@ class InvestmentDecisionEngine:
         
         if risk_matches:
             thesis_points -= 0.5
-            reasoning.append(f"⚠️ Risk keywords in news: {', '.join(set(risk_matches)[:3])}")
+            reasoning.append(f"Risk keywords in news: {', '.join(set(risk_matches)[:3])}")
         
         # =================================================================
         # 5. DETERMINE THESIS STATUS
@@ -419,7 +419,7 @@ class InvestmentDecisionEngine:
             ActiveWatchlist.is_active == True
         ).all()
         
-        logger.info(f"📊 Analyzing {len(watchlist)} watchlist stocks...")
+        logger.info(f"Analyzing {len(watchlist)} watchlist stocks...")
         
         for item in watchlist:
             decision = await self.analyze_stock(item.ticker)

@@ -115,10 +115,10 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <div className="text-center text-red-600">
-          <p className="font-semibold">Error Loading Opportunities</p>
+          <p className="font-semibold">Chyba při načítání příležitostí</p>
           <p className="text-sm mt-2">{error}</p>
           <button onClick={fetchOpportunities} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-            Retry
+            Zkusit znovu
           </button>
         </div>
       </div>
@@ -130,16 +130,16 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">📊 Today's Opportunities</h2>
+          <h2 className="text-xl font-bold text-gray-900">Dnešní příležitosti</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {opportunities.length} {opportunities.length === 1 ? "opportunity" : "opportunities"} above {minConfidence}% confidence
+            {opportunities.length} {opportunities.length === 1 ? "příležitost" : "příležitostí"} nad {minConfidence}% spolehlivost
           </p>
         </div>
         <div className="text-right">
           <button onClick={fetchOpportunities} disabled={loading} className="text-sm text-blue-600 hover:text-blue-800 disabled:text-gray-400">
-            {loading ? "⟳ Updating..." : "🔄 Refresh"}
+            {loading ? "Aktualizuji..." : "Obnovit"}
           </button>
-          <p className="text-xs text-gray-400 mt-1">Updated: {new Date(lastUpdated).toLocaleTimeString()}</p>
+          <p className="text-xs text-gray-400 mt-1">Aktualizováno: {new Date(lastUpdated).toLocaleTimeString()}</p>
         </div>
       </div>
 
@@ -147,8 +147,8 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
       <div className="divide-y divide-gray-200">
         {opportunities.length === 0 ? (
           <div className="px-6 py-12 text-center text-gray-500">
-            <p className="text-lg">No opportunities found</p>
-            <p className="text-sm mt-2">Try lowering the minimum confidence threshold</p>
+            <p className="text-lg">Žádné příležitosti nenalezeny</p>
+            <p className="text-sm mt-2">Zkuste snížit minimální hranici spolehlivosti</p>
           </div>
         ) : (
           opportunities.map((opp) => (
@@ -161,7 +161,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
                 </div>
                 <div className="text-right">
                   <div className={`text-2xl font-bold ${getConfidenceColor(opp.buy_confidence)}`}>{opp.buy_confidence.toFixed(1)}%</div>
-                  <div className="text-xs text-gray-500">Buy Confidence</div>
+                  <div className="text-xs text-gray-500">Spolehlivost nákupu</div>
                 </div>
               </div>
 
@@ -176,11 +176,11 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
               {opp.entry_price && (
                 <div className="grid grid-cols-3 gap-4 mb-3 text-sm">
                   <div>
-                    <div className="text-gray-500">Entry</div>
+                    <div className="text-gray-500">Vstup</div>
                     <div className="font-semibold text-gray-900">${opp.entry_price.toFixed(2)}</div>
                   </div>
                   <div>
-                    <div className="text-gray-500">Target</div>
+                    <div className="text-gray-500">Cíl</div>
                     <div className="font-semibold text-green-600">{opp.target_price ? `$${opp.target_price.toFixed(2)}` : "—"}</div>
                   </div>
                   <div>
@@ -199,17 +199,17 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
                 )}
                 {opp.kelly_size && (
                   <div>
-                    <span className="text-gray-500">Size:</span> <span className="font-semibold">{(opp.kelly_size * 100).toFixed(1)}%</span>
+                    <span className="text-gray-500">Velikost:</span> <span className="font-semibold">{(opp.kelly_size * 100).toFixed(1)}%</span>
                   </div>
                 )}
                 <div>
-                  <span className="text-gray-500">Verdict:</span> <span className="font-semibold">{opp.verdict}</span>
+                  <span className="text-gray-500">Verdikt:</span> <span className="font-semibold">{opp.verdict}</span>
                 </div>
               </div>
 
               {/* Component Breakdown (Collapsible) */}
               <details className="mt-3">
-                <summary className="cursor-pointer text-xs text-blue-600 hover:text-blue-800">View Signal Breakdown</summary>
+                <summary className="cursor-pointer text-xs text-blue-600 hover:text-blue-800">Zobrazit rozklad signálu</summary>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Gomes:</span>
