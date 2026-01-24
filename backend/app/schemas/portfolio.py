@@ -29,6 +29,7 @@ class PortfolioBase(BaseModel):
     owner: str = Field(..., description="Portfolio owner (e.g., 'Já', 'Přítelkyně')")
     broker: BrokerType = Field(..., description="Broker type")
     cash_balance: float = Field(default=0.0, description="Available cash for investments")
+    monthly_contribution: float = Field(default=20000.0, description="Monthly contribution amount in CZK")
 
 
 class PortfolioCreate(PortfolioBase):

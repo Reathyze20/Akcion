@@ -78,6 +78,7 @@ def get_portfolios(
             **portfolio.__dict__,
             "position_count": len(positions),
             "total_value": total_value,
+            "monthly_contribution": portfolio.monthly_contribution or 20000.0,
         })
     
     return result
