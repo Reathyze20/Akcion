@@ -22,6 +22,8 @@ from .portfolio import (
     MarketStatus,
     BrokerType,
     MarketStatusEnum,
+    InvestmentLog,
+    InvestmentLogType,
 )
 
 # Analysis intelligence models
@@ -36,6 +38,13 @@ from .gomes import (
     InvestmentVerdictModel,
     ImageAnalysisLogModel,
     GomesRulesLogModel,
+)
+
+# Score History models
+from .score_history import (
+    GomesScoreHistory,
+    ThesisDriftAlert,
+    AlertType,
 )
 
 # Trading models (imported separately to avoid circular imports)
@@ -59,6 +68,8 @@ __all__ = [
     "MarketStatus",
     "BrokerType",
     "MarketStatusEnum",
+    "InvestmentLog",
+    "InvestmentLogType",
     # Analysis
     "AnalystTranscript",
     "SWOTAnalysis",
@@ -70,4 +81,8 @@ __all__ = [
     "InvestmentVerdictModel",
     "ImageAnalysisLogModel",
     "GomesRulesLogModel",
+    # Score History
+    "GomesScoreHistory",
+    "ThesisDriftAlert",
+    "AlertType",
 ]
