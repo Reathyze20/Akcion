@@ -28,12 +28,18 @@ import type {
 interface EnrichedPosition extends Position {
   stock?: Stock;
   gomes_score: number | null;
-  kelly_weight_pct: number;
-  kelly_amount: number;
-  weight_in_portfolio: number;
+  // Gomes Gap Analysis
+  target_weight_pct: number;     // Cílová váha podle skóre
+  weight_in_portfolio: number;   // Aktuální váha v portfoliu
+  gap_czk: number;               // Mezera v CZK (+ = dokoupit, - = prodat)
+  optimal_size: number;          // Kolik investovat TENTO MĚSÍC (po prioritizaci)
+  allocation_priority: number;   // Priorita (1 = nejvyšší)
+  // Status
   trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   is_deteriorated: boolean;
   is_overweight: boolean;
+  is_underweight: boolean;
+  action_signal: 'BUY' | 'HOLD' | 'SELL' | 'SNIPER';  // Akční signál
   inflection_status?: string;
 }
 
@@ -50,10 +56,28 @@ interface FamilyPortfolioData {
   riskScore: number;    // 0-100
 }
 
-// Kelly weights mapping (score -> weight %)
-const KELLY_WEIGHTS: Record<number, number> = {
-  10: 20, 9: 15, 8: 12, 7: 10, 6: 8, 5: 5, 4: 3, 3: 2, 2: 1, 1: 0, 0: 0
+// ============================================================================
+// GOMES TARGET WEIGHTS (Conviction Mapping)
+// ============================================================================
+// Kolik % celého portfolia si akcie ZASLOUŽÍ na základě skóre
+const TARGET_WEIGHTS: Record<number, number> = {
+  10: 15,   // CORE - Highest conviction (12-15%)
+  9: 15,    // CORE - High conviction  
+  8: 12,    // STRONG - Solid position (10-12%)
+  7: 10,    // GROWTH - Growth position (7-10%)
+  6: 5,     // WATCH - Monitor closely (3-5%)
+  5: 3,     // WATCH - Small position
+  4: 0,     // EXIT - Should not hold
+  3: 0,     // EXIT - Sell signal
+  2: 0,     // EXIT - Strong sell
+  1: 0,     // EXIT - Avoid completely
+  0: 0,
 };
+
+// Hard Caps (Gomesova pojistka)
+const MAX_POSITION_WEIGHT = 15;  // Max 15% portfolia v jedné akcii
+const MIN_INVESTMENT_CZK = 1000; // Min vklad (kvůli poplatkům)
+const MONTHLY_CONTRIBUTION = 20000; // Měsíční vklad v CZK
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -95,9 +119,33 @@ const calculateMonthsToTarget = (
   return months;
 };
 
-const getKellyWeight = (score: number | null): number => {
+const getTargetWeight = (score: number | null): number => {
   if (score === null) return 0;
-  return KELLY_WEIGHTS[Math.round(score)] ?? 0;
+  const roundedScore = Math.round(score);
+  return TARGET_WEIGHTS[roundedScore] ?? 0;
+};
+
+/**
+ * Get action signal based on score and weight gap
+ */
+const getActionSignal = (
+  score: number | null, 
+  currentWeight: number, 
+  targetWeight: number
+): 'BUY' | 'HOLD' | 'SELL' | 'SNIPER' => {
+  if (score === null) return 'HOLD';
+  if (score < 5) return 'SELL';  // Score < 5 = EXIT
+  
+  const gapPct = targetWeight - currentWeight;
+  
+  // Sniper opportunity: score 8+ and significantly underweight (>5% gap)
+  if (score >= 8 && gapPct > 5) return 'SNIPER';
+  
+  // Buy signal: underweight by >2%
+  if (gapPct > 2) return 'BUY';
+  
+  // Hold: roughly at target
+  return 'HOLD';
 };
 
 const getTrendStatus = (stock: Stock | undefined): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
@@ -638,13 +686,20 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* Weight % */}
+      {/* Weight % - Aktuální vs Cílová */}
       <td className="py-3 px-4">
-        <div className={`font-mono font-bold ${position.is_overweight ? 'text-red-400' : 'text-slate-300'}`}>
-          {position.weight_in_portfolio.toFixed(1)}%
+        <div className="flex items-center gap-1">
+          <span className={`font-mono font-bold ${position.is_overweight ? 'text-red-400' : position.is_underweight ? 'text-amber-400' : 'text-slate-300'}`}>
+            {position.weight_in_portfolio.toFixed(1)}%
+          </span>
+          <span className="text-slate-500">/</span>
+          <span className="font-mono text-slate-400">{position.target_weight_pct}%</span>
         </div>
         {position.is_overweight && (
-          <div className="text-[10px] text-red-400">OVERWEIGHT</div>
+          <div className="text-[10px] text-red-400">⚠️ OVERWEIGHT</div>
+        )}
+        {position.is_underweight && !position.is_overweight && (
+          <div className="text-[10px] text-amber-400">📈 UNDERWEIGHT</div>
         )}
       </td>
 
@@ -655,18 +710,36 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* Kelly Size - Optimal allocation */}
+      {/* Optimal Size - GAP ANALYSIS */}
       <td className="py-3 px-4">
-        <div className="text-sm font-mono text-emerald-400">
-          {formatCurrency(position.kelly_amount)}
-        </div>
-        <div className="text-[10px] text-slate-500">
-          {position.kelly_weight_pct}% allocation
-        </div>
-        {/* Current value in position currency */}
-        {position.market_value > 0 && position.currency && position.currency !== 'CZK' && (
-          <div className="text-[10px] text-slate-400 mt-0.5">
-            ≈ {position.currency} {position.market_value.toFixed(0)}
+        {position.action_signal === 'SELL' ? (
+          <div className="text-center">
+            <div className="text-red-400 font-bold text-sm">SELL</div>
+            <div className="text-[10px] text-red-300">Score &lt; 5</div>
+          </div>
+        ) : position.optimal_size > 0 ? (
+          <div>
+            <div className="flex items-center gap-1">
+              {position.action_signal === 'SNIPER' && <span className="text-lg">🎯</span>}
+              <span className="text-lg font-bold text-emerald-400 font-mono">
+                {formatCurrency(position.optimal_size)}
+              </span>
+            </div>
+            <div className="text-[10px] text-slate-500">
+              Gap: {formatCurrency(position.gap_czk)}
+            </div>
+            {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
+              <div className="text-[10px] text-amber-400 font-bold">
+                #{position.allocation_priority} priorita
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center">
+            <div className="text-slate-500 font-mono text-sm">0 Kč</div>
+            <div className="text-[10px] text-slate-600">
+              {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
+            </div>
           </div>
         )}
       </td>
@@ -1336,18 +1409,50 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
               </div>
             </div>
 
-            {/* Kelly Recommendation */}
+            {/* Gomes Gap Analysis Recommendation */}
             <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-              <div className="text-xs text-slate-500 uppercase mb-1">Kelly Criterion Sizing</div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-300">Suggested Allocation</span>
-                <span className="text-xl font-bold text-emerald-400">
-                  {formatCurrency(position.kelly_amount)}
+              <div className="text-xs text-slate-500 uppercase mb-2">Gap Analysis - Tento měsíc</div>
+              
+              {/* Target vs Current Weight */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-slate-400 text-sm">Cílová váha:</span>
+                <span className="font-mono text-white">{position.target_weight_pct}%</span>
+              </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-slate-400 text-sm">Aktuální váha:</span>
+                <span className={`font-mono ${position.is_underweight ? 'text-amber-400' : position.is_overweight ? 'text-red-400' : 'text-green-400'}`}>
+                  {position.weight_in_portfolio.toFixed(1)}%
                 </span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">
-                {position.kelly_weight_pct}% of available capital
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-700">
+                <span className="text-slate-400 text-sm">Mezera (Gap):</span>
+                <span className={`font-mono font-bold ${position.gap_czk > 0 ? 'text-amber-400' : position.gap_czk < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                  {position.gap_czk > 0 ? '+' : ''}{formatCurrency(position.gap_czk)}
+                </span>
               </div>
+              
+              {/* Optimal Size */}
+              <div className="flex items-center justify-between">
+                <span className="text-slate-300 font-semibold">Doporučený vklad:</span>
+                {position.action_signal === 'SELL' ? (
+                  <span className="text-xl font-bold text-red-400">PRODAT</span>
+                ) : (
+                  <span className={`text-xl font-bold ${position.optimal_size > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {formatCurrency(position.optimal_size)}
+                  </span>
+                )}
+              </div>
+              
+              {position.action_signal === 'SNIPER' && (
+                <div className="mt-2 text-xs text-amber-400 flex items-center gap-1">
+                  🎯 Sniper příležitost! Vysoké skóre + velká mezera.
+                </div>
+              )}
+              {position.optimal_size === 0 && position.gap_czk > MIN_INVESTMENT_CZK && position.action_signal !== 'SELL' && (
+                <div className="mt-2 text-xs text-slate-500">
+                  Nízká priorita - tento měsíc mají přednost lepší příležitosti
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -2235,9 +2340,6 @@ export const GomesGuardianDashboard: React.FC = () => {
   // Available currencies for cash
   const CASH_CURRENCIES = ['CZK', 'EUR', 'USD', 'CAD', 'GBP'];
   
-  // Available capital for Kelly calculation
-  const AVAILABLE_CAPITAL = 20000; // CZK
-  
   // Refresh portfolios helper
   const refreshPortfolios = async () => {
     const portfolioList = await apiClient.getPortfolios();
@@ -2322,28 +2424,38 @@ export const GomesGuardianDashboard: React.FC = () => {
     const eurRate = exchangeRates.EUR || 25;
     const totalValueEUR = grandTotal / eurRate;
 
+    // ========================================================================
+    // GOMES GAP ANALYSIS - Výpočet mezer a optimal size
+    // ========================================================================
+    
+    // Temporary array to collect positions before priority sorting
+    const tempPositions: EnrichedPosition[] = [];
+    
     for (const portfolio of portfolios) {
       for (const pos of portfolio.positions) {
         // Find matching stock from Gomes analysis (may not exist)
         const stock = stocks.find(s => s.ticker.toUpperCase() === pos.ticker.toUpperCase());
         const gomesScore = stock?.gomes_score ?? null;
-        const kellyWeight = getKellyWeight(gomesScore);
-        const kellyAmount = (AVAILABLE_CAPITAL * kellyWeight) / 100;
         
-        // Calculate weight based on market value converted to CZK
+        // 1. Cílová váha podle skóre (Target Weight)
+        const targetWeightPct = getTargetWeight(gomesScore);
+        
+        // 2. Aktuální váha v portfoliu
         const positionValueOriginal = pos.market_value > 0 ? pos.market_value : pos.cost_basis;
-        // Convert to CZK using exchange rate for position's currency
         const positionCurrency = pos.currency || 'CZK';
         const currencyRate = exchangeRates[positionCurrency] || 1;
         const positionValueCZK = positionValueOriginal * currencyRate;
-        const weightInPortfolio = grandTotal > 0 ? (positionValueCZK / grandTotal) * 100 : 0;
+        const currentWeightPct = grandTotal > 0 ? (positionValueCZK / grandTotal) * 100 : 0;
         
-        // Classify based on Gomes score:
-        // >= 9: Growth (Rocket) - highest conviction, speculative upside
-        // 7-8: Core (Anchor) - solid positions, proven companies
-        // 5-6: Watch - hold but monitor closely
-        // 1-4: Wait Time / Sell - avoid or reduce
-        // null: Unanalyzed - needs Deep DD
+        // 3. GAP ANALYSIS - Kolik CZK chybí/přebývá
+        // Gap = (Total_AUM * Target_Weight) - Current_Value
+        const targetValueCZK = (grandTotal * targetWeightPct) / 100;
+        const gapCZK = targetValueCZK - positionValueCZK;
+        
+        // 4. Action signal based on score and gap
+        const actionSignal = getActionSignal(gomesScore, currentWeightPct, targetWeightPct);
+        
+        // 5. Classify for risk meter
         if (gomesScore !== null && gomesScore >= 9) {
           rocketCount++;
         } else if (gomesScore !== null && gomesScore >= 7) {
@@ -2351,7 +2463,7 @@ export const GomesGuardianDashboard: React.FC = () => {
         } else if (gomesScore !== null && gomesScore >= 5) {
           waitTimeCount++;
         } else if (gomesScore !== null) {
-          waitTimeCount++; // 1-4 also counts as "wait/sell"
+          waitTimeCount++; // 1-4 = sell candidates
         } else {
           unanalyzedCount++;
         }
@@ -2360,20 +2472,82 @@ export const GomesGuardianDashboard: React.FC = () => {
           ...pos,
           stock,
           gomes_score: gomesScore,
-          kelly_weight_pct: kellyWeight,
-          kelly_amount: kellyAmount,
-          weight_in_portfolio: weightInPortfolio,
+          target_weight_pct: targetWeightPct,
+          weight_in_portfolio: currentWeightPct,
+          gap_czk: gapCZK,
+          optimal_size: 0, // Will be calculated after sorting
+          allocation_priority: 999, // Will be set after sorting
           trend_status: getTrendStatus(stock),
           is_deteriorated: gomesScore !== null && gomesScore < 4,
-          is_overweight: weightInPortfolio > 15,
+          is_overweight: currentWeightPct > MAX_POSITION_WEIGHT,
+          is_underweight: gapCZK > MIN_INVESTMENT_CZK,
+          action_signal: actionSignal,
           inflection_status: 'UPCOMING',
         };
 
-        allPositions.push(enriched);
+        tempPositions.push(enriched);
       }
     }
+    
+    // ========================================================================
+    // PRIORITIZACE A DISTRIBUCE MĚSÍČNÍHO VKLADU
+    // ========================================================================
+    
+    // Sort by: 1) Score (highest first), 2) Gap (largest positive first)
+    // Only positions with score >= 5 and positive gap get allocation
+    const sortedForAllocation = [...tempPositions]
+      .filter(p => p.gomes_score !== null && p.gomes_score >= 5 && p.gap_czk > 0)
+      .sort((a, b) => {
+        // Primary: Higher score = higher priority
+        const scoreDiff = (b.gomes_score ?? 0) - (a.gomes_score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        // Secondary: Larger gap = higher priority
+        return b.gap_czk - a.gap_czk;
+      });
+    
+    // Distribute monthly contribution according to priority
+    let remainingBudget = MONTHLY_CONTRIBUTION;
+    
+    for (let i = 0; i < sortedForAllocation.length; i++) {
+      const pos = sortedForAllocation[i];
+      pos.allocation_priority = i + 1;
+      
+      if (remainingBudget <= 0) {
+        pos.optimal_size = 0;
+        continue;
+      }
+      
+      // Calculate how much to allocate (min of gap and remaining budget)
+      let allocation = Math.min(pos.gap_czk, remainingBudget);
+      
+      // Apply hard caps
+      // 1. Don't exceed MAX_POSITION_WEIGHT (15%)
+      const currentValueCZK = (grandTotal * pos.weight_in_portfolio) / 100;
+      const maxAllowedValue = (grandTotal * MAX_POSITION_WEIGHT) / 100;
+      const maxAllocation = maxAllowedValue - currentValueCZK;
+      allocation = Math.min(allocation, Math.max(0, maxAllocation));
+      
+      // 2. If allocation < MIN_INVESTMENT, skip (not worth the fees)
+      if (allocation < MIN_INVESTMENT_CZK) {
+        allocation = 0;
+      }
+      
+      pos.optimal_size = Math.round(allocation);
+      remainingBudget -= pos.optimal_size;
+    }
+    
+    // Set priority=0 and optimal_size=0 for positions not in allocation list
+    // (score < 5 or negative gap or no score)
+    for (const pos of tempPositions) {
+      if (!sortedForAllocation.includes(pos)) {
+        pos.allocation_priority = 0;
+        pos.optimal_size = 0;
+      }
+    }
+    
+    // Copy to final array
+    allPositions.push(...tempPositions);
 
-    // Calculate risk score (higher rockets = higher risk)
     // Calculate risk score (only from analyzed positions)
     const analyzedTotal = rocketCount + anchorCount + waitTimeCount;
     const riskScore = analyzedTotal > 0 ? Math.round((rocketCount / analyzedTotal) * 100) : 0;
@@ -2804,6 +2978,55 @@ export const GomesGuardianDashboard: React.FC = () => {
           </div>
         )}
 
+        {/* Gomes Allocation Plan - Monthly Summary */}
+        {activeTab === 'portfolio' && (
+          <div className="mb-4 p-4 bg-gradient-to-r from-emerald-900/30 to-slate-800/50 rounded-xl border border-emerald-500/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 rounded-lg">
+                  <Target className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-emerald-300 uppercase tracking-wider">
+                    Měsíční alokační plán
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Rozpočet: {formatCurrency(MONTHLY_CONTRIBUTION)} | 
+                    Alokováno: {formatCurrency(familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))} | 
+                    Zbývá: {formatCurrency(MONTHLY_CONTRIBUTION - familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Top 3 recommendations */}
+              <div className="flex items-center gap-2">
+                {familyData.allPositions
+                  .filter(p => p.optimal_size > 0)
+                  .sort((a, b) => a.allocation_priority - b.allocation_priority)
+                  .slice(0, 3)
+                  .map((pos, i) => (
+                    <div 
+                      key={pos.ticker}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                        i === 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' :
+                        'bg-slate-700/50 text-slate-300'
+                      }`}
+                    >
+                      {pos.action_signal === 'SNIPER' && '🎯 '}
+                      {pos.ticker}: {formatCurrency(pos.optimal_size)}
+                    </div>
+                  ))
+                }
+                {familyData.allPositions.filter(p => p.action_signal === 'SELL').length > 0 && (
+                  <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/50">
+                    ⚠️ {familyData.allPositions.filter(p => p.action_signal === 'SELL').length}x PRODAT
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
         <div className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
@@ -2811,9 +3034,15 @@ export const GomesGuardianDashboard: React.FC = () => {
             <thead>
               <tr className="border-b border-slate-700 bg-slate-800/50">
                 <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Symbol</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Weight</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  <div>Váha</div>
+                  <div className="text-[9px] text-slate-500 font-normal">Aktuální / Cíl</div>
+                </th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Score</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Optimal Size</th>
+                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  <div>Optimal Size</div>
+                  <div className="text-[9px] text-slate-500 font-normal">Tento měsíc</div>
+                </th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Trend</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">P/L</th>
               </tr>
