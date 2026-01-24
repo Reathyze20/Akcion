@@ -14,7 +14,7 @@ Clean Code Principles Applied:
 from __future__ import annotations
 
 import logging
-from typing import Final
+from typing import Dict, Final
 
 import requests
 
@@ -49,6 +49,11 @@ class CurrencyService:
         "CHF": 25.20,
         "HKD": 2.88,
         "JPY": 0.15,
+        "CAD": 16.50,  # Canadian Dollar
+        "AUD": 14.50,  # Australian Dollar
+        "SGD": 16.00,  # Singapore Dollar
+        "NOK": 2.10,   # Norwegian Krone
+        "SEK": 2.10,   # Swedish Krona
     }
     
     # ==========================================================================
