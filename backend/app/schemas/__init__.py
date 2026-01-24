@@ -36,6 +36,13 @@ from .portfolio import (
     MatchAnalysisResponse,
     PortfolioSummaryResponse,
 )
+from .gomes import (
+    DeepDueDiligenceRequest,
+    DeepDueDiligenceResponse,
+    DeepDueDiligenceResult,
+    ThesisDriftResult,
+    PriceTargetsSchema,
+)
 
 __all__ = [
     "AnalyzeTextRequest",
@@ -64,4 +71,10 @@ __all__ = [
     "MatchAnalysisRequest",
     "MatchAnalysisResponse",
     "PortfolioSummaryResponse",
+    # Gomes Deep Due Diligence
+    "DeepDueDiligenceRequest",
+    "DeepDueDiligenceResponse",
+    "DeepDueDiligenceResult",
+    "ThesisDriftResult",
+    "PriceTargetsSchema",
 ]

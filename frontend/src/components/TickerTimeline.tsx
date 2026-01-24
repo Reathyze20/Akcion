@@ -34,17 +34,17 @@ const getSentimentColor = (sentiment: string) => {
 const getSentimentIcon = (sentiment: string) => {
   switch (sentiment) {
     case 'VERY_BULLISH':
-      return '🚀';
+      return '';
     case 'BULLISH':
-      return '📈';
+      return '';
     case 'NEUTRAL':
-      return '➖';
+      return '';
     case 'BEARISH':
-      return '📉';
+      return '';
     case 'VERY_BEARISH':
-      return '💥';
+      return '';
     default:
-      return '❓';
+      return '';
   }
 };
 
@@ -84,7 +84,7 @@ const WeightedSentimentBar: React.FC<{ score: number }> = ({ score }) => {
   
   return (
     <div className="flex items-center gap-3">
-      <span className="text-sm text-red-400">🐻</span>
+      <span className="text-sm text-red-400">Medvěd</span>
       <div className="flex-1 h-3 bg-gray-700 rounded-full overflow-hidden">
         <div 
           className="h-full transition-all duration-500"
@@ -100,7 +100,7 @@ const WeightedSentimentBar: React.FC<{ score: number }> = ({ score }) => {
           }}
         />
       </div>
-      <span className="text-sm text-green-400">🐂</span>
+      <span className="text-sm text-green-400">Býk</span>
       <span className="text-sm font-mono text-gray-400 w-16 text-right">
         {score >= 0 ? '+' : ''}{(score * 100).toFixed(0)}%
       </span>
@@ -125,7 +125,7 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
             {getActionBadge(mention.action_mentioned)}
             {mention.conviction_level && (
               <span className="text-xs text-gray-400">
-                {mention.conviction_level} conviction
+                {mention.conviction_level} přesvědčení
               </span>
             )}
           </div>
@@ -157,14 +157,14 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
         {/* Price target */}
         {mention.price_target && (
           <div className="text-sm text-yellow-400">
-            🎯 Price Target: ${mention.price_target.toFixed(2)}
+            Cenový cíl: ${mention.price_target.toFixed(2)}
           </div>
         )}
         
         {/* Source & Weight */}
         <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-700">
           <div className="text-xs text-gray-500">
-            📹 {mention.source_name}
+            {mention.source_name}
             {mention.video_url && (
               <a 
                 href={mention.video_url} 
@@ -172,12 +172,12 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
                 rel="noopener noreferrer"
                 className="ml-2 text-blue-400 hover:underline"
               >
-                Watch
+                Sledovat
               </a>
             )}
           </div>
           <div className="text-xs text-gray-500">
-            Weight: {(mention.weight * 100).toFixed(0)}%
+            Váha: {(mention.weight * 100).toFixed(0)}%
           </div>
         </div>
       </div>
@@ -222,13 +222,13 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-red-700">
         <div className="text-red-400 text-center">
-          <span className="text-2xl mb-2">⚠️</span>
+          <span className="text-2xl mb-2"></span>
           <p>{error}</p>
           <button 
             onClick={fetchTimeline}
             className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white"
           >
-            Retry
+            Zkusit znovu
           </button>
         </div>
       </div>
@@ -239,13 +239,13 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
         <div className="text-center text-gray-400">
-          <span className="text-4xl mb-4 block">📭</span>
-          <h3 className="text-lg font-medium text-white mb-2">No Mentions Found</h3>
+          <span className="text-4xl mb-4 block"></span>
+          <h3 className="text-lg font-medium text-white mb-2">Žádné zmínky nenalezeny</h3>
           <p className="text-sm">
-            {ticker} hasn't been mentioned in any imported transcripts yet.
+            {ticker} nebyl zmíněn v žádném importovaném přepisu.
           </p>
           <p className="text-xs mt-2">
-            Import transcripts from Mark Gomes to build history.
+            Importujte přepisy od Marka Gomese pro vytvoření historie.
           </p>
         </div>
       </div>
@@ -258,9 +258,9 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
       <div className="p-4 border-b border-gray-700 bg-gray-800/50">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            📊 {ticker} Timeline
+            {ticker} Časová osa
             <span className="text-sm font-normal text-gray-400">
-              ({timeline.total_mentions} mentions)
+              ({timeline.total_mentions} zmínek)
             </span>
           </h3>
           {onClose && (
@@ -277,7 +277,7 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
         <div className="flex items-center gap-4 mb-3">
           {timeline.latest_sentiment && (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">Latest:</span>
+              <span className="text-sm text-gray-400">Nejnovější:</span>
               <span className={`px-2 py-1 rounded text-sm ${getSentimentColor(timeline.latest_sentiment)}`}>
                 {getSentimentIcon(timeline.latest_sentiment)} {timeline.latest_sentiment.replace('_', ' ')}
               </span>
@@ -290,7 +290,7 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
         
         {/* Weighted sentiment bar */}
         <div className="mt-3">
-          <div className="text-xs text-gray-400 mb-1">Weighted Sentiment Score</div>
+          <div className="text-xs text-gray-400 mb-1">Vážené skóre sentimentu</div>
           <WeightedSentimentBar score={timeline.weighted_sentiment_score} />
         </div>
       </div>

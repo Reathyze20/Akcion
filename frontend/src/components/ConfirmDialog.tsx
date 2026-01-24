@@ -13,10 +13,10 @@ interface ConfirmDialogProps {
 
 const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   isOpen,
-  title = 'Confirm Action',
+  title = 'Potvrďte akci',
   message,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText = 'Potvrdit',
+  cancelText = 'Zrušit',
   onConfirm,
   onCancel,
   variant = 'warning'

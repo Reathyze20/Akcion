@@ -1,43 +1,43 @@
 """
-Master Signal Aggregator
-=========================
+Master Signal v2.0 - Simplified 3-Pillar System
+=================================================
 
-Combines ALL signals into one actionable "Buy Confidence" score (0-100%).
+SIMPLIFIED for Micro-Cap investing (The Gomes Way).
 
-This is the BRAIN of the trading system - it weighs:
-- Gomes Intelligence Score
-- ML Prediction Confidence
-- Technical Indicators (RSI, MACD)
-- Gap Analysis (opportunity matching)
-- Risk/Reward Ratio
+OLD (6 components):
+- Gomes Intelligence (30%)
+- ML Predictions (25%)     ❌ REMOVED - Micro-caps are unpredictable
+- Technical (15%)          ❌ SIMPLIFIED to 30 WMA only
+- Sentiment (15%)          ❌ REMOVED - No Bloomberg for micro-caps
+- Gap Analysis (10%)
+- Risk/Reward (5%)
 
-Author: GitHub Copilot with Claude Sonnet 4.5
-Date: 2026-01-17
-Version: 1.0.0
+NEW (3 pillars):
+- Thesis Tracker (60%)     ✅ Gomes Intelligence + Milestones + Red Flags
+- Valuation & Cash (25%)   ✅ Cash runway, burn rate, dilution risk
+- Weinstein Guard (15%)    ✅ 30-Week Moving Average only
+
+Author: GitHub Copilot with Claude Opus 4.5
+Date: 2026-01-24
+Version: 2.0.0
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models.trading import ActiveWatchlist, MLPrediction, TradingSignal
-from app.services.gap_analysis import GapAnalysisService, MatchSignal
+from app.models.trading import ActiveWatchlist, TradingSignal
+from app.models.stock import Stock
 from app.services.gomes_intelligence import GomesIntelligenceService
 from app.trading.gomes_logic import InvestmentVerdict
-
-# Optional sentiment analysis
-try:
-    from app.trading.sentiment import SentimentAnalyzer
-    SENTIMENT_AVAILABLE = True
-except ImportError:
-    SENTIMENT_AVAILABLE = False
-    logger.warning("Sentiment analysis not available")
 
 
 logger = logging.getLogger(__name__)
@@ -56,34 +56,43 @@ class SignalStrength(str, Enum):
     AVOID = "AVOID"                # 0-19%
 
 
-class WeightConfig:
-    """Weight configuration for signal components"""
+class WeinsteinPhase(str, Enum):
+    """Stan Weinstein's Market Phases"""
+    PHASE_1_BASE = "PHASE_1_BASE"           # Accumulation - Watch
+    PHASE_2_ADVANCE = "PHASE_2_ADVANCE"     # Uptrend - BUY
+    PHASE_3_TOP = "PHASE_3_TOP"             # Distribution - Sell
+    PHASE_4_DECLINE = "PHASE_4_DECLINE"     # Downtrend - AVOID
+
+
+class CashRunwayStatus(str, Enum):
+    """Cash runway health status"""
+    HEALTHY = "HEALTHY"           # > 12 months runway
+    CAUTION = "CAUTION"           # 6-12 months runway
+    DANGER = "DANGER"             # < 6 months runway - Dilution risk!
+    UNKNOWN = "UNKNOWN"           # No data
+
+
+class WeightConfigV2:
+    """
+    Simplified weight configuration - 3 pillars only
     
-    # Default weights (must sum to 1.0)
-    GOMES_SCORE: float = 0.30       # 30% - Gomes je hlavní autorita
-    ML_CONFIDENCE: float = 0.25     # 25% - ML predikce
-    TECHNICAL: float = 0.15         # 15% - RSI/MACD
-    SENTIMENT: float = 0.15         # 15% - News sentiment
-    GAP_ANALYSIS: float = 0.10      # 10% - Portfolio match
-    RISK_REWARD: float = 0.05       # 5% - R/R ratio
+    Thesis Tracker (60%) - Gomes is the authority
+    Valuation & Cash (25%) - Hard numbers don't lie
+    Weinstein Guard (15%) - Simple trend filter
+    """
+    THESIS_TRACKER: float = 0.60      # 60% - Gomes + Milestones + Red Flags
+    VALUATION_CASH: float = 0.25      # 25% - Cash runway, dilution risk
+    WEINSTEIN_GUARD: float = 0.15     # 15% - 30 WMA trend filter
     
     @classmethod
     def validate(cls) -> None:
-        """Validate that weights sum to 1.0"""
-        total = (
-            cls.GOMES_SCORE + 
-            cls.ML_CONFIDENCE + 
-            cls.TECHNICAL +
-            cls.SENTIMENT +
-            cls.GAP_ANALYSIS + 
-            cls.RISK_REWARD
-        )
-        if not 0.99 <= total <= 1.01:  # Allow small float rounding
+        """Validate weights sum to 1.0"""
+        total = cls.THESIS_TRACKER + cls.VALUATION_CASH + cls.WEINSTEIN_GUARD
+        if not 0.99 <= total <= 1.01:
             raise ValueError(f"Weights must sum to 1.0, got {total}")
 
 
-# Validate on import
-WeightConfig.validate()
+WeightConfigV2.validate()
 
 
 # ==============================================================================
@@ -91,119 +100,142 @@ WeightConfig.validate()
 # ==============================================================================
 
 @dataclass
-class TechnicalScore:
-    """Technical indicator scores"""
-    rsi: float  # 0-100
-    macd_signal: float  # -1 to +1 (normalized)
-    trend_strength: float  # 0-100
-    combined_score: float  # 0-100 (weighted average)
+class ThesisTrackerScore:
+    """Thesis Tracker component (60% weight)"""
+    gomes_score: float              # 0-100 from Gomes Intelligence
+    milestones_hit: int             # Count of achieved milestones
+    red_flags_count: int            # Count of red flags (dilution, delays, etc.)
+    verdict: str                    # Gomes verdict string
+    combined_score: float           # Final 0-100 score
 
 
 @dataclass
-class SignalComponents:
-    """Individual signal component scores"""
-    gomes_score: float  # 0-100
-    ml_confidence: float  # 0-100
-    technical_score: float  # 0-100
-    sentiment_score: float  # 0-100
-    gap_score: float  # 0-100
-    risk_reward_score: float  # 0-100
+class ValuationCashScore:
+    """Valuation & Cash component (25% weight)"""
+    cash_on_hand: Optional[float]   # In millions
+    total_debt: Optional[float]     # In millions
+    burn_rate: Optional[float]      # Monthly burn in millions
+    runway_months: Optional[float]  # Months until cash runs out
+    runway_status: CashRunwayStatus
+    dilution_risk: bool             # Is dilution likely?
+    combined_score: float           # Final 0-100 score
 
 
 @dataclass
-class MasterSignalResult:
+class WeinsteinGuardScore:
+    """Weinstein Trend Guard component (15% weight)"""
+    current_price: float
+    wma_30: float                   # 30-week moving average
+    wma_slope: float                # Slope of 30 WMA (-1 to +1)
+    phase: WeinsteinPhase
+    price_vs_wma_pct: float         # % above/below 30 WMA
+    combined_score: float           # Final 0-100 score
+
+
+@dataclass
+class SignalComponentsV2:
+    """All signal components for v2"""
+    thesis_tracker: ThesisTrackerScore
+    valuation_cash: ValuationCashScore
+    weinstein_guard: WeinsteinGuardScore
+
+
+@dataclass
+class MasterSignalResultV2:
     """
-    Master Signal Aggregation Result
+    Master Signal v2.0 Result
     
-    This is the FINAL OUTPUT - the single number that tells you:
-    "How confident should I be in buying this stock RIGHT NOW?"
+    Simplified output - 3 pillars instead of 6.
     """
     ticker: str
-    buy_confidence: float  # 0-100 - THE KEY NUMBER
+    buy_confidence: float           # 0-100 - THE KEY NUMBER
     signal_strength: SignalStrength
     
-    # Component breakdown
-    components: SignalComponents
+    # Component breakdown (3 pillars)
+    components: SignalComponentsV2
     
-    # Supporting data
-    verdict: str  # Gomes verdict
+    # Blocking reasons
+    blocked: bool
     blocked_reason: Optional[str]
+    
+    # Actionable data
+    verdict: str
     entry_price: Optional[float]
     target_price: Optional[float]
     stop_loss: Optional[float]
     risk_reward_ratio: Optional[float]
-    kelly_size: Optional[float]
     
     # Metadata
     calculated_at: datetime
-    expires_at: Optional[datetime]
     
     def to_dict(self) -> dict:
-        """Convert to dictionary for API response"""
+        """Convert to API response"""
         return {
             "ticker": self.ticker,
             "buy_confidence": round(self.buy_confidence, 2),
             "signal_strength": self.signal_strength.value,
             "components": {
-                "gomes_score": round(self.components.gomes_score, 2),
-                "ml_confidence": round(self.components.ml_confidence, 2),
-                "technical_score": round(self.components.technical_score, 2),
-                "sentiment_score": round(self.components.sentiment_score, 2),
-                "gap_score": round(self.components.gap_score, 2),
-                "risk_reward_score": round(self.components.risk_reward_score, 2),
+                "thesis_tracker": {
+                    "score": round(self.components.thesis_tracker.combined_score, 2),
+                    "gomes_score": round(self.components.thesis_tracker.gomes_score, 2),
+                    "milestones_hit": self.components.thesis_tracker.milestones_hit,
+                    "red_flags": self.components.thesis_tracker.red_flags_count,
+                    "verdict": self.components.thesis_tracker.verdict,
+                },
+                "valuation_cash": {
+                    "score": round(self.components.valuation_cash.combined_score, 2),
+                    "cash_on_hand_m": self.components.valuation_cash.cash_on_hand,
+                    "runway_months": self.components.valuation_cash.runway_months,
+                    "runway_status": self.components.valuation_cash.runway_status.value,
+                    "dilution_risk": self.components.valuation_cash.dilution_risk,
+                },
+                "weinstein_guard": {
+                    "score": round(self.components.weinstein_guard.combined_score, 2),
+                    "phase": self.components.weinstein_guard.phase.value,
+                    "price": self.components.weinstein_guard.current_price,
+                    "wma_30": round(self.components.weinstein_guard.wma_30, 2),
+                    "price_vs_wma_pct": round(self.components.weinstein_guard.price_vs_wma_pct, 2),
+                },
             },
-            "verdict": self.verdict,
+            "blocked": self.blocked,
             "blocked_reason": self.blocked_reason,
+            "verdict": self.verdict,
             "entry_price": self.entry_price,
             "target_price": self.target_price,
             "stop_loss": self.stop_loss,
             "risk_reward_ratio": round(self.risk_reward_ratio, 2) if self.risk_reward_ratio else None,
-            "kelly_size": round(self.kelly_size, 4) if self.kelly_size else None,
             "calculated_at": self.calculated_at.isoformat(),
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }
 
 
 # ==============================================================================
-# Master Signal Aggregator
+# Master Signal Aggregator v2.0
 # ==============================================================================
 
-class MasterSignalAggregator:
+class MasterSignalAggregatorV2:
     """
-    Master Signal Aggregator - The Brain of Trading System
+    Master Signal v2.0 - Simplified 3-Pillar System
     
-    Combines all signal sources into one actionable "Buy Confidence" score.
+    Designed for Micro-Cap investing following Mark Gomes methodology.
+    
+    Pillars:
+    1. Thesis Tracker (60%) - AI analysis of transcripts + milestones
+    2. Valuation & Cash (25%) - Cash runway, burn rate, dilution risk
+    3. Weinstein Guard (15%) - 30-week moving average trend filter
     
     Usage:
-        aggregator = MasterSignalAggregator(db)
-        result = aggregator.calculate_master_signal(ticker="AAPL")
+        aggregator = MasterSignalAggregatorV2(db)
+        result = aggregator.calculate_master_signal("GKPRF")
         
-        if result.buy_confidence > 80:
-            print(f"STRONG BUY: {result.buy_confidence}%")
+        if result.buy_confidence >= 70 and not result.blocked:
+            print(f"BUY: {result.ticker} at ${result.entry_price}")
     """
     
-    def __init__(self, db: Session, weights: Optional[WeightConfig] = None):
-        """
-        Initialize Master Signal Aggregator
-        
-        Args:
-            db: Database session
-            weights: Custom weight configuration (optional)
-        """
+    def __init__(self, db: Session):
+        """Initialize Master Signal v2 Aggregator"""
         self.db = db
-        self.weights = weights or WeightConfig()
         self.gomes_service = GomesIntelligenceService(db)
-        self.gap_service = GapAnalysisService()
-        
-        # Initialize sentiment analyzer if available
-        if SENTIMENT_AVAILABLE:
-            self.sentiment_analyzer = SentimentAnalyzer(lookback_days=7)
-            logger.info("📰 Sentiment analysis ENABLED")
-        else:
-            self.sentiment_analyzer = None
-            logger.warning("⚠️  Sentiment analysis DISABLED")
-        
-        logger.info("🧠 Master Signal Aggregator initialized")
+        logger.info("Master Signal v2.0 initialized (3-pillar system)")
     
     # ==========================================================================
     # Main Entry Point
@@ -214,452 +246,440 @@ class MasterSignalAggregator:
         ticker: str,
         user_id: Optional[int] = None,
         current_price: Optional[float] = None,
-    ) -> MasterSignalResult:
+    ) -> MasterSignalResultV2:
         """
-        Calculate Master Signal for a ticker.
-        
-        This is THE method - it produces the final "Buy Confidence" score.
+        Calculate Master Signal using 3-pillar system.
         
         Args:
             ticker: Stock ticker symbol
-            user_id: User ID for gap analysis (optional)
-            current_price: Current market price (optional, will fetch if None)
+            user_id: Optional user ID (for portfolio context)
+            current_price: Current price (will fetch if None)
             
         Returns:
-            MasterSignalResult with buy_confidence (0-100)
-            
-        Raises:
-            ValueError: If ticker not found or insufficient data
+            MasterSignalResultV2 with buy_confidence (0-100)
         """
-        logger.info(f"🎯 Calculating Master Signal for {ticker}")
+        logger.info(f"Calculating Master Signal v2.0 for {ticker}")
         
-        # ======================================================================
-        # 1. FETCH DATA
-        # ======================================================================
-        watchlist = self._get_watchlist(ticker)
-        prediction = self._get_latest_prediction(ticker)
-        signal = self._get_latest_signal(ticker)
-        
+        # Fetch current price if not provided
         if current_price is None:
-            current_price = float(prediction.current_price) if prediction else None
+            current_price = self._fetch_current_price(ticker)
         
-        # ======================================================================
-        # 2. GOMES SCORE (35%)
-        # ======================================================================
-        gomes_score = self._calculate_gomes_score(ticker, current_price)
+        # =======================================================
+        # PILLAR 1: Thesis Tracker (60%)
+        # =======================================================
+        thesis_score = self._calculate_thesis_tracker(ticker, current_price)
         
-        # ======================================================================
-        # 3. ML CONFIDENCE (25%)
-        # ======================================================================
-        ml_confidence = self._calculate_ml_confidence(prediction)
+        # =======================================================
+        # PILLAR 2: Valuation & Cash (25%)
+        # =======================================================
+        valuation_score = self._calculate_valuation_cash(ticker)
         
-        # ======================================================================
-        # 4. TECHNICAL SCORE (15%)
-        # ======================================================================
-        technical_score = self._calculate_technical_score(ticker)
+        # =======================================================
+        # PILLAR 3: Weinstein Trend Guard (15%)
+        # =======================================================
+        weinstein_score = self._calculate_weinstein_guard(ticker, current_price)
         
-        # ======================================================================
-        # 5. SENTIMENT SCORE (15%)
-        # ======================================================================
-        sentiment_score = self._calculate_sentiment_score(ticker)
-        
-        # ======================================================================
-        # 6. GAP ANALYSIS (10%)
-        # ======================================================================
-        gap_score = self._calculate_gap_score(ticker, user_id)
-        
-        # ======================================================================
-        # 7. RISK/REWARD SCORE (5%)
-        # ======================================================================
-        risk_reward_score = self._calculate_risk_reward_score(signal, prediction)
-        
-        # ======================================================================
-        # 8. AGGREGATE SCORES
-        # ======================================================================
-        components = SignalComponents(
-            gomes_score=gomes_score,
-            ml_confidence=ml_confidence,
-            technical_score=technical_score,
-            sentiment_score=sentiment_score,
-            gap_score=gap_score,
-            risk_reward_score=risk_reward_score,
+        # =======================================================
+        # AGGREGATE SCORES
+        # =======================================================
+        buy_confidence = (
+            thesis_score.combined_score * WeightConfigV2.THESIS_TRACKER +
+            valuation_score.combined_score * WeightConfigV2.VALUATION_CASH +
+            weinstein_score.combined_score * WeightConfigV2.WEINSTEIN_GUARD
         )
         
-        buy_confidence = self._aggregate_scores(components)
+        # =======================================================
+        # BLOCKING RULES
+        # =======================================================
+        blocked = False
+        blocked_reason = None
+        
+        # Rule 1: Weinstein Phase 4 = DO NOT BUY
+        if weinstein_score.phase == WeinsteinPhase.PHASE_4_DECLINE:
+            blocked = True
+            blocked_reason = "WEINSTEIN_PHASE_4: Price below falling 30 WMA - DO NOT BUY"
+            buy_confidence *= 0.3  # Heavy penalty
+        
+        # Rule 2: Cash Runway < 6 months = Dilution risk
+        if valuation_score.runway_status == CashRunwayStatus.DANGER:
+            blocked = True
+            blocked_reason = "CASH_RUNWAY_DANGER: Less than 6 months runway - Dilution likely"
+            buy_confidence *= 0.5  # Penalty
+        
+        # Rule 3: Multiple red flags from Gomes
+        if thesis_score.red_flags_count >= 3:
+            blocked = True
+            blocked_reason = f"RED_FLAGS: {thesis_score.red_flags_count} red flags detected"
+            buy_confidence *= 0.5
+        
+        # Classify signal strength
         signal_strength = self._classify_strength(buy_confidence)
         
-        # ======================================================================
-        # 8. GET VERDICT & SUPPORTING DATA
-        # ======================================================================
+        # Get entry/target/stop from Gomes verdict
         verdict_obj = self.gomes_service.generate_verdict(ticker, current_price)
         
-        return MasterSignalResult(
+        # Extract green_line (buy target) and red_line (sell target) from verdict
+        target_price = verdict_obj.red_line if verdict_obj else None
+        stop_loss = verdict_obj.green_line * 0.9 if verdict_obj and verdict_obj.green_line else None
+        
+        # Calculate risk/reward if we have the data
+        risk_reward = None
+        if current_price and target_price and stop_loss and current_price > stop_loss:
+            potential_gain = target_price - current_price
+            potential_loss = current_price - stop_loss
+            if potential_loss > 0:
+                risk_reward = potential_gain / potential_loss
+        
+        components = SignalComponentsV2(
+            thesis_tracker=thesis_score,
+            valuation_cash=valuation_score,
+            weinstein_guard=weinstein_score,
+        )
+        
+        return MasterSignalResultV2(
             ticker=ticker,
             buy_confidence=buy_confidence,
             signal_strength=signal_strength,
             components=components,
-            verdict=verdict_obj.verdict.value,
-            blocked_reason=verdict_obj.blocked_reason if not verdict_obj.passed_gomes_filter else None,
-            entry_price=float(signal.entry_price) if signal else current_price,
-            target_price=float(signal.target_price) if signal else None,
-            stop_loss=float(signal.stop_loss) if signal else None,
-            risk_reward_ratio=float(signal.risk_reward_ratio) if signal else None,
-            kelly_size=float(signal.kelly_size) if signal else None,
+            blocked=blocked,
+            blocked_reason=blocked_reason,
+            verdict=thesis_score.verdict,
+            entry_price=current_price,
+            target_price=target_price,
+            stop_loss=stop_loss,
+            risk_reward_ratio=risk_reward,
             calculated_at=datetime.utcnow(),
-            expires_at=signal.expires_at if signal else None,
         )
     
     # ==========================================================================
-    # Component Calculators
+    # Pillar 1: Thesis Tracker (60%)
     # ==========================================================================
     
-    def _calculate_gomes_score(self, ticker: str, current_price: Optional[float]) -> float:
+    def _calculate_thesis_tracker(
+        self,
+        ticker: str,
+        current_price: Optional[float]
+    ) -> ThesisTrackerScore:
         """
-        Calculate Gomes Intelligence Score (0-100)
+        Calculate Thesis Tracker score.
         
-        Returns:
-            0-100 score based on Gomes verdict
+        This is the heart of Gomes methodology - AI analysis of transcripts.
+        
+        Components:
+        - Gomes Intelligence Score (main)
+        - Milestones achieved (contracts, certifications, revenue)
+        - Red flags (dilution, delays, leadership changes)
         """
         try:
             verdict = self.gomes_service.generate_verdict(ticker, current_price)
             
-            # Convert verdict to score
-            if verdict.verdict == InvestmentVerdict.STRONG_BUY:
-                base_score = 90.0
-            elif verdict.verdict == InvestmentVerdict.BUY:
-                base_score = 75.0
-            elif verdict.verdict == InvestmentVerdict.HOLD:
-                base_score = 50.0
-            elif verdict.verdict == InvestmentVerdict.SELL:
-                base_score = 25.0
-            elif verdict.verdict == InvestmentVerdict.AVOID:
-                base_score = 0.0
-            else:
-                base_score = 50.0  # Neutral
+            # Convert verdict to base score
+            verdict_scores = {
+                InvestmentVerdict.STRONG_BUY: 95.0,
+                InvestmentVerdict.BUY: 80.0,
+                InvestmentVerdict.HOLD: 50.0,
+                InvestmentVerdict.SELL: 25.0,
+                InvestmentVerdict.AVOID: 5.0,
+            }
+            gomes_score = verdict_scores.get(verdict.verdict, 50.0)
             
-            # Apply Gomes filter penalty
+            # Count milestones from latest analysis
+            # TODO: Implement milestone tracking from transcripts
+            milestones_hit = 0
+            
+            # Count red flags
+            # TODO: Implement red flag detection
+            red_flags_count = 0
             if not verdict.passed_gomes_filter:
-                base_score *= 0.3  # 70% penalty if blocked
+                red_flags_count += 1
             
-            # Boost for Kelly sizing confidence
-            if verdict.kelly_position_size:
-                kelly_boost = min(verdict.kelly_position_size * 20, 10)  # Max +10
-                base_score = min(base_score + kelly_boost, 100)
+            # Apply penalties/bonuses
+            combined_score = gomes_score
+            combined_score += milestones_hit * 5  # +5 per milestone
+            combined_score -= red_flags_count * 15  # -15 per red flag
+            combined_score = max(0, min(100, combined_score))
             
-            logger.debug(f"Gomes score for {ticker}: {base_score:.2f}")
-            return base_score
-            
-        except Exception as e:
-            logger.warning(f"Failed to get Gomes score for {ticker}: {e}")
-            return 50.0  # Neutral on error
-    
-    def _calculate_ml_confidence(self, prediction: Optional[MLPrediction]) -> float:
-        """
-        Calculate ML Prediction Confidence (0-100)
-        
-        Returns:
-            0-100 score based on ML prediction confidence
-        """
-        if not prediction:
-            logger.debug("No ML prediction available")
-            return 50.0  # Neutral
-        
-        # Only UP predictions get positive scores
-        if prediction.prediction_type != 'UP':
-            logger.debug(f"ML prediction type is {prediction.prediction_type}, not UP")
-            return 30.0  # Penalty for non-UP
-        
-        # Use confidence directly (already 0-100)
-        confidence = float(prediction.confidence)
-        
-        # Penalize low-quality predictions
-        if prediction.quality_assessment == "LOW_CONFIDENCE":
-            confidence *= 0.5
-        elif prediction.quality_assessment == "PREDICTION_FAILED":
-            confidence = 0.0
-        
-        logger.debug(f"ML confidence: {confidence:.2f}")
-        return confidence
-    
-    def _calculate_technical_score(self, ticker: str) -> float:
-        """
-        Calculate Technical Indicators Score (0-100)
-        
-        TODO: Implement RSI/MACD calculation from OHLCV data
-        
-        For now, returns neutral score.
-        """
-        # TODO: Query OHLCVData and calculate:
-        # - RSI (Relative Strength Index)
-        # - MACD (Moving Average Convergence Divergence)
-        # - Trend strength
-        
-        logger.debug(f"Technical score for {ticker}: 50.0 (placeholder)")
-        return 50.0  # Neutral until implemented
-    
-    def _calculate_sentiment_score(self, ticker: str) -> float:
-        """
-        Calculate News Sentiment Score (0-100)
-        
-        Analyzes recent news headlines and returns sentiment.
-        
-        Returns:
-            0-100 score (0=very bearish, 50=neutral, 100=very bullish)
-        """
-        if not self.sentiment_analyzer:
-            logger.debug("Sentiment analysis disabled")
-            return 50.0  # Neutral
-        
-        try:
-            result = self.sentiment_analyzer.analyze_ticker(ticker)
-            
-            # Apply confidence penalty for low article count
-            score = result.sentiment_score * result.confidence + 50.0 * (1 - result.confidence)
-            
-            logger.debug(
-                f"Sentiment score for {ticker}: {score:.2f} "
-                f"(raw: {result.sentiment_score:.2f}, confidence: {result.confidence:.2f})"
+            return ThesisTrackerScore(
+                gomes_score=gomes_score,
+                milestones_hit=milestones_hit,
+                red_flags_count=red_flags_count,
+                verdict=verdict.verdict.value,
+                combined_score=combined_score,
             )
-            return score
             
         except Exception as e:
-            logger.warning(f"Failed to get sentiment for {ticker}: {e}")
-            return 50.0  # Neutral on error
+            logger.warning(f"Thesis Tracker error for {ticker}: {e}")
+            return ThesisTrackerScore(
+                gomes_score=50.0,
+                milestones_hit=0,
+                red_flags_count=0,
+                verdict="UNKNOWN",
+                combined_score=50.0,
+            )
     
-    def _calculate_gap_score(self, ticker: str, user_id: Optional[int]) -> float:
+    # ==========================================================================
+    # Pillar 2: Valuation & Cash (25%)
+    # ==========================================================================
+    
+    def _calculate_valuation_cash(self, ticker: str) -> ValuationCashScore:
         """
-        Calculate Gap Analysis Score (0-100)
+        Calculate Valuation & Cash score from DB data.
         
-        Scores based on position matching:
-        - OPPORTUNITY: 100 (BUY signal, don't own)
-        - ACCUMULATE: 80 (BUY signal, already own)
-        - HOLD: 50 (Own but no strong signal)
-        - WAIT_MARKET_BAD: 30 (BUY signal but bad market)
-        - DANGER_EXIT: 10 (SELL signal, own)
-        - NO_ACTION: 40 (Don't own, no signal)
+        Gomes Rule: "Did they run out of money?"
+        
+        Uses cash_runway_months from Deep DD analysis stored in DB.
+        NO YFINANCE - we use our own analysis data.
+        
+        Key metrics:
+        - Cash runway (months until cash runs out)
+        - Dilution risk assessment
         """
-        if not user_id:
-            logger.debug("No user_id provided for gap analysis")
-            return 50.0  # Neutral
-        
         try:
-            # Get stock with signal
-            from app.models.stock import Stock
-            stock = self.db.query(Stock).filter(Stock.ticker == ticker).first()
+            # Get stock from DB with Deep DD data
+            stock = (
+                self.db.query(Stock)
+                .filter(Stock.ticker == ticker)
+                .filter(Stock.is_latest == True)
+                .first()
+            )
+            
+            # Default values if no data
+            cash = None
+            debt = None
+            burn_rate = None
+            runway_months = None
+            
+            # Try to extract from stock's raw_notes or catalysts (Deep DD stores here)
+            if stock and stock.raw_notes:
+                # Parse cash runway from Deep DD stored data
+                notes = stock.raw_notes.lower()
+                if "cash runway" in notes or "runway" in notes:
+                    # Extract months if mentioned
+                    import re
+                    match = re.search(r'(\d+)\s*m[oě]s[íi]c', notes)
+                    if match:
+                        runway_months = float(match.group(1))
+            
+            # Determine status based on runway
+            if runway_months is None:
+                runway_status = CashRunwayStatus.UNKNOWN
+                dilution_risk = False
+                combined_score = 50.0  # Neutral when unknown
+            elif runway_months >= 18:
+                runway_status = CashRunwayStatus.HEALTHY
+                dilution_risk = False
+                combined_score = 90.0
+            elif runway_months >= 12:
+                runway_status = CashRunwayStatus.HEALTHY
+                dilution_risk = False
+                combined_score = 75.0
+            elif runway_months >= 6:
+                runway_status = CashRunwayStatus.CAUTION
+                dilution_risk = True
+                combined_score = 50.0
+            else:
+                runway_status = CashRunwayStatus.DANGER
+                dilution_risk = True
+                combined_score = 20.0
+            
+            return ValuationCashScore(
+                cash_on_hand=cash,
+                total_debt=debt,
+                burn_rate=burn_rate,
+                runway_months=runway_months,
+                runway_status=runway_status,
+                dilution_risk=dilution_risk,
+                combined_score=combined_score,
+            )
+            
+        except Exception as e:
+            logger.warning(f"Valuation & Cash error for {ticker}: {e}")
+            return ValuationCashScore(
+                cash_on_hand=None,
+                total_debt=None,
+                burn_rate=None,
+                runway_months=None,
+                runway_status=CashRunwayStatus.UNKNOWN,
+                dilution_risk=False,
+                combined_score=50.0,  # Neutral on error
+            )
+    
+    # ==========================================================================
+    # Pillar 3: Weinstein Trend Guard (15%)
+    # ==========================================================================
+    
+    def _calculate_weinstein_guard(
+        self,
+        ticker: str,
+        current_price: Optional[float]
+    ) -> WeinsteinGuardScore:
+        """
+        Calculate Weinstein Trend Guard score.
+        
+        SIMPLIFIED VERSION - No yfinance dependency.
+        
+        We use price position relative to green_line/red_line from DB
+        as a proxy for trend analysis:
+        - Near green_line = likely in accumulation (Phase 1/2)
+        - Near red_line = likely topping out (Phase 3/4)
+        
+        For proper 30 WMA, user should run Deep DD which stores this data.
+        """
+        try:
+            # Get stock from DB
+            stock = (
+                self.db.query(Stock)
+                .filter(Stock.ticker == ticker)
+                .filter(Stock.is_latest == True)
+                .first()
+            )
             
             if not stock:
-                return 50.0
+                return self._default_weinstein_score(current_price or 0)
             
-            # Get match signal
-            match_signal = self.gap_service.get_match_signal(
-                stock_signal=stock.mark_gomes_signal,
-                user_owns_position=self._user_owns_ticker(ticker, user_id)
+            # Use stored price data
+            price = current_price or stock.current_price
+            green_line = stock.green_line
+            red_line = stock.red_line
+            
+            if not price or not green_line or not red_line:
+                return self._default_weinstein_score(price or 0)
+            
+            # Calculate price position (0% = at green, 100% = at red)
+            if red_line > green_line:
+                price_range = red_line - green_line
+                price_position = ((price - green_line) / price_range) * 100 if price_range > 0 else 50
+            else:
+                price_position = 50  # Default to middle
+            
+            # Determine phase based on price position
+            if price_position <= 25:
+                # Near green line = likely Phase 2 (accumulation/advance)
+                phase = WeinsteinPhase.PHASE_2_ADVANCE
+                combined_score = 85.0
+            elif price_position <= 50:
+                # Lower half = Phase 1 (base building)
+                phase = WeinsteinPhase.PHASE_1_BASE
+                combined_score = 65.0
+            elif price_position <= 75:
+                # Upper half = Phase 3 (topping)
+                phase = WeinsteinPhase.PHASE_3_TOP
+                combined_score = 40.0
+            else:
+                # Near red line = Phase 4 (decline/overvalued)
+                phase = WeinsteinPhase.PHASE_4_DECLINE
+                combined_score = 15.0
+            
+            return WeinsteinGuardScore(
+                current_price=price,
+                wma_30=green_line,  # Use green_line as proxy
+                wma_slope=0.0,  # Not calculated without historical data
+                phase=phase,
+                price_vs_wma_pct=price_position - 50,  # Relative to midpoint
+                combined_score=combined_score,
             )
             
-            # Score mapping
-            score_map = {
-                MatchSignal.OPPORTUNITY: 100.0,
-                MatchSignal.ACCUMULATE: 80.0,
-                MatchSignal.HOLD: 50.0,
-                MatchSignal.WAIT_MARKET_BAD: 30.0,
-                MatchSignal.DANGER_EXIT: 10.0,
-                MatchSignal.NO_ACTION: 40.0,
-            }
-            
-            score = score_map.get(match_signal, 50.0)
-            logger.debug(f"Gap score for {ticker}: {score:.2f} (match: {match_signal})")
-            return score
-            
         except Exception as e:
-            logger.warning(f"Failed to calculate gap score for {ticker}: {e}")
-            return 50.0
+            logger.warning(f"Weinstein Guard error for {ticker}: {e}")
+            return self._default_weinstein_score(current_price or 0)
     
-    def _calculate_risk_reward_score(
-        self,
-        signal: Optional[TradingSignal],
-        prediction: Optional[MLPrediction]
-    ) -> float:
-        """
-        Calculate Risk/Reward Score (0-100)
-        
-        Scores based on R/R ratio:
-        - R/R >= 3.0: 100
-        - R/R >= 2.0: 80
-        - R/R >= 1.5: 60
-        - R/R >= 1.0: 40
-        - R/R < 1.0: 20
-        """
-        risk_reward = None
-        
-        if signal and signal.risk_reward_ratio:
-            risk_reward = float(signal.risk_reward_ratio)
-        elif prediction:
-            # Calculate R/R from prediction
-            current = float(prediction.current_price)
-            target = float(prediction.predicted_price)
-            stop_loss = current * 0.9  # Assume 10% stop loss
-            
-            potential_gain = target - current
-            potential_loss = current - stop_loss
-            
-            if potential_loss > 0:
-                risk_reward = potential_gain / potential_loss
-        
-        if risk_reward is None:
-            logger.debug("No R/R ratio available")
-            return 50.0
-        
-        # Score mapping
-        if risk_reward >= 3.0:
-            score = 100.0
-        elif risk_reward >= 2.0:
-            score = 80.0
-        elif risk_reward >= 1.5:
-            score = 60.0
-        elif risk_reward >= 1.0:
-            score = 40.0
-        else:
-            score = 20.0
-        
-        logger.debug(f"R/R score: {score:.2f} (ratio: {risk_reward:.2f})")
-        return score
-    
-    # ==========================================================================
-    # Aggregation
-    # ==========================================================================
-    
-    def _aggregate_scores(self, components: SignalComponents) -> float:
-        """
-        Aggregate component scores into final Buy Confidence (0-100)
-        
-        Uses weighted average based on WeightConfig.
-        """
-        buy_confidence = (
-            components.gomes_score * self.weights.GOMES_SCORE +
-            components.ml_confidence * self.weights.ML_CONFIDENCE +
-            components.technical_score * self.weights.TECHNICAL +
-            components.sentiment_score * self.weights.SENTIMENT +
-            components.gap_score * self.weights.GAP_ANALYSIS +
-            components.risk_reward_score * self.weights.RISK_REWARD
+    def _default_weinstein_score(self, price: float) -> WeinsteinGuardScore:
+        """Return neutral Weinstein score on error"""
+        return WeinsteinGuardScore(
+            current_price=price,
+            wma_30=price,
+            wma_slope=0.0,
+            phase=WeinsteinPhase.PHASE_1_BASE,
+            price_vs_wma_pct=0.0,
+            combined_score=50.0,
         )
-        
-        # Clamp to 0-100
-        buy_confidence = max(0.0, min(100.0, buy_confidence))
-        
-        logger.info(f"📊 Buy Confidence: {buy_confidence:.2f}%")
-        return buy_confidence
     
-    def _classify_strength(self, buy_confidence: float) -> SignalStrength:
-        """Classify signal strength based on buy confidence"""
-        if buy_confidence >= 80:
+    # ==========================================================================
+    # Helpers
+    # ==========================================================================
+    
+    def _fetch_current_price(self, ticker: str) -> Optional[float]:
+        """Fetch current market price from DB"""
+        try:
+            stock = (
+                self.db.query(Stock)
+                .filter(Stock.ticker == ticker)
+                .filter(Stock.is_latest == True)
+                .first()
+            )
+            if stock and stock.current_price:
+                return float(stock.current_price)
+        except Exception as e:
+            logger.warning(f"Failed to fetch price for {ticker}: {e}")
+        return None
+    
+    def _classify_strength(self, confidence: float) -> SignalStrength:
+        """Classify buy confidence into signal strength"""
+        if confidence >= 80:
             return SignalStrength.STRONG_BUY
-        elif buy_confidence >= 60:
+        elif confidence >= 60:
             return SignalStrength.BUY
-        elif buy_confidence >= 40:
+        elif confidence >= 40:
             return SignalStrength.WEAK_BUY
-        elif buy_confidence >= 20:
+        elif confidence >= 20:
             return SignalStrength.NEUTRAL
         else:
             return SignalStrength.AVOID
-    
-    # ==========================================================================
-    # Helper Methods
-    # ==========================================================================
-    
-    def _get_watchlist(self, ticker: str) -> Optional[ActiveWatchlist]:
-        """Get active watchlist entry for ticker"""
-        return self.db.query(ActiveWatchlist).filter(
-            ActiveWatchlist.ticker == ticker,
-            ActiveWatchlist.is_active == True
-        ).first()
-    
-    def _get_latest_prediction(self, ticker: str) -> Optional[MLPrediction]:
-        """Get latest ML prediction for ticker"""
-        return self.db.query(MLPrediction).filter(
-            MLPrediction.ticker == ticker
-        ).order_by(MLPrediction.created_at.desc()).first()
-    
-    def _get_latest_signal(self, ticker: str) -> Optional[TradingSignal]:
-        """Get latest trading signal for ticker"""
-        return self.db.query(TradingSignal).filter(
-            TradingSignal.ticker == ticker
-        ).order_by(TradingSignal.created_at.desc()).first()
-    
-    def _user_owns_ticker(self, ticker: str, user_id: int) -> bool:
-        """Check if user owns position in ticker"""
-        from app.models.portfolio import Position
-        
-        position = self.db.query(Position).filter(
-            Position.ticker == ticker,
-            Position.user_id == user_id,
-            Position.quantity > 0
-        ).first()
-        
-        return position is not None
 
 
 # ==============================================================================
 # Convenience Functions
 # ==============================================================================
 
-def calculate_buy_confidence(
+def calculate_master_signal_v2(
     db: Session,
     ticker: str,
     user_id: Optional[int] = None,
-    current_price: Optional[float] = None,
-) -> MasterSignalResult:
+) -> MasterSignalResultV2:
     """
-    Convenience function to calculate Buy Confidence for a ticker.
+    Convenience function to calculate Master Signal v2.
     
     Usage:
-        result = calculate_buy_confidence(db, "AAPL", user_id=1)
+        result = calculate_master_signal_v2(db, "GKPRF")
         print(f"Buy Confidence: {result.buy_confidence}%")
     """
-    aggregator = MasterSignalAggregator(db)
-    return aggregator.calculate_master_signal(ticker, user_id, current_price)
+    aggregator = MasterSignalAggregatorV2(db)
+    return aggregator.calculate_master_signal(ticker, user_id)
 
 
-def get_top_opportunities(
+def get_top_opportunities_v2(
     db: Session,
-    user_id: Optional[int] = None,
+    tickers: List[str],
     min_confidence: float = 60.0,
-    limit: int = 10,
-) -> list[MasterSignalResult]:
+    exclude_blocked: bool = True,
+) -> List[MasterSignalResultV2]:
     """
-    Get top trading opportunities sorted by Buy Confidence.
+    Get top opportunities from list of tickers.
     
     Args:
         db: Database session
-        user_id: User ID for personalized gap analysis
-        min_confidence: Minimum buy confidence threshold (default 60%)
-        limit: Max number of results (default 10)
+        tickers: List of tickers to analyze
+        min_confidence: Minimum buy confidence (default 60%)
+        exclude_blocked: Exclude blocked signals (default True)
         
     Returns:
-        List of MasterSignalResult sorted by buy_confidence (descending)
+        List of MasterSignalResultV2 sorted by confidence (highest first)
     """
-    aggregator = MasterSignalAggregator(db)
-    
-    # Get all active watchlist tickers
-    watchlist_items = db.query(ActiveWatchlist).filter(
-        ActiveWatchlist.is_active == True
-    ).all()
-    
+    aggregator = MasterSignalAggregatorV2(db)
     results = []
-    for item in watchlist_items:
+    
+    for ticker in tickers:
         try:
-            result = aggregator.calculate_master_signal(
-                ticker=item.ticker,
-                user_id=user_id
-            )
+            result = aggregator.calculate_master_signal(ticker)
             
             if result.buy_confidence >= min_confidence:
-                results.append(result)
-                
+                if not exclude_blocked or not result.blocked:
+                    results.append(result)
+                    
         except Exception as e:
-            logger.warning(f"Failed to calculate signal for {item.ticker}: {e}")
-            continue
+            logger.warning(f"Failed to calculate signal for {ticker}: {e}")
     
-    # Sort by confidence descending
+    # Sort by confidence (highest first)
     results.sort(key=lambda x: x.buy_confidence, reverse=True)
     
-    return results[:limit]
+    return results

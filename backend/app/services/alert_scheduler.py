@@ -65,7 +65,7 @@ async def run_alert_check():
             )
             
             if alerts:
-                logger.info(f"✅ Sent {len(alerts)} alerts")
+                logger.info(f"Sent {len(alerts)} alerts")
             else:
                 logger.info("No alerts triggered")
                 
@@ -75,7 +75,7 @@ async def run_alert_check():
 
 async def scheduler_loop():
     """Main scheduler loop"""
-    logger.info(f"🚀 Alert scheduler started")
+    logger.info(f"Alert scheduler started")
     logger.info(f"Check interval: {CHECK_INTERVAL_MINUTES} minutes")
     logger.info(f"Min confidence: {MIN_CONFIDENCE}%")
     logger.info(f"Market hours: {MARKET_OPEN_HOUR}:00 - {MARKET_CLOSE_HOUR}:00")
@@ -120,7 +120,7 @@ async def start_scheduler() -> None:
         return
     
     _scheduler_task = asyncio.create_task(scheduler_loop())
-    logger.info("🚀 Alert scheduler started as background task")
+    logger.info("Alert scheduler started as background task")
 
 
 async def stop_scheduler() -> None:
@@ -142,7 +142,7 @@ async def stop_scheduler() -> None:
         pass
     
     _scheduler_task = None
-    logger.info("🛑 Alert scheduler stopped")
+    logger.info("Alert scheduler stopped")
 
 
 if __name__ == "__main__":

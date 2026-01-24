@@ -793,7 +793,7 @@ class GomesGatekeeper:
         if lifecycle_phase == LifecyclePhase.WAIT_TIME:
             passed_filter = False
             blocked_reason = "WAIT_TIME phase - Dead Money (Gomes Rule)"
-            risk_factors.append("🚫 BLOCKED: Wait Time phase - do not invest")
+            risk_factors.append("BLOCKED: Wait Time phase - do not invest")
         
         # =====================================================================
         # RULE 2: Earnings 14-Day Rule
@@ -809,11 +809,11 @@ class GomesGatekeeper:
                 if days_to_earnings <= 0:
                     passed_filter = False
                     blocked_reason = f"Earnings TODAY or PASSED - DO NOT ENTER"
-                    risk_factors.append(f"🚫 BLOCKED: Earnings in {days_to_earnings} days")
+                    risk_factors.append(f"BLOCKED: Earnings in {days_to_earnings} days")
                 else:
                     # Penalty but not blocked (unless < 7 days)
                     adjusted_score = max(0, adjusted_score - 3)
-                    risk_factors.append(f"⚠️ Earnings in {days_to_earnings} days - HIGH RISK")
+                    risk_factors.append(f"Earnings in {days_to_earnings} days - HIGH RISK")
                     
                     if days_to_earnings < 7:
                         passed_filter = False
@@ -827,7 +827,7 @@ class GomesGatekeeper:
         if self.market_alert == MarketAlert.RED:
             passed_filter = False
             blocked_reason = "RED ALERT - No new positions allowed"
-            risk_factors.append("🔴 BLOCKED: Red Alert - full defensive mode")
+            risk_factors.append("BLOCKED: Red Alert - full defensive mode")
         
         # =====================================================================
         # RULE 4: Position Tier + Market Alert
@@ -849,7 +849,7 @@ class GomesGatekeeper:
             if passed_filter:  # Don't override stronger blocks
                 passed_filter = False
                 blocked_reason = f"{position_tier.value} tier blocked at {self.market_alert.value} alert"
-            risk_factors.append(f"⚠️ {position_tier.value} positions not allowed in {self.market_alert.value}")
+            risk_factors.append(f"{position_tier.value} positions not allowed in {self.market_alert.value}")
         
         # =====================================================================
         # RULE 5: Price Line Analysis
@@ -865,7 +865,7 @@ class GomesGatekeeper:
             if zone == "SELL" and passed_filter:
                 # Price above red line - don't buy
                 adjusted_score = max(0, adjusted_score - 2)
-                risk_factors.append(f"📈 {zone_reason}")
+                risk_factors.append(f"{zone_reason}")
             elif zone == "BUY":
                 adjusted_score = min(10, adjusted_score + 1)
         
@@ -881,7 +881,7 @@ class GomesGatekeeper:
             ml_confidence = ml_prediction.get("confidence", ml_prediction.get("score"))
             
             if ml_direction == "DOWN" and ml_confidence and ml_confidence > 0.7:
-                risk_factors.append(f"📉 ML predicts DOWN with {ml_confidence*100:.0f}% confidence")
+                risk_factors.append(f"ML predicts DOWN with {ml_confidence*100:.0f}% confidence")
                 adjusted_score = max(0, adjusted_score - 1)
             elif ml_direction == "UP" and ml_confidence and ml_confidence > 0.7:
                 adjusted_score = min(10, adjusted_score + 1)

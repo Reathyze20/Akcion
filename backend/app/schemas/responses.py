@@ -48,18 +48,18 @@ class StockResponse(BaseModel):
     id: int
     created_at: datetime
     ticker: str
-    company_name: str | None
-    source_type: str
-    speaker: str
-    sentiment: str | None
-    gomes_score: int | None
-    conviction_score: int | None
-    price_target: str | None
-    time_horizon: str | None
-    edge: str | None
-    catalysts: str | None
-    risks: str | None
-    raw_notes: str | None
+    company_name: str | None = None
+    source_type: str | None = None
+    speaker: str | None = None
+    sentiment: str | None = None
+    gomes_score: int | None = None
+    conviction_score: int | None = None
+    price_target: str | None = None
+    time_horizon: str | None = None
+    edge: str | None = None
+    catalysts: str | None = None
+    risks: str | None = None
+    raw_notes: str | None = None
     
     # Trading action fields
     action_verdict: str | None = None

@@ -63,29 +63,29 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
       {/* Page Header */}
       <div>
         <h1 className="text-3xl font-bold text-white mb-2">
-          📊 Trading Signals Dashboard
+          Přehled investičních signálů
         </h1>
         <p className="text-slate-400 text-sm">
-          Actionable investment opportunities from Mark Gomes methodology
+          Akcionovátelné investiční příležitosti podle metodologie Marka Gomese
         </p>
       </div>
 
       {/* Stats Bar */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
-          <div className="text-green-400 text-sm font-semibold mb-1">STRONG BUYS</div>
+          <div className="text-green-400 text-sm font-semibold mb-1">SILNÉ NÁKUPY</div>
           <div className="text-3xl font-bold text-white font-mono">{topPicks.length}</div>
         </div>
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
-          <div className="text-yellow-400 text-sm font-semibold mb-1">WATCH LIST</div>
+          <div className="text-yellow-400 text-sm font-semibold mb-1">SLEDOVANÉ</div>
           <div className="text-3xl font-bold text-white font-mono">{watchList.length}</div>
         </div>
         <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-4">
-          <div className="text-indigo-400 text-sm font-semibold mb-1">TOTAL STOCKS</div>
+          <div className="text-indigo-400 text-sm font-semibold mb-1">CELKEM AKCIÍ</div>
           <div className="text-3xl font-bold text-white font-mono">{stocks.length}</div>
         </div>
         <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
-          <div className="text-purple-400 text-sm font-semibold mb-1">AVG SCORE</div>
+          <div className="text-purple-400 text-sm font-semibold mb-1">PRůM. SKÓRE</div>
           <div className="text-3xl font-bold text-white font-mono">
             {stocks.length > 0 
               ? (stocks.reduce((sum, s) => sum + (s.gomes_score || 0), 0) / stocks.length).toFixed(1)
@@ -97,25 +97,25 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
 
       {/* Top Picks Section - PRIORITY */}
       {renderSection(
-        '🔥 Top Picks This Week',
+        'Nejlepší týpky tohoto týdne',
         topPicks,
         TrendingUp,
         'text-green-400',
-        'No strong buy signals at the moment. Check back after next analysis.'
+        'Žádné silné nákupní signály. Zkontrolujte po další analýze.'
       )}
 
       {/* Watch List Section */}
       {renderSection(
-        '👀 Watch List',
+        'Sledované',
         watchList,
         Eye,
         'text-yellow-400',
-        'No stocks on watch list. Add analysis with specific entry triggers.'
+        'Žádné akcie na sledování. Přidejte analýzu se specifickými vstupními body.'
       )}
 
       {/* Other Stocks Section */}
       {otherStocks.length > 0 && renderSection(
-        '📈 All Other Stocks',
+        'Všechny ostatní akcie',
         otherStocks,
         Zap,
         'text-slate-400',

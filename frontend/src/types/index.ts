@@ -135,6 +135,7 @@ export interface Position {
   id: number;
   portfolio_id: number;
   ticker: string;
+  company_name?: string | null;
   shares_count: number;
   avg_cost: number;
   current_price: number | null;
@@ -143,6 +144,7 @@ export interface Position {
   market_value: number;
   unrealized_pl: number;
   unrealized_pl_percent: number;
+  currency?: string;
   created_at: string;
   updated_at: string;
 }
@@ -334,4 +336,194 @@ export interface TranscriptSummary {
   is_processed: boolean;
   quality: string;
   created_at: string | null;
+}
+
+// ==================== Gomes ML Stocks Types ====================
+
+export interface GomesStockItem {
+  ticker: string;
+  company_name: string | null;
+  gomes_score: number | null;
+  sentiment: string | null;
+  action_verdict: string | null;
+  lifecycle_phase: string | null;
+  
+  // Price lines from Gomes
+  green_line: number | null;
+  red_line: number | null;
+  current_price: number | null;
+  price_zone: string | null;
+  price_position_pct: number | null;
+  
+  // ML prediction
+  has_ml_prediction: boolean;
+  ml_direction: 'UP' | 'DOWN' | 'NEUTRAL' | null;
+  ml_confidence: number | null;
+  
+  // Context
+  video_date: string | null;
+  notes: string | null;
+}
+
+export interface GomesMLStocksResponse {
+  stocks: GomesStockItem[];
+  total_count: number;
+  stocks_with_lines: number;
+  stocks_with_ml: number;
+  market_alert: string;
+}
+
+// ==================== Price Lines History Types ====================
+
+export interface PriceLinesHistoryItem {
+  id: number;
+  ticker: string;
+  green_line: number | null;
+  red_line: number | null;
+  effective_from: string;
+  valid_until: string | null;
+  source: string | null;
+  source_reference: string | null;
+}
+
+export interface PriceLinesHistoryResponse {
+  ticker: string;
+  total_records: number;
+  current_green_line: number | null;
+  current_red_line: number | null;
+  history: PriceLinesHistoryItem[];
+}
+
+// ==================== Thesis Drift & Score History Types ====================
+
+export type ThesisStatus = 'IMPROVED' | 'STABLE' | 'DETERIORATED' | 'BROKEN';
+export type AlertSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+export type DriftAlertType = 'HYPE_AHEAD_OF_FUNDAMENTALS' | 'THESIS_BREAKING' | 'ACCUMULATE_SIGNAL';
+
+export interface ScoreHistoryPoint {
+  id: number;
+  ticker: string;
+  gomes_score: number;
+  thesis_status: ThesisStatus | null;
+  action_signal: string | null;
+  price_at_analysis: number | null;
+  recorded_at: string;
+  analysis_source: string | null;
+}
+
+export interface ScoreHistoryResponse {
+  ticker: string;
+  total_records: number;
+  latest_score: number | null;
+  score_trend: 'UP' | 'DOWN' | 'STABLE';
+  history: ScoreHistoryPoint[];
+}
+
+export interface ThesisDriftAlert {
+  id: number;
+  ticker: string;
+  alert_type: DriftAlertType;
+  severity: AlertSeverity;
+  old_score: number | null;
+  new_score: number | null;
+  price_change_pct: number | null;
+  message: string;
+  is_acknowledged: boolean;
+  created_at: string;
+}
+
+export interface DriftAlertsResponse {
+  total_alerts: number;
+  unacknowledged: number;
+  alerts: ThesisDriftAlert[];
+}
+
+// ==================== Kelly Allocator Types ====================
+
+export interface AllocationRecommendation {
+  ticker: string;
+  gomes_score: number;
+  kelly_weight_pct: number;
+  recommended_amount: number;
+  currency: string;
+  reasoning: string;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+}
+
+export interface FamilyGap {
+  ticker: string;
+  holder: string;
+  missing_from: string;
+  gomes_score: number;
+  action: string;
+}
+
+export interface AllocationPlanRequest {
+  available_capital_czk: number;
+  available_capital_eur: number;
+}
+
+export interface AllocationPlanResponse {
+  total_available_czk: number;
+  total_available_eur: number;
+  recommendations: AllocationRecommendation[];
+  total_allocated_czk: number;
+  remaining_czk: number;
+}
+
+export interface FamilyAuditResponse {
+  portfolios_compared: string[];
+  gaps: FamilyGap[];
+  summary: string;
+}
+
+// ==================== Deep Due Diligence Types ====================
+
+export interface DeepDDData {
+  ticker: string;
+  company_name: string | null;
+  gomes_score: number;
+  thesis_status: 'IMPROVED' | 'STABLE' | 'DETERIORATED' | 'UNKNOWN';
+  action_signal: 'BUY_NOW' | 'ACCUMULATE' | 'HOLD' | 'SELL' | 'AVOID';
+  kelly_criterion_hint: number;
+  inflection_status: string;
+  green_line: number | null;
+  red_line: number | null;
+  current_price: number | null;
+  catalysts: string[];
+  risks: string[];
+  edge: string | null;
+  cash_runway_months: number | null;
+  management_ownership_pct: number | null;
+}
+
+export interface DeepDDResponse {
+  analysis_text: string;
+  data: DeepDDData;
+  thesis_drift: 'IMPROVED' | 'STABLE' | 'DETERIORATED';
+  score_change: number;
+}
+
+export interface StockUpdateResponse {
+  success: boolean;
+  ticker: string;
+  previous_score: number | null;
+  new_score: number;
+  score_change: number | null;
+  thesis_drift: 'IMPROVED' | 'STABLE' | 'DETERIORATED' | null;
+  action_signal: string;
+  source_type: string;
+  analysis_summary: string;
+}
+
+// Price Update Response (manual price update)
+export interface PriceUpdateResponse {
+  success: boolean;
+  ticker: string;
+  current_price: number;
+  green_line: number | null;
+  red_line: number | null;
+  price_position_pct: number | null;
+  price_zone: string | null;
+  message: string;
 }

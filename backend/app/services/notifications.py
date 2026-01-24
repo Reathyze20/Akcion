@@ -94,7 +94,7 @@ class TelegramChannel(NotificationChannel):
                 )
                 response.raise_for_status()
             
-            logger.info(f"📱 Telegram alert sent for {alert.ticker}")
+            logger.info(f"Telegram alert sent for {alert.ticker}")
             return True
             
         except Exception as e:
@@ -103,19 +103,19 @@ class TelegramChannel(NotificationChannel):
     
     def _format_message(self, alert: Alert) -> str:
         """Format alert as Telegram message"""
-        emoji = "🚀" if alert.buy_confidence >= 80 else "📈"
+        emoji = "[HOT]" if alert.buy_confidence >= 80 else "[UP]"
         
         msg = f"{emoji} *{alert.ticker}* - {alert.signal_strength}\n\n"
         msg += f"*Buy Confidence:* {alert.buy_confidence:.1f}%\n\n"
         
         if alert.entry_price:
-            msg += f"💰 *Entry:* ${alert.entry_price:.2f}\n"
+            msg += f"*Entry:* ${alert.entry_price:.2f}\n"
         if alert.target_price:
-            msg += f"🎯 *Target:* ${alert.target_price:.2f}\n"
+            msg += f"*Target:* ${alert.target_price:.2f}\n"
         if alert.stop_loss:
-            msg += f"🛑 *Stop Loss:* ${alert.stop_loss:.2f}\n"
+            msg += f"*Stop Loss:* ${alert.stop_loss:.2f}\n"
         if alert.kelly_size:
-            msg += f"📊 *Position Size:* {alert.kelly_size * 100:.1f}%\n"
+            msg += f"*Position Size:* {alert.kelly_size * 100:.1f}%\n"
         
         msg += f"\n{alert.message}"
         
@@ -157,7 +157,7 @@ class EmailChannel(NotificationChannel):
         try:
             # Create message
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"🚨 Trading Alert: {alert.ticker} ({alert.buy_confidence:.1f}%)"
+            msg['Subject'] = f"Trading Alert: {alert.ticker} ({alert.buy_confidence:.1f}%)"
             msg['From'] = self.from_email
             msg['To'] = self.to_email
             
@@ -171,7 +171,7 @@ class EmailChannel(NotificationChannel):
                 server.login(self.username, self.password)
                 server.send_message(msg)
             
-            logger.info(f"📧 Email alert sent for {alert.ticker}")
+            logger.info(f"Email alert sent for {alert.ticker}")
             return True
             
         except Exception as e:
@@ -321,7 +321,7 @@ async def check_and_send_alerts(
     Returns:
         List of alerts sent
     """
-    from app.trading.master_signal import get_top_opportunities
+    from app.trading.master_signal import get_top_opportunities_v2
     
     if notification_service is None:
         notification_service = NotificationService.from_env()
@@ -331,7 +331,7 @@ async def check_and_send_alerts(
         return []
     
     # Get top opportunities
-    opportunities = get_top_opportunities(
+    opportunities = get_top_opportunities_v2(
         db=db,
         min_confidence=min_confidence,
         limit=10,

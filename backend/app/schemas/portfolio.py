@@ -73,8 +73,10 @@ class PositionUpdate(BaseModel):
     
     shares_count: float | None = None
     avg_cost: float | None = None
+    current_price: float | None = None
     currency: str | None = None
     company_name: str | None = None
+    ticker: str | None = None
 
 
 class PositionResponse(PositionBase):
@@ -233,4 +235,5 @@ class PortfolioSummaryResponse(BaseModel):
     total_market_value: float
     total_unrealized_pl: float
     total_unrealized_pl_percent: float
+    cash_balance: float = 0.0
     last_price_update: datetime | None

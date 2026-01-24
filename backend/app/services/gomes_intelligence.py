@@ -618,3 +618,78 @@ class GomesIntelligenceService:
             }
             for v in opportunities
         ]
+
+    def get_gomes_stocks_with_lines(self) -> list[dict[str, Any]]:
+        """
+        Get all stocks from Gomes videos with price lines.
+        
+        Returns stocks from ActiveWatchlist joined with PriceLines for ML page.
+        """
+        from app.models.trading import MLPrediction
+        from sqlalchemy import func
+        
+        # Get all active watchlist items
+        watchlist = (
+            self.db.query(ActiveWatchlist)
+            .filter(ActiveWatchlist.is_active == True)
+            .all()
+        )
+        
+        result = []
+        
+        for item in watchlist:
+            ticker = item.ticker
+            
+            # Get price lines
+            lines = self.get_price_lines(ticker)
+            
+            # Get lifecycle
+            lifecycle = self.get_stock_lifecycle(ticker)
+            
+            # Get stock info
+            stock = item.stock
+            
+            # Get latest ML prediction
+            ml_pred = (
+                self.db.query(MLPrediction)
+                .filter(MLPrediction.ticker == ticker)
+                .order_by(desc(MLPrediction.created_at))
+                .first()
+            )
+            
+            # Calculate price zone
+            current_price = float(lines.current_price) if lines and lines.current_price else None
+            green_line = float(lines.green_line) if lines and lines.green_line else None
+            red_line = float(lines.red_line) if lines and lines.red_line else None
+            
+            price_zone = None
+            price_position_pct = None
+            
+            if current_price and (green_line or red_line):
+                price_zone, price_position_pct = RiskRewardCalculator.get_action_zone(
+                    current_price, green_line, red_line
+                )
+            
+            result.append({
+                "ticker": ticker,
+                "company_name": stock.company_name if stock else None,
+                "gomes_score": int(item.gomes_score) if item.gomes_score else None,
+                "sentiment": stock.sentiment if stock else None,
+                "action_verdict": item.action_verdict,
+                "lifecycle_phase": lifecycle.phase if lifecycle else None,
+                "green_line": green_line,
+                "red_line": red_line,
+                "current_price": current_price,
+                "price_zone": price_zone,
+                "price_position_pct": price_position_pct,
+                "has_ml_prediction": ml_pred is not None,
+                "ml_direction": ml_pred.prediction_type if ml_pred else None,
+                "ml_confidence": float(ml_pred.confidence) if ml_pred and ml_pred.confidence else None,
+                "video_date": stock.created_at.isoformat() if stock and stock.created_at else None,
+                "notes": item.notes,
+            })
+        
+        # Sort by gomes_score descending
+        result.sort(key=lambda x: (x.get("gomes_score") or 0), reverse=True)
+        
+        return result

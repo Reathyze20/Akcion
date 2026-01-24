@@ -68,16 +68,28 @@ class MarketDataService:
         "NETFLIX": "NFLX",
         # Canadian / TSX
         "QUIPT HOME MEDICAL": "QIPT",
-        # User portfolio specifics
+        # User portfolio - DEGIRO stocks
+        "AEHR TEST SYSTEMS": "AEHR",
         "ELECTROCORE": "ECOR",
+        "GATEKEEPER SYSTEMS": "GSI.V",  # TSX Venture
         "INTELLICHECK": "IDN",
-        "INTERMAP TECHNOLOGIES": "I9TT",
+        "INTERMAP TECHNOLOGIES": "IMP.V",  # TSX Venture
+        "INTERMAP TECHNOLOGIES CORP CLASS A": "IMP.V",
+        "INTERMAP TECHNOLOGIES CLASS A": "IMP.V",
+        "INTERMAP": "IMP.V",
         "IRIDEX": "IRIX",
-        "NETDRAGON WEBSOFT HOLDINGS": "777",
+        "IRIDEX CORP": "IRIX",
+        "KUYA SILVER": "KUYA.V",  # TSX Venture
+        "KUYA SILVER CORP": "KUYA.V",
+        "NETDRAGON WEBSOFT": "0777.HK",  # Hong Kong
+        "NETDRAGON WEBSOFT HOLDINGS": "0777.HK",
+        "NETDRAGON WEBSOFT HOLDINGS LTD": "0777.HK",
         "SMITH MICRO SOFTWARE": "SMSI",
         "TECHPRECISION": "TPCS",
-        "UMT UNITED MOBILITY TECHNOLOGY": "UMD",
+        "TECHPRECISION CORP": "TPCS",
         "VIRTRA": "VTSI",
+        "VIRTRA INC": "VTSI",
+        "UMT UNITED MOBILITY TECHNOLOGY": "UMD",
     }
 
     # ==========================================================================
@@ -265,6 +277,47 @@ class MarketDataService:
     # Ticker Validation & Resolution
     # ==========================================================================
 
+    # ISIN to Ticker cache (persistent during runtime)
+    _ISIN_TICKER_CACHE: dict[str, str | None] = {}
+
+    @staticmethod
+    def isin_to_ticker(isin: str) -> str | None:
+        """
+        Convert ISIN code to stock ticker using yfinance.
+        
+        Args:
+            isin: International Securities Identification Number
+            
+        Returns:
+            Ticker symbol or None if not found
+        """
+        if not isin or not MarketDataService._is_isin(isin):
+            return None
+        
+        # Check cache first
+        if isin in MarketDataService._ISIN_TICKER_CACHE:
+            return MarketDataService._ISIN_TICKER_CACHE[isin]
+        
+        try:
+            import yfinance as yf
+            
+            # yfinance can search by ISIN
+            ticker = yf.Ticker(isin)
+            info = ticker.info
+            
+            if info and info.get("symbol"):
+                resolved = info["symbol"].upper()
+                MarketDataService._ISIN_TICKER_CACHE[isin] = resolved
+                logger.info(f"ISIN {isin} resolved to ticker {resolved}")
+                return resolved
+            
+        except Exception as e:
+            logger.debug(f"ISIN resolution failed for {isin}: {e}")
+        
+        # Mark as unresolvable in cache
+        MarketDataService._ISIN_TICKER_CACHE[isin] = None
+        return None
+
     @staticmethod
     def _is_isin(value: str) -> bool:
         """
@@ -297,7 +350,7 @@ class MarketDataService:
         """
         s = name.upper()
         s = re.sub(r"[\.,]", "", s)  # Remove punctuation
-        s = re.sub(r"\b(INC|CORP(ORATION)?|LTD|PLC|N\s?V|SA|AG)\b", "", s)
+        s = re.sub(r"\b(INC|CORP(ORATION)?|LTD|PLC|N\s?V|SA|AG|CLASS\s*[A-Z]?)\b", "", s)
         s = re.sub(r"\s+", " ", s).strip()
         return s
 
@@ -377,7 +430,7 @@ class MarketDataService:
         
         Handles:
         - Empty tickers → resolve by company name
-        - ISIN codes → resolve by company name  
+        - ISIN codes → resolve via yfinance or company name  
         - Invalid tickers → resolve by company name
         
         Args:
@@ -389,12 +442,24 @@ class MarketDataService:
         """
         t = (ticker or "").strip().upper()
         
-        # If empty or looks like ISIN, try to resolve by name
-        if not t or MarketDataService._is_isin(t):
+        # If looks like ISIN, try to resolve via yfinance first
+        if MarketDataService._is_isin(t):
+            resolved = MarketDataService.isin_to_ticker(t)
+            if resolved:
+                return resolved
+            # Fallback to company name resolution
             if company_name:
                 resolved = MarketDataService.resolve_ticker_by_name(company_name)
-                return resolved or (t if t else None)
-            return t if t else None
+                if resolved:
+                    return resolved
+            # Return ISIN as-is if unresolvable
+            return t
+        
+        # If empty, try to resolve by name
+        if not t:
+            if company_name:
+                return MarketDataService.resolve_ticker_by_name(company_name)
+            return None
         
         # If valid ticker, return it
         if MarketDataService.validate_ticker(t):

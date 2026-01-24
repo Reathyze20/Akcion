@@ -57,6 +57,45 @@ class Settings(BaseSettings):
         description="Finnhub.io API key for global market data (non-US stocks)",
     )
     
+    # Telegram Notifications
+    TELEGRAM_BOT_TOKEN: str | None = Field(
+        default=None,
+        alias="TELEGRAM_BOT_TOKEN",
+        description="Telegram Bot API token from @BotFather",
+    )
+    TELEGRAM_CHAT_ID: str | None = Field(
+        default=None,
+        alias="TELEGRAM_CHAT_ID",
+        description="Your Telegram chat ID for receiving alerts",
+    )
+    
+    # Email Notifications
+    EMAIL_RECIPIENT: str | None = Field(
+        default=None,
+        alias="EMAIL_RECIPIENT",
+        description="Email address to receive investment alerts",
+    )
+    SMTP_SERVER: str = Field(
+        default="smtp.gmail.com",
+        alias="SMTP_SERVER",
+        description="SMTP server for sending emails",
+    )
+    SMTP_PORT: int = Field(
+        default=587,
+        alias="SMTP_PORT",
+        description="SMTP port (587 for TLS, 465 for SSL)",
+    )
+    SMTP_USERNAME: str | None = Field(
+        default=None,
+        alias="SMTP_USERNAME",
+        description="SMTP username (email address for Gmail)",
+    )
+    SMTP_PASSWORD: str | None = Field(
+        default=None,
+        alias="SMTP_PASSWORD",
+        description="SMTP password (App Password for Gmail)",
+    )
+    
     # Application Settings
     app_name: str = Field(default="Akcion", alias="APP_NAME")
     app_version: str = Field(default="1.0.0", alias="APP_VERSION")

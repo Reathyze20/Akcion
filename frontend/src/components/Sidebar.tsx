@@ -77,8 +77,8 @@ export const Sidebar: React.FC = () => {
           price_zone: s.price_zone || null,
         }));
         setStocks((prev: Stock[]) => [...newStocks, ...prev]);
-        toast.success('Analysis Complete', {
-          description: `Found ${response.stocks.length} stocks. ${response.message}`,
+        toast.success('Analýza dokončena', {
+          description: `Nalezeno ${response.stocks.length} akcií. ${response.message}`,
           duration: 4000,
         });
         
@@ -91,7 +91,7 @@ export const Sidebar: React.FC = () => {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Analysis failed';
-      toast.error('Analysis Failed', {
+      toast.error('Analýza selhala', {
         description: errorMessage,
         duration: 5000,
       });
@@ -112,7 +112,7 @@ export const Sidebar: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-bold text-text-primary">AKCION</h1>
-            <p className="text-xs text-text-muted">AI Investment Terminal</p>
+            <p className="text-xs text-text-muted">AI Investiční Terminál</p>
           </div>
         </div>
       </div>
@@ -129,7 +129,7 @@ export const Sidebar: React.FC = () => {
             }`}
           >
             <Sparkles className="w-4 h-4" />
-            Analysis
+            Analýza
           </button>
           <button
             onClick={() => setCurrentView('portfolio')}
@@ -150,7 +150,7 @@ export const Sidebar: React.FC = () => {
         {/* Input Type Selector */}
         <div>
           <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
-            Source Type
+            Typ zdroje
           </label>
           <div className="grid grid-cols-3 gap-2">
             <button
@@ -192,13 +192,13 @@ export const Sidebar: React.FC = () => {
         {/* Speaker Input */}
         <div>
           <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
-            Analyst / Speaker <span className="text-text-muted font-normal">(optional)</span>
+            Analytik / Řečník <span className="text-text-muted font-normal">(volitelné)</span>
           </label>
           <input
             type="text"
             value={speaker}
             onChange={(e) => setSpeaker(e.target.value)}
-            placeholder="e.g., Mark Gomes (or leave empty for Unknown)"
+            placeholder="např. Mark Gomes (nebo ponechte prázdné)"
             className="input"
           />
         </div>
@@ -207,17 +207,17 @@ export const Sidebar: React.FC = () => {
         {inputType === 'text' ? (
           <div>
             <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
-              Transcript Content
+              Obsah přepisu
             </label>
             <textarea
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
-              placeholder="Paste your investment transcript or analysis here..."
+              placeholder="Vložte sem přepis investiční analýzy..."
               className="textarea"
               rows={14}
             />
             <p className="text-xs text-text-muted mt-2">
-              Tip: Include detailed stock discussions for best results
+              Tip: Pro nejlepší výsledky zahrňte detailní diskuze o akciích
             </p>
           </div>
         ) : (
@@ -238,8 +238,8 @@ export const Sidebar: React.FC = () => {
             />
             <p className="text-xs text-text-muted mt-2">
               {inputType === 'youtube' 
-                ? 'Ensure video has captions/transcript available'
-                : 'Make sure document is publicly accessible'
+                ? 'Ujistěte se, že video má dostupné titulky/přepis'
+                : 'Ujistěte se, že dokument je veřejně přístupný'
               }
             </p>
           </div>
@@ -252,31 +252,31 @@ export const Sidebar: React.FC = () => {
           className="btn btn-primary w-full py-3.5 text-base font-semibold flex items-center justify-center gap-2"
         >
           <Sparkles className="w-5 h-5" />
-          Analyze with Gemini AI
+          Analyzovat pomocí Gemini AI
         </button>
 
         {/* Info Card */}
         <div className="card p-4 space-y-3 border-l-2 border-l-accent-blue">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-accent-blue" />
-            <h3 className="text-sm font-semibold text-text-primary">Powered by Gemini 3 Pro</h3>
+            <h3 className="text-sm font-semibold text-text-primary">Poháněno Gemini 3 Pro</h3>
           </div>
           <ul className="space-y-2 text-xs text-text-secondary">
             <li className="flex items-start gap-2">
               <span className="text-semantic-bullish mt-0.5">•</span>
-              <span>Fiduciary-grade analysis with Google Search</span>
+              <span>Profesionální analýza s Google vyhledáváním</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-semantic-bullish mt-0.5">•</span>
-              <span>Aggressive stock mention extraction</span>
+              <span>Agresivní extrakce zmínek o akciích</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-semantic-bullish mt-0.5">•</span>
-              <span>The Gomes Rules scoring framework</span>
+              <span>Gomes Rules hodnotící framework</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-semantic-bullish mt-0.5">•</span>
-              <span>Edge, Catalysts & Risk identification</span>
+              <span>Identifikace Edge, Katalyzátorů a Rizik</span>
             </li>
           </ul>
         </div>

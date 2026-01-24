@@ -68,19 +68,19 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
               </p>
             </div>
             <div className="card p-4">
-              <p className="text-xs text-text-muted mb-1">Gomes Score</p>
+              <p className="text-xs text-text-muted mb-1">Gomes skóre</p>
               <p className="text-lg font-bold text-accent-blue">
                 {stock.gomes_score !== null ? `${stock.gomes_score}/10` : 'N/A'}
               </p>
             </div>
             <div className="card p-4">
-              <p className="text-xs text-text-muted mb-1">Conviction</p>
+              <p className="text-xs text-text-muted mb-1">Přesvědčení</p>
               <p className="text-lg font-bold text-accent-purple">
                 {stock.conviction_score !== null ? `${stock.conviction_score}/10` : 'N/A'}
               </p>
             </div>
             <div className="card p-4">
-              <p className="text-xs text-text-muted mb-1">Action</p>
+              <p className="text-xs text-text-muted mb-1">Akce</p>
               <p className={`text-sm font-bold ${
                 stock.action_verdict === 'BUY_NOW' ? 'text-green-400' :
                 stock.action_verdict === 'ACCUMULATE' ? 'text-emerald-400' :
@@ -100,13 +100,13 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
             <div className="grid grid-cols-2 gap-4">
               {stock.entry_zone && (
                 <div className="card p-4 border-l-4 border-accent-blue">
-                  <p className="text-xs text-text-muted mb-1">📍 Entry Zone</p>
+                  <p className="text-xs text-text-muted mb-1">Vstupní zóna</p>
                   <p className="text-lg font-bold text-accent-blue">{stock.entry_zone}</p>
                 </div>
               )}
               {stock.stop_loss_risk && (
                 <div className="card p-4 border-l-4 border-accent-red">
-                  <p className="text-xs text-text-muted mb-1">🛑 Stop Loss / Risk</p>
+                  <p className="text-xs text-text-muted mb-1">Stop Loss / Riziko</p>
                   <p className="text-sm font-medium text-accent-red">{stock.stop_loss_risk}</p>
                 </div>
               )}
@@ -117,27 +117,27 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {(stock.price_target || stock.price_target_short || stock.price_target_long) && (
             <div className="card p-4">
               <h3 className="text-sm font-semibold text-accent-blue mb-3">
-                💰 Price Targets
+                Cenové cíle
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {stock.price_target && (
                   <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-blue/30">
-                    <p className="text-xs text-text-muted mb-1">General Target</p>
+                    <p className="text-xs text-text-muted mb-1">Obecný cíl</p>
                     <p className="text-lg font-bold text-accent-blue">{stock.price_target}</p>
                     {stock.time_horizon && (
-                      <p className="text-xs text-text-secondary mt-1">⏱️ {stock.time_horizon}</p>
+                      <p className="text-xs text-text-secondary mt-1">{stock.time_horizon}</p>
                     )}
                   </div>
                 )}
                 {stock.price_target_short && (
                   <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-green/30">
-                    <p className="text-xs text-text-muted mb-1">Short-Term Target</p>
+                    <p className="text-xs text-text-muted mb-1">Krátkodobý cíl</p>
                     <p className="text-lg font-bold text-accent-green">{stock.price_target_short}</p>
                   </div>
                 )}
                 {stock.price_target_long && (
                   <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-purple/30">
-                    <p className="text-xs text-text-muted mb-1">Long-Term Target</p>
+                    <p className="text-xs text-text-muted mb-1">Dlouhodobý cíl</p>
                     <p className="text-lg font-bold text-accent-purple">{stock.price_target_long}</p>
                   </div>
                 )}
@@ -149,7 +149,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {stock.edge && (
             <div className="card p-4">
               <h3 className="text-sm font-semibold text-accent-blue mb-2">
-                Information Arbitrage (Edge)
+                Informační výhoda (Edge)
               </h3>
               <p className="text-text-primary whitespace-pre-wrap">{stock.edge}</p>
             </div>
@@ -159,7 +159,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {stock.catalysts && (
             <div className="card p-4">
               <h3 className="text-sm font-semibold text-accent-green mb-2">
-                Catalysts
+                Katalyzátory
               </h3>
               <p className="text-text-primary whitespace-pre-wrap">{stock.catalysts}</p>
             </div>
@@ -169,7 +169,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {stock.risks && (
             <div className="card p-4">
               <h3 className="text-sm font-semibold text-accent-red mb-2">
-                Risks
+                Rizika
               </h3>
               <p className="text-text-primary whitespace-pre-wrap">{stock.risks}</p>
             </div>
@@ -179,7 +179,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {stock.raw_notes && (
             <div className="card p-4">
               <h3 className="text-sm font-semibold text-text-secondary mb-2">
-                Full Analysis
+                Plná analýza
               </h3>
               <p className="text-sm text-text-secondary whitespace-pre-wrap font-mono">
                 {stock.raw_notes}
@@ -191,15 +191,15 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           <div className="card p-4 bg-primary-card/50">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-text-muted">Speaker</p>
+                <p className="text-text-muted">Řečník</p>
                 <p className="text-text-primary font-medium">{stock.speaker}</p>
               </div>
               <div>
-                <p className="text-text-muted">Source</p>
+                <p className="text-text-muted">Zdroj</p>
                 <p className="text-text-primary font-medium">{stock.source_type}</p>
               </div>
               <div>
-                <p className="text-text-muted">Analyzed</p>
+                <p className="text-text-muted">Analyzováno</p>
                 <p className="text-text-primary font-medium">
                   {formatDate(stock.created_at)}
                 </p>
@@ -215,7 +215,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
         {/* Footer */}
         <div className="sticky bottom-0 bg-primary-surface border-t border-border p-4 flex justify-end">
           <button onClick={onClose} className="btn btn-secondary px-6">
-            Close
+            Zavřít
           </button>
         </div>
       </div>
