@@ -147,7 +147,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
 
       {/* Kelly Weight Reference */}
       <div className="mb-4 p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
-        <div className="text-xs text-slate-400 mb-2">📊 Kelly váhy podle skóre:</div>
+        <div className="text-xs text-slate-400 mb-2">Kelly váhy podle skóre:</div>
         <div className="flex flex-wrap gap-1">
           {Object.entries(KELLY_WEIGHTS).map(([score, weight]) => (
             <span 

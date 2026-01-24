@@ -189,12 +189,12 @@ const RiskMeter: React.FC<{
         <div className="text-xs text-slate-400 uppercase tracking-wider">Risk Exposure</div>
         {hasUnanalyzed && !isOverexposed && (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-600 text-slate-300">
-            📊 RUN DEEP DD
+            RUN DEEP DD
           </span>
         )}
         {isOverexposed && (
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isDangerous ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
-            {isDangerous ? '⚠️ REBALANCE' : '⚡ MONITOR'}
+            {isDangerous ? 'REBALANCE' : 'MONITOR'}
           </span>
         )}
       </div>
@@ -230,7 +230,7 @@ const RiskMeter: React.FC<{
       
       {isOverexposed && (
         <div className={`mt-2 text-[10px] text-center ${isDangerous ? 'text-red-400' : 'text-amber-400'}`}>
-          {isDangerous ? '🚨 Rebalance needed' : '⚠️ Monitor growth allocation'}
+          {isDangerous ? 'Rebalance needed' : 'Monitor growth allocation'}
         </div>
       )}
     </div>
@@ -506,7 +506,7 @@ const CompoundSnowball: React.FC<CompoundSnowballProps> = ({
 interface MeritBadge {
   id: string;
   name: string;
-  emoji: string;
+  icon: string;
   description: string;
   earned: boolean;
   earnedDate?: string;
@@ -521,7 +521,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'weed-cutter',
         name: 'Weed Cutter',
-        emoji: '🌿',
+        icon: 'scissors',
         description: 'Prodej akcii se skóre pod 3',
         earned: false, // Would track in DB when sale happens
         category: 'discipline'
@@ -529,7 +529,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'diamond-hands',
         name: 'Diamond Hands',
-        emoji: '💎',
+        icon: 'diamond',
         description: 'Drž akcii 9/10 i při -20% drawdown',
         earned: positions.some(p => 
           p.gomes_score && p.gomes_score >= 9 && p.unrealized_pl_percent <= -20
@@ -539,7 +539,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'sniper',
         name: 'Sniper',
-        emoji: '🎯',
+        icon: 'target',
         description: 'Nakup přesně na supportu 30WMA',
         earned: false, // Would track entry vs 30WMA
         category: 'strategy'
@@ -547,7 +547,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'first-rocket',
         name: 'First Rocket',
-        emoji: '🚀',
+        icon: 'rocket',
         description: 'Měj první pozici se skóre 9+',
         earned: positions.some(p => p.gomes_score && p.gomes_score >= 9),
         category: 'growth'
@@ -555,7 +555,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'diversified',
         name: 'Diversified',
-        emoji: '🎨',
+        icon: 'grid',
         description: 'Měj 5+ různých pozic',
         earned: positions.length >= 5,
         category: 'strategy'
@@ -563,7 +563,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'free-rider',
         name: 'Free Rider',
-        emoji: '🕊️',
+        icon: 'bird',
         description: 'Měj pozici s P/L 100%+ (house money)',
         earned: positions.some(p => p.unrealized_pl_percent >= 100),
         category: 'growth'
@@ -571,7 +571,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'patient-investor',
         name: 'Patient Investor',
-        emoji: '🧘',
+        icon: 'zen',
         description: 'Drž portfolio bez panického prodeje 6+ měsíců',
         earned: false, // Would track in DB
         category: 'discipline'
@@ -579,7 +579,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'six-figures',
         name: 'Six Figures',
-        emoji: '💰',
+        icon: 'money',
         description: 'Portfolio přesáhlo 100k Kč',
         earned: totalValue >= 100000,
         category: 'growth'
@@ -587,7 +587,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'half-million',
         name: 'Half Millionaire',
-        emoji: '🏆',
+        icon: 'trophy',
         description: 'Portfolio přesáhlo 500k Kč',
         earned: totalValue >= 500000,
         category: 'growth'
@@ -624,7 +624,17 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
             `}
             title={badge.description}
           >
-            <div className="text-2xl mb-1">{badge.emoji}</div>
+            <div className={`text-xl mb-1 ${badge.earned ? 'text-amber-400' : 'text-slate-500'}`}>
+              {badge.icon === 'scissors' && <span className="inline-block w-6 h-6">✂</span>}
+              {badge.icon === 'diamond' && <span className="inline-block w-6 h-6">◆</span>}
+              {badge.icon === 'target' && <span className="inline-block w-6 h-6">◎</span>}
+              {badge.icon === 'rocket' && <span className="inline-block w-6 h-6">↑</span>}
+              {badge.icon === 'grid' && <span className="inline-block w-6 h-6">#</span>}
+              {badge.icon === 'bird' && <span className="inline-block w-6 h-6">~</span>}
+              {badge.icon === 'zen' && <span className="inline-block w-6 h-6">○</span>}
+              {badge.icon === 'money' && <span className="inline-block w-6 h-6">$</span>}
+              {badge.icon === 'trophy' && <span className="inline-block w-6 h-6">★</span>}
+            </div>
             <div className={`text-[10px] font-bold ${badge.earned ? 'text-amber-300' : 'text-slate-500'}`}>
               {badge.name}
             </div>
@@ -696,10 +706,10 @@ const PortfolioRow: React.FC<{
           <span className="font-mono text-slate-400">{position.target_weight_pct}%</span>
         </div>
         {position.is_overweight && (
-          <div className="text-[10px] text-red-400">⚠️ OVERWEIGHT</div>
+          <div className="text-[10px] text-red-400">OVERWEIGHT</div>
         )}
         {position.is_underweight && !position.is_overweight && (
-          <div className="text-[10px] text-amber-400">📈 UNDERWEIGHT</div>
+          <div className="text-[10px] text-amber-400">UNDERWEIGHT</div>
         )}
       </td>
 
@@ -720,7 +730,7 @@ const PortfolioRow: React.FC<{
         ) : position.optimal_size > 0 ? (
           <div>
             <div className="flex items-center gap-1">
-              {position.action_signal === 'SNIPER' && <span className="text-lg">🎯</span>}
+              {position.action_signal === 'SNIPER' && <span className="text-amber-400 text-xs font-bold">SNIPER</span>}
               <span className="text-lg font-bold text-emerald-400 font-mono">
                 {formatCurrency(position.optimal_size)}
               </span>
@@ -844,11 +854,11 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
       const result = await apiClient.updateStockAnalysis(position.ticker, updateText, sourceType);
       
       if (result.success) {
-        const driftEmoji = result.thesis_drift === 'IMPROVED' ? '🚀' : 
-                          result.thesis_drift === 'DETERIORATED' ? '⚠️' : '📊';
+        const driftLabel = result.thesis_drift === 'IMPROVED' ? '[UP]' : 
+                          result.thesis_drift === 'DETERIORATED' ? '[DOWN]' : '[STABLE]';
         setUpdateResult({ 
           success: true, 
-          message: `${driftEmoji} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
+          message: `${driftLabel} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
         });
         // Refresh parent data
         setTimeout(() => {
@@ -1031,7 +1041,7 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
               <div className="p-4 bg-red-500/20 border-2 border-red-500 rounded-lg flex items-start gap-3 animate-pulse">
                 <TrendingDown className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-red-400 font-black text-lg">⚠️ TREND IS BROKEN</div>
+                  <div className="text-red-400 font-black text-lg">TREND IS BROKEN</div>
                   <div className="text-red-300 text-sm mt-1">
                     Price below 30-week moving average. Re-evaluate fundamentals immediately!
                   </div>
@@ -1445,7 +1455,7 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
               
               {position.action_signal === 'SNIPER' && (
                 <div className="mt-2 text-xs text-amber-400 flex items-center gap-1">
-                  🎯 Sniper příležitost! Vysoké skóre + velká mezera.
+                  Sniper příležitost! Vysoké skóre + velká mezera.
                 </div>
               )}
               {position.optimal_size === 0 && position.gap_czk > MIN_INVESTMENT_CZK && position.action_signal !== 'SELL' && (
@@ -1550,11 +1560,11 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
       const result = await apiClient.updateStockAnalysis(stock.ticker, updateText, sourceType);
       
       if (result.success) {
-        const driftEmoji = result.thesis_drift === 'IMPROVED' ? '🚀' : 
-                          result.thesis_drift === 'DETERIORATED' ? '⚠️' : '📊';
+        const driftLabel = result.thesis_drift === 'IMPROVED' ? '[UP]' : 
+                          result.thesis_drift === 'DETERIORATED' ? '[DOWN]' : '[STABLE]';
         setUpdateResult({ 
           success: true, 
-          message: `${driftEmoji} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
+          message: `${driftLabel} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
         });
         setTimeout(() => {
           onUpdate();
@@ -2720,14 +2730,13 @@ export const GomesGuardianDashboard: React.FC = () => {
                   const remainingMonths = months % 12;
                   return months > 0 ? (
                     <div className="text-[10px] text-indigo-400 mt-1 flex items-center justify-center gap-1">
-                      <span>🎯</span>
                       <span>
                         {years > 0 ? `${years}y ` : ''}{remainingMonths}m to target
                         {' '}(15% return + 20k/mo)
                       </span>
                     </div>
                   ) : (
-                    <div className="text-[10px] text-green-400 mt-1">🎉 Target reached!</div>
+                    <div className="text-[10px] text-green-400 mt-1">Target reached!</div>
                   );
                 })()}
               </div>
@@ -3012,14 +3021,14 @@ export const GomesGuardianDashboard: React.FC = () => {
                         'bg-slate-700/50 text-slate-300'
                       }`}
                     >
-                      {pos.action_signal === 'SNIPER' && '🎯 '}
+                      {pos.action_signal === 'SNIPER' && '[S] '}
                       {pos.ticker}: {formatCurrency(pos.optimal_size)}
                     </div>
                   ))
                 }
                 {familyData.allPositions.filter(p => p.action_signal === 'SELL').length > 0 && (
                   <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/50">
-                    ⚠️ {familyData.allPositions.filter(p => p.action_signal === 'SELL').length}x PRODAT
+                    {familyData.allPositions.filter(p => p.action_signal === 'SELL').length}x PRODAT
                   </div>
                 )}
               </div>

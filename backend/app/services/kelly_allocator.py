@@ -343,12 +343,12 @@ class KellyAllocatorService:
         gap_k = gap_czk / 1000
         
         if score >= 9:
-            return f"🎯 SNIPER! Score {score}/10. Mezera {gap_k:.1f}k Kč. Prioritní nákup."
+            return f"SNIPER! Score {score}/10. Mezera {gap_k:.1f}k Kc. Prioritni nakup."
         elif score >= 8:
-            return f"💪 STRONG. Score {score}/10. Mezera {gap_k:.1f}k Kč. Akumulovat."
+            return f"STRONG. Score {score}/10. Mezera {gap_k:.1f}k Kc. Akumulovat."
         elif score >= 7:
-            return f"📈 GROWTH. Score {score}/10. Mezera {gap_k:.1f}k Kč. Přidat."
+            return f"GROWTH. Score {score}/10. Mezera {gap_k:.1f}k Kc. Pridat."
         elif score >= 5:
-            return f"👀 WATCH. Score {score}/10. Mezera {gap_k:.1f}k Kč. Zvážit."
+            return f"WATCH. Score {score}/10. Mezera {gap_k:.1f}k Kc. Zvazit."
         else:
-            return f"⚠️ EXIT. Score {score}/10. Neposílat peníze, zvážit prodej."
+            return f"EXIT. Score {score}/10. Neposilat penize, zvazit prodej."
