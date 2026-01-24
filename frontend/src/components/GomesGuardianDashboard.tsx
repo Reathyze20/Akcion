@@ -49,6 +49,7 @@ interface FamilyPortfolioData {
   totalValue: number;
   totalValueEUR: number;  // EUR equivalent
   totalCash: number;
+  monthlyContribution: number;  // Celkový měsíční příspěvek ze všech portfolií
   portfolios: PortfolioSummary[];
   allPositions: EnrichedPosition[];
   rocketCount: number;  // High growth (score >= 7)
@@ -79,7 +80,7 @@ const TARGET_WEIGHTS: Record<number, number> = {
 // Hard Caps (Gomesova pojistka)
 const MAX_POSITION_WEIGHT = 15;  // Max 15% portfolia v jedné akcii
 const MIN_INVESTMENT_CZK = 1000; // Min vklad (kvůli poplatkům)
-const MONTHLY_CONTRIBUTION = 20000; // Měsíční vklad v CZK
+const DEFAULT_MONTHLY_CONTRIBUTION = 20000; // Výchozí měsíční vklad v CZK
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -2535,6 +2536,12 @@ export const GomesGuardianDashboard: React.FC = () => {
   const [editCashCurrency, setEditCashCurrency] = useState('CZK');
   const [isSavingCash, setIsSavingCash] = useState(false);
   
+  // Monthly contribution editing state
+  const [isEditingContribution, setIsEditingContribution] = useState(false);
+  const [editContributionValue, setEditContributionValue] = useState('');
+  const [editContributionPortfolioId, setEditContributionPortfolioId] = useState<number | null>(null);
+  const [isSavingContribution, setIsSavingContribution] = useState(false);
+  
   // Available currencies for cash
   const CASH_CURRENCIES = ['CZK', 'EUR', 'USD', 'CAD', 'GBP'];
   
@@ -2609,10 +2616,13 @@ export const GomesGuardianDashboard: React.FC = () => {
     let waitTimeCount = 0;    // Score 1-4 (Wait Time/Avoid)
     let unanalyzedCount = 0;  // No score yet (needs Deep DD)
 
-    // First pass: calculate total value
+    // First pass: calculate total value and monthly contribution
+    let totalMonthlyContribution = 0;
     for (const portfolio of portfolios) {
       totalValue += portfolio.total_market_value || 0;
       totalCash += portfolio.cash_balance || 0;
+      // Sum up monthly contributions from all portfolios
+      totalMonthlyContribution += portfolio.portfolio.monthly_contribution ?? DEFAULT_MONTHLY_CONTRIBUTION;
     }
     
     // Include cash in total
@@ -2705,7 +2715,7 @@ export const GomesGuardianDashboard: React.FC = () => {
       });
     
     // Distribute monthly contribution according to priority
-    let remainingBudget = MONTHLY_CONTRIBUTION;
+    let remainingBudget = totalMonthlyContribution;
     
     for (let i = 0; i < sortedForAllocation.length; i++) {
       const pos = sortedForAllocation[i];
@@ -2755,6 +2765,7 @@ export const GomesGuardianDashboard: React.FC = () => {
       totalValue: grandTotal,
       totalValueEUR,
       totalCash,
+      monthlyContribution: totalMonthlyContribution,
       portfolios,
       allPositions,
       rocketCount,
@@ -3203,11 +3214,72 @@ export const GomesGuardianDashboard: React.FC = () => {
                   <h3 className="text-sm font-bold text-emerald-300 uppercase tracking-wider">
                     Měsíční alokační plán
                   </h3>
-                  <p className="text-xs text-slate-400">
-                    Rozpočet: {formatCurrency(MONTHLY_CONTRIBUTION)} | 
-                    Alokováno: {formatCurrency(familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))} | 
-                    Zbývá: {formatCurrency(MONTHLY_CONTRIBUTION - familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}
-                  </p>
+                  {isEditingContribution ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-slate-400">Rozpočet:</span>
+                      <input
+                        type="number"
+                        value={editContributionValue}
+                        onChange={(e) => setEditContributionValue(e.target.value)}
+                        className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm font-mono focus:outline-none focus:border-emerald-500"
+                        placeholder="20000"
+                      />
+                      <span className="text-xs text-slate-400">Kč</span>
+                      <button
+                        onClick={async () => {
+                          const amount = parseFloat(editContributionValue);
+                          if (isNaN(amount) || amount < 0) return;
+                          setIsSavingContribution(true);
+                          try {
+                            // Update monthly contribution for all portfolios proportionally
+                            // For simplicity, update first portfolio with total amount
+                            if (portfolios.length > 0) {
+                              const perPortfolio = amount / portfolios.length;
+                              for (const p of portfolios) {
+                                await apiClient.updateMonthlyContribution(p.portfolio.id, perPortfolio);
+                              }
+                              await refreshPortfolios();
+                            }
+                            setIsEditingContribution(false);
+                          } catch (err) {
+                            console.error('Failed to update contribution:', err);
+                          } finally {
+                            setIsSavingContribution(false);
+                          }
+                        }}
+                        disabled={isSavingContribution}
+                        className="p-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded transition-colors"
+                      >
+                        {isSavingContribution ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      </button>
+                      <button
+                        onClick={() => setIsEditingContribution(false)}
+                        className="p-1 bg-slate-600 hover:bg-slate-500 text-slate-300 rounded transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 flex items-center gap-2">
+                      <span>
+                        Rozpočet: <span className="font-bold text-emerald-400">{formatCurrency(familyData.monthlyContribution)}</span>
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEditContributionValue(familyData.monthlyContribution.toString());
+                          setIsEditingContribution(true);
+                        }}
+                        className="p-0.5 hover:bg-slate-700 rounded transition-colors"
+                        title="Upravit měsíční rozpočet"
+                      >
+                        <Edit3 className="w-3 h-3 text-slate-500 hover:text-emerald-400" />
+                      </button>
+                      <span className="text-slate-600">|</span>
+                      <span>Alokováno: {formatCurrency(familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
+                      <span className="text-slate-600">|</span>
+                      <span>Zbývá: {formatCurrency(familyData.monthlyContribution - familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
+                    </p>
+                  )}
                 </div>
               </div>
               

@@ -323,6 +323,16 @@ class ApiClient {
     return response.data;
   }
 
+  async updateMonthlyContribution(
+    portfolioId: number,
+    monthlyContribution: number
+  ): Promise<{ success: boolean; monthly_contribution: number }> {
+    const response = await this.client.put(
+      `/api/portfolio/portfolios/${portfolioId}/monthly-contribution?monthly_contribution=${monthlyContribution}`
+    );
+    return response.data;
+  }
+
   async deleteAllPositions(portfolioId: number): Promise<{ success: boolean; message: string; deleted_count: number }> {
     const response = await this.client.delete(`/api/portfolio/portfolios/${portfolioId}/positions`);
     return response.data;

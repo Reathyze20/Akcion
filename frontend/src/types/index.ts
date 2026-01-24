@@ -128,6 +128,7 @@ export interface Portfolio {
   created_at: string;
   updated_at: string;
   cash_balance?: number;
+  monthly_contribution?: number; // Měsíční vklad v CZK
   position_count?: number;
   total_value?: number;
 }

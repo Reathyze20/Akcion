@@ -329,6 +329,31 @@ def update_cash_balance(
     return {"success": True, "cash_balance": portfolio.cash_balance}
 
 
+@router.put("/portfolios/{portfolio_id}/monthly-contribution")
+def update_monthly_contribution(
+    portfolio_id: int,
+    monthly_contribution: float,
+    db: Session = Depends(get_db)
+):
+    """Update monthly contribution amount for a portfolio's allocation planning"""
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    
+    if monthly_contribution < 0:
+        raise HTTPException(status_code=400, detail="Monthly contribution cannot be negative")
+    
+    portfolio.monthly_contribution = monthly_contribution
+    db.commit()
+    db.refresh(portfolio)
+    
+    return {
+        "success": True, 
+        "monthly_contribution": portfolio.monthly_contribution
+    }
+
+
 @router.post("/upload-csv", response_model=CSVUploadResponse)
 async def upload_csv(
     portfolio_id: int = Form(...),
