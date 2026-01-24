@@ -142,6 +142,11 @@ class Stock(Base):
         nullable=True,
         doc="Specific upcoming events/dates that will move price"
     )
+    next_catalyst = Column(
+        String(100),
+        nullable=True,
+        doc="Next upcoming catalyst event: 'Q1 EARNINGS / MAY 26'"
+    )
     risks = Column(
         Text,
         nullable=True,
@@ -230,6 +235,7 @@ class Stock(Base):
             "time_horizon": self.time_horizon,
             "edge": self.edge,
             "catalysts": self.catalysts,
+            "next_catalyst": self.next_catalyst,
             "risks": self.risks,
             "raw_notes": self.raw_notes,
             "action_verdict": self.action_verdict,

@@ -18,6 +18,7 @@ export interface Stock {
   time_horizon: string | null;
   edge: string | null; // Information Arbitrage
   catalysts: string | null;
+  next_catalyst: string | null; // Next catalyst: "Q1 EARNINGS / MAY 26"
   risks: string | null;
   raw_notes: string | null;
   

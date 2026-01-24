@@ -41,6 +41,8 @@ interface EnrichedPosition extends Position {
   is_underweight: boolean;
   action_signal: 'BUY' | 'HOLD' | 'SELL' | 'SNIPER';  // Akční signál
   inflection_status?: string;
+  // Next Catalyst
+  next_catalyst?: string;  // Format: "EVENT / DATE" or null
 }
 
 interface FamilyPortfolioData {
@@ -146,6 +148,45 @@ const getActionSignal = (
   
   // Hold: roughly at target
   return 'HOLD';
+};
+
+/**
+ * Get dynamic action command for position
+ * STRONG BUY, HARD EXIT, HOLD, FREE RIDE
+ */
+const getActionCommand = (
+  score: number | null,
+  currentWeight: number,
+  targetWeight: number,
+  unrealizedProfitPct: number
+): { text: string; color: string; bgColor?: string } => {
+  // Priority 1: Free Ride at 150%+
+  if (unrealizedProfitPct >= 150) {
+    return { text: 'FREE RIDE', color: 'text-amber-400', bgColor: 'bg-amber-500/10' };
+  }
+  
+  // Priority 2: Hard Exit for score < 4
+  if (score !== null && score < 4) {
+    return { text: 'HARD EXIT', color: 'text-red-400', bgColor: 'bg-red-500/20' };
+  }
+  
+  // Priority 3: Strong Buy for score >= 8 and underweight
+  if (score !== null && score >= 8 && currentWeight < targetWeight) {
+    return { text: 'STRONG BUY', color: 'text-green-400 font-bold' };
+  }
+  
+  // Priority 4: Hold if at or above target weight
+  if (score !== null && score >= 5 && currentWeight >= targetWeight) {
+    return { text: 'HOLD', color: 'text-slate-500' };
+  }
+  
+  // Default: BUY signal for underweight positions with score 5-7
+  if (score !== null && score >= 5 && currentWeight < targetWeight) {
+    return { text: 'BUY', color: 'text-emerald-400' };
+  }
+  
+  // No score or edge case
+  return { text: 'ANALYZE', color: 'text-slate-600' };
 };
 
 const getTrendStatus = (stock: Stock | undefined): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
@@ -663,6 +704,30 @@ const PortfolioRow: React.FC<{
     : <BarChart3 className="w-4 h-4 text-slate-400" />;
 
   const plColor = position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400';
+  
+  // Get action command
+  const actionCmd = getActionCommand(
+    position.gomes_score,
+    position.weight_in_portfolio,
+    position.target_weight_pct,
+    position.unrealized_pl_percent
+  );
+  
+  // Check if row should be highlighted (HARD EXIT)
+  const isHardExit = position.gomes_score !== null && position.gomes_score < 4;
+  
+  // Strategy: Free Ride eligible vs Growing
+  const isFreeRideEligible = position.unrealized_pl_percent >= 150;
+  const progressTo150 = Math.min(100, (position.unrealized_pl_percent / 150) * 100);
+  
+  // Calculate shares to sell for Free Ride
+  const sharesToSellForFreeRide = useMemo(() => {
+    if (!isFreeRideEligible) return 0;
+    const currentPrice = position.stock?.current_price ?? position.current_price ?? 0;
+    if (currentPrice <= 0) return 0;
+    const costBasis = position.shares_count * position.avg_cost;
+    return Math.ceil(costBasis / currentPrice);
+  }, [position, isFreeRideEligible]);
 
   return (
     <tr 
@@ -670,7 +735,8 @@ const PortfolioRow: React.FC<{
       className={`
         border-b border-slate-700/50 cursor-pointer transition-all
         hover:bg-slate-800/70
-        ${position.is_deteriorated ? 'animate-pulse bg-red-900/20' : ''}
+        ${isHardExit ? 'bg-red-900/30' : ''}
+        ${position.is_deteriorated && !isHardExit ? 'animate-pulse bg-red-900/20' : ''}
       `}
     >
       {/* Ticker & Name */}
@@ -679,10 +745,6 @@ const PortfolioRow: React.FC<{
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-white text-lg">{position.ticker}</span>
-              {/* Free Ride indicator - P/L > 100% means you've recouped initial investment */}
-              {position.unrealized_pl_percent >= 100 && (
-                <span title="Free Ride! Recouped initial investment" className="text-lg">🕊️</span>
-              )}
             </div>
             <div className="text-xs text-slate-400 truncate max-w-[150px]">
               {position.company_name || 'Unknown'}
@@ -693,6 +755,13 @@ const PortfolioRow: React.FC<{
               REVIEW
             </span>
           )}
+        </div>
+      </td>
+
+      {/* ACTION - Dynamic Command */}
+      <td className="py-3 px-3">
+        <div className={`text-xs font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
+          {actionCmd.text}
         </div>
       </td>
 
@@ -754,6 +823,17 @@ const PortfolioRow: React.FC<{
         )}
       </td>
 
+      {/* NEXT CATALYST */}
+      <td className="py-3 px-3">
+        {position.next_catalyst ? (
+          <div className="text-[10px] text-slate-400 uppercase tracking-wide font-mono truncate max-w-[100px]" title={position.next_catalyst}>
+            {position.next_catalyst.length > 20 ? position.next_catalyst.slice(0, 20) + '...' : position.next_catalyst}
+          </div>
+        ) : (
+          <div className="text-[10px] text-red-400/70 uppercase">NONE</div>
+        )}
+      </td>
+
       {/* 30 WMA Status */}
       <td className="py-3 px-4">
         <div className="flex items-center gap-2">
@@ -768,6 +848,31 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
+      {/* STRATEGY - Position Health */}
+      <td className="py-3 px-3">
+        {isFreeRideEligible ? (
+          <div>
+            <div className="text-[10px] text-amber-400 font-bold uppercase">FREE RIDE</div>
+            <div className="text-[9px] text-amber-300/70">
+              Sell {sharesToSellForFreeRide} shares
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="text-[10px] text-slate-500 uppercase">GROWING</div>
+            <div className="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
+              <div 
+                className="h-full bg-gradient-to-r from-slate-600 to-emerald-500 transition-all"
+                style={{ width: `${progressTo150}%` }}
+              />
+            </div>
+            <div className="text-[8px] text-slate-600 mt-0.5">
+              {position.unrealized_pl_percent.toFixed(0)}% / 150%
+            </div>
+          </div>
+        )}
+      </td>
+
       {/* P/L % */}
       <td className="py-3 px-4 text-right">
         <div className={`font-bold ${plColor}`}>
@@ -776,11 +881,6 @@ const PortfolioRow: React.FC<{
         <div className="text-xs text-slate-500">
           {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
         </div>
-        {position.unrealized_pl_percent >= 150 && (
-          <div className="text-[10px] text-amber-400 font-bold">
-            TAKE PROFIT
-          </div>
-        )}
       </td>
     </tr>
   );
@@ -2493,6 +2593,7 @@ export const GomesGuardianDashboard: React.FC = () => {
           is_underweight: gapCZK > MIN_INVESTMENT_CZK,
           action_signal: actionSignal,
           inflection_status: 'UPCOMING',
+          next_catalyst: stock?.next_catalyst ?? undefined,
         };
 
         tempPositions.push(enriched);
@@ -3043,6 +3144,7 @@ export const GomesGuardianDashboard: React.FC = () => {
             <thead>
               <tr className="border-b border-slate-700 bg-slate-800/50">
                 <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Symbol</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Action</th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
                   <div>Váha</div>
                   <div className="text-[9px] text-slate-500 font-normal">Aktuální / Cíl</div>
@@ -3052,7 +3154,9 @@ export const GomesGuardianDashboard: React.FC = () => {
                   <div>Optimal Size</div>
                   <div className="text-[9px] text-slate-500 font-normal">Tento měsíc</div>
                 </th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Catalyst</th>
                 <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Trend</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Strategy</th>
                 <th className="text-right py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">P/L</th>
               </tr>
             </thead>
@@ -3066,7 +3170,7 @@ export const GomesGuardianDashboard: React.FC = () => {
               ))}
               {displayedPositions.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-slate-500">
+                  <td colSpan={9} className="text-center py-12 text-slate-500">
                     {searchQuery ? 'No positions found' : 'No positions in portfolio. Import your DEGIRO CSV to get started.'}
                   </td>
                 </tr>
