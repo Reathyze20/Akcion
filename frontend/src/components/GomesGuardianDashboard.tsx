@@ -2344,20 +2344,38 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
 
 interface NewAnalysisModalProps {
   onClose: () => void;
-  onSubmit: (transcript: string, ticker?: string) => void;
+  onSubmit: (transcript: string, ticker?: string, sourceType?: 'text' | 'youtube' | 'google-docs', url?: string) => void;
 }
 
 const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }) => {
+  const [inputType, setInputType] = useState<'text' | 'youtube' | 'google-docs'>('text');
   const [transcript, setTranscript] = useState('');
+  const [url, setUrl] = useState('');
   const [ticker, setTicker] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!transcript.trim()) return;
+    setError(null);
+    
+    if (inputType === 'text' && !transcript.trim()) {
+      setError('Please enter transcript text');
+      return;
+    }
+    if ((inputType === 'youtube' || inputType === 'google-docs') && !url.trim()) {
+      setError('Please enter a URL');
+      return;
+    }
+    
     setLoading(true);
-    await onSubmit(transcript, ticker || undefined);
-    setLoading(false);
-    onClose();
+    try {
+      await onSubmit(transcript, ticker || undefined, inputType, url || undefined);
+      onClose();
+    } catch (err) {
+      setError('Analysis failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -2374,8 +2392,50 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
         </div>
         
         <div className="p-4 space-y-4">
+          {/* Input Type Selector */}
+          <div className="flex gap-2 p-1 bg-slate-800 rounded-lg">
+            <button
+              onClick={() => setInputType('text')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'text' 
+                  ? 'bg-indigo-600 text-white' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Text / Transcript
+            </button>
+            <button
+              onClick={() => setInputType('youtube')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'youtube' 
+                  ? 'bg-red-600 text-white' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              YouTube
+            </button>
+            <button
+              onClick={() => setInputType('google-docs')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'google-docs' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Google Docs
+            </button>
+          </div>
+          
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm">
+              {error}
+            </div>
+          )}
+          
+          {/* Ticker (optional for all types) */}
           <div>
-            <label className="text-sm text-slate-400 block mb-2">Ticker Symbol (optional)</label>
+            <label className="text-sm text-slate-400 block mb-2">Ticker Symbol (optional - auto-detected)</label>
             <input
               type="text"
               value={ticker}
@@ -2385,16 +2445,44 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
             />
           </div>
           
-          <div>
-            <label className="text-sm text-slate-400 block mb-2">Transcript / Research Notes</label>
-            <textarea
-              value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
-              placeholder="Paste earnings call transcript, YouTube video notes, or research analysis..."
-              rows={10}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
-            />
-          </div>
+          {/* URL Input for YouTube / Google Docs */}
+          {(inputType === 'youtube' || inputType === 'google-docs') && (
+            <div>
+              <label className="text-sm text-slate-400 block mb-2">
+                {inputType === 'youtube' ? 'YouTube Video URL' : 'Google Docs URL'}
+              </label>
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder={
+                  inputType === 'youtube' 
+                    ? 'https://www.youtube.com/watch?v=...' 
+                    : 'https://docs.google.com/document/d/...'
+                }
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+              <p className="mt-2 text-xs text-slate-500">
+                {inputType === 'youtube' 
+                  ? 'AI will automatically transcribe the video and extract stock analysis.' 
+                  : 'Make sure the document is shared with "Anyone with the link can view".'}
+              </p>
+            </div>
+          )}
+          
+          {/* Text Input */}
+          {inputType === 'text' && (
+            <div>
+              <label className="text-sm text-slate-400 block mb-2">Transcript / Research Notes</label>
+              <textarea
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                placeholder="Paste earnings call transcript, video notes, or research analysis..."
+                rows={10}
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            </div>
+          )}
         </div>
 
         <div className="p-4 border-t border-slate-700 flex gap-3 justify-end">
@@ -2406,7 +2494,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!transcript.trim() || loading}
+            disabled={loading}
             className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-600 text-white font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
@@ -2414,7 +2502,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
             ) : (
               <Target className="w-4 h-4" />
             )}
-            Run Analysis
+            {loading ? 'Analyzing...' : 'Run Analysis'}
           </button>
         </div>
       </div>
@@ -2737,14 +2825,29 @@ export const GomesGuardianDashboard: React.FC = () => {
   }, [watchlistStocks, searchQuery]);
 
   // Handle new analysis
-  const handleNewAnalysis = async (transcript: string, ticker?: string) => {
+  const handleNewAnalysis = async (
+    transcript: string, 
+    ticker?: string, 
+    sourceType?: 'text' | 'youtube' | 'google-docs',
+    url?: string
+  ) => {
     try {
-      await apiClient.runDeepDD(transcript, ticker);
+      if (sourceType === 'youtube' && url) {
+        // YouTube analysis
+        await apiClient.analyzeYouTube({ url, speaker: 'Mark Gomes' });
+      } else if (sourceType === 'google-docs' && url) {
+        // Google Docs analysis
+        await apiClient.analyzeGoogleDocs({ url, speaker: 'Mark Gomes' });
+      } else {
+        // Text/transcript analysis
+        await apiClient.runDeepDD(transcript, ticker);
+      }
       // Refresh data
       const stocksData = await apiClient.getStocks();
       setStocks(stocksData.stocks);
     } catch (err) {
       console.error('Analysis failed:', err);
+      throw err; // Re-throw to show error in modal
     }
   };
 
