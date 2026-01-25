@@ -536,3 +536,90 @@ async def update_stock_score(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update score: {str(e)}",
         )
+
+# ==============================================================================
+# PATCH /api/stocks/{ticker} - Update Stock Data Manually
+# ==============================================================================
+
+class StockUpdateRequest(BaseModel):
+    """Request model for manual stock data update"""
+    next_catalyst: Optional[str] = None
+    thesis_narrative: Optional[str] = None
+    gomes_score: Optional[int] = Field(None, ge=1, le=10)
+    inflection_status: Optional[str] = None
+    price_floor: Optional[float] = None
+    price_base: Optional[float] = None
+    price_moon: Optional[float] = None
+    stop_loss_price: Optional[float] = None
+    max_allocation_cap: Optional[float] = None
+    cash_runway_months: Optional[int] = None
+
+
+@router.patch("/{ticker}", status_code=status.HTTP_200_OK)
+def update_stock_manual(
+    ticker: str,
+    update_data: StockUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Manually update stock data fields.
+    
+    Allows user to edit key fields like catalyst, thesis, score, price targets.
+    Only updates fields that are provided (not None).
+    """
+    try:
+        # Get stock
+        stock = db.query(Stock).filter(Stock.ticker == ticker.upper()).first()
+        if not stock:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stock {ticker} not found in database"
+            )
+        
+        # Update only provided fields
+        if update_data.next_catalyst is not None:
+            stock.next_catalyst = update_data.next_catalyst
+        if update_data.thesis_narrative is not None:
+            stock.thesis_narrative = update_data.thesis_narrative
+        if update_data.gomes_score is not None:
+            stock.gomes_score = update_data.gomes_score
+        if update_data.inflection_status is not None:
+            stock.inflection_status = update_data.inflection_status
+        if update_data.price_floor is not None:
+            stock.price_floor = update_data.price_floor
+        if update_data.price_base is not None:
+            stock.price_base = update_data.price_base
+        if update_data.price_moon is not None:
+            stock.price_moon = update_data.price_moon
+        if update_data.stop_loss_price is not None:
+            stock.stop_loss_price = update_data.stop_loss_price
+        if update_data.max_allocation_cap is not None:
+            stock.max_allocation_cap = update_data.max_allocation_cap
+        if update_data.cash_runway_months is not None:
+            stock.cash_runway_months = update_data.cash_runway_months
+        
+        from datetime import datetime
+        stock.last_updated = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(stock)
+        
+        logger.info(f"Stock {ticker} updated manually by user")
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "message": "Stock data updated successfully",
+            "updated_fields": {
+                k: v for k, v in update_data.dict().items() if v is not None
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update stock {ticker}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update stock: {str(e)}",
+        )

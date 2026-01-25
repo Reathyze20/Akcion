@@ -88,6 +88,22 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
   const [analysisDate, setAnalysisDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   
+  // State for Edit Mode
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editedData, setEditedData] = useState({
+    next_catalyst: stock?.next_catalyst ?? '',
+    thesis_narrative: stock?.thesis_narrative ?? '',
+    gomes_score: stock?.gomes_score ?? 5,
+    inflection_status: stock?.inflection_status ?? 'WAIT_TIME',
+    price_floor: stock?.price_floor ?? 0,
+    price_base: stock?.price_base ?? 0,
+    price_moon: stock?.price_moon ?? 0,
+    stop_loss_price: stock?.stop_loss_price ?? 0,
+    max_allocation_cap: stock?.max_allocation_cap ?? 10,
+    cash_runway_months: stock?.cash_runway_months ?? null,
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  
   // Temporary calculations (should come from backend)
   const cashRunwayMonths = stock?.cash_runway_months ?? null;
   const insiderActivity = stock?.insider_activity ?? 'HOLDING';
@@ -130,6 +146,48 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
   // Insider activity color
   const insiderColor = insiderActivity === 'BUYING' ? 'green' : 
                        insiderActivity === 'SELLING' ? 'red' : 'slate';
+  
+  // Handle manual edit save
+  const handleSaveEdit = async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch(`http://127.0.0.1:8002/api/stocks/${position.ticker}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editedData)
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Uložení selhalo');
+      }
+      
+      alert('✅ Údaje úspěšně uloženy!');
+      window.location.reload();
+      
+    } catch (error) {
+      console.error('Uložení selhalo:', error);
+      alert(`❌ Chyba při ukládání: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditMode(false);
+    setEditedData({
+      next_catalyst: stock?.next_catalyst ?? '',
+      thesis_narrative: stock?.thesis_narrative ?? '',
+      gomes_score: stock?.gomes_score ?? 5,
+      inflection_status: stock?.inflection_status ?? 'WAIT_TIME',
+      price_floor: stock?.price_floor ?? 0,
+      price_base: stock?.price_base ?? 0,
+      price_moon: stock?.price_moon ?? 0,
+      stop_loss_price: stock?.stop_loss_price ?? 0,
+      max_allocation_cap: stock?.max_allocation_cap ?? 10,
+      cash_runway_months: stock?.cash_runway_months ?? null,
+    });
+  };
   
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-2">
@@ -199,6 +257,44 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               ANALÝZA
             </button>
             
+            {/* Edit/Save Buttons */}
+            {!isEditMode ? (
+              <button
+                onClick={() => setIsEditMode(true)}
+                className="px-3 py-2 bg-purple-500 hover:bg-purple-600 border border-purple-400 rounded-lg text-sm text-white font-bold transition-colors flex items-center gap-2"
+                title="Ručně upravit údaje"
+              >
+                <FileText className="w-4 h-4" />
+                UPRAVIT
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-3 py-2 bg-slate-600 hover:bg-slate-700 border border-slate-500 rounded-lg text-sm text-white font-bold transition-colors"
+                >
+                  Zrušit
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={isSaving}
+                  className="px-3 py-2 bg-green-500 hover:bg-green-600 disabled:bg-slate-700 border border-green-400 rounded-lg text-sm text-white font-bold transition-colors flex items-center gap-2"
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Ukládám...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      ULOŽIT
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+            
             {/* Close Button */}
             <button onClick={onClose} className="ml-2 p-1.5 hover:bg-slate-700 rounded transition-colors">
               <X className="w-5 h-5 text-slate-400" />
@@ -210,6 +306,143 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             ROW 2: NARRATIVE & POSITION (2-Column Grid: 2/3 + 1/3)
             Height: ~35% of viewport
             ====================================================================== */}
+        {isEditMode ? (
+          /* EDIT MODE FORM */
+          <div className="p-4 border-b border-slate-800 bg-purple-950/30 overflow-y-auto max-h-[70vh]">
+            <div className="max-w-4xl mx-auto space-y-4">
+              <h3 className="text-lg font-bold text-purple-300 mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Ruční úprava údajů – {position.ticker}
+              </h3>
+              
+              <div className="grid grid-cols-2 gap-4">
+                {/* Gomes Score */}
+                <div>
+                  <label className="block text-xs text-slate-400 mb-2">Gomes Score (1-10)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={editedData.gomes_score}
+                    onChange={(e) => setEditedData({...editedData, gomes_score: parseInt(e.target.value) || 5})}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  />
+                </div>
+
+                {/* Inflection Status */}
+                <div>
+                  <label className="block text-xs text-slate-400 mb-2">Inflection Stage</label>
+                  <select
+                    value={editedData.inflection_status}
+                    onChange={(e) => setEditedData({...editedData, inflection_status: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                  >
+                    <option value="WAIT_TIME">🔴 The Wait Time</option>
+                    <option value="UPCOMING">🟡 Inflection Upcoming</option>
+                    <option value="ACTIVE_GOLD_MINE">🟢 The Gold Mine</option>
+                  </select>
+                </div>
+
+                {/* Max Allocation Cap */}
+                <div>
+                  <label className="block text-xs text-slate-400 mb-2">Max Allocation Cap (%)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={editedData.max_allocation_cap}
+                    onChange={(e) => setEditedData({...editedData, max_allocation_cap: parseFloat(e.target.value) || 10})}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Cash Runway Months */}
+                <div>
+                  <label className="block text-xs text-slate-400 mb-2">Cash Runway (měsíce)</label>
+                  <input
+                    type="number"
+                    value={editedData.cash_runway_months ?? ''}
+                    onChange={(e) => setEditedData({...editedData, cash_runway_months: e.target.value ? parseInt(e.target.value) : null})}
+                    placeholder="null = neznámé"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Price Floor */}
+                <div>
+                  <label className="block text-xs text-slate-400 mb-2">Price Floor (Liquidation)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editedData.price_floor}
+                    onChange={(e) => setEditedData({...editedData, price_floor: parseFloat(e.target.value) || 0})}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Price Base */}
+                <div>
+                  <label className="block text-xs text-slate-400 mb-2">Price Base (Fair Value)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editedData.price_base}
+                    onChange={(e) => setEditedData({...editedData, price_base: parseFloat(e.target.value) || 0})}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Price Moon */}
+                <div>
+                  <label className="block text-xs text-slate-400 mb-2">Price Moon (Bull Case)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editedData.price_moon}
+                    onChange={(e) => setEditedData({...editedData, price_moon: parseFloat(e.target.value) || 0})}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Stop Loss */}
+                <div>
+                  <label className="block text-xs text-slate-400 mb-2">Stop Loss (Kill Switch)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editedData.stop_loss_price}
+                    onChange={(e) => setEditedData({...editedData, stop_loss_price: parseFloat(e.target.value) || 0})}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Next Catalyst */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-2">Next Catalyst</label>
+                <input
+                  type="text"
+                  value={editedData.next_catalyst}
+                  onChange={(e) => setEditedData({...editedData, next_catalyst: e.target.value})}
+                  placeholder="např. Q1 2026 High-Grade Sales Report"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Thesis Narrative */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-2">Thesis (The Setup)</label>
+                <textarea
+                  value={editedData.thesis_narrative}
+                  onChange={(e) => setEditedData({...editedData, thesis_narrative: e.target.value})}
+                  rows={3}
+                  placeholder="2-3 věty popisující investiční tezi..."
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* NORMAL VIEW */
         <div className="grid grid-cols-3 gap-3 p-3 h-[35vh] border-b border-slate-800">
           {/* LEFT COLUMN: INFLECTION ENGINE (2/3 width) */}
           <div className="col-span-2 bg-gradient-to-br from-slate-800/80 to-indigo-900/20 rounded-lg p-3 border border-indigo-500/20 flex flex-col">
@@ -254,20 +487,6 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-red-400" />
                     <span className="text-xs text-red-300 font-semibold">No catalyst - position questionable</span>
-                  </div>
-                </div>
-              )}
-              
-              {/* LOGICAL ERROR WARNING: High Score but No Catalyst */}
-              {position.gomes_score >= 9 && (!position.next_catalyst || position.next_catalyst.toUpperCase().includes('NO CATALYST')) && (
-                <div className="mt-2 bg-yellow-500/20 border border-yellow-500/60 rounded-lg p-2">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <div className="text-[10px] text-yellow-200 leading-tight">
-                      <strong className="text-yellow-300 font-bold">⚠️ LOGICAL ERROR:</strong> High Score ({position.gomes_score}/10) but No Catalyst.
-                      <br />
-                      <span className="text-yellow-300/80">Score není obhajitelné bez konkrétního katalyzátoru. Doplň ručně (např. "Q1 High-Grade Sales").</span>
-                    </div>
                   </div>
                 </div>
               )}
@@ -342,6 +561,27 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             </div>
           </div>
         </div>
+
+        {/* ======================================================================
+            LOGICAL ERROR WARNING: High Score but No Catalyst
+            ====================================================================== */}
+        {position.gomes_score >= 9 && (!position.next_catalyst || position.next_catalyst.toUpperCase().includes('NO CATALYST')) && (
+          <div className="mx-3 mb-3 bg-yellow-500/20 border border-yellow-500/60 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="text-sm text-yellow-300 font-bold mb-1">
+                  ⚠️ LOGICAL ERROR: High Score ({position.gomes_score}/10) but No Catalyst
+                </div>
+                <div className="text-xs text-yellow-200/90 leading-relaxed">
+                  Score není obhajitelné bez konkrétního katalyzátoru. Bez katalyzátoru cena padá dolů.
+                  <br />
+                  <strong className="text-yellow-300">Řešení:</strong> Doplň ručně catalyst (např. "Q1 High-Grade Sales Report") přes editaci.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ======================================================================
             ROW 3: THE TRADING DECK (Compact Table Layout)
