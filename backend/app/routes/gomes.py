@@ -1427,3 +1427,150 @@ def acknowledge_alert(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/refresh-all-verdicts")
+def refresh_all_verdicts(
+    force: bool = Query(False, description="Force refresh all stocks"),
+    db: Session = Depends(get_db),
+):
+    """
+    Refresh investment verdicts for all stocks in watchlist.
+    
+    Called automatically after importing new transcript.
+    Updates verdicts based on latest Gomes scores, lifecycle phase,
+    price lines, and market alert level.
+    """
+    try:
+        from app.models.gomes import InvestmentVerdictModel
+        from app.services.gomes_gatekeeper import GomesGatekeeper
+        
+        # Get all active watchlist tickers
+        watchlist = db.query(ActiveWatchlist).filter(
+            ActiveWatchlist.is_active == True
+        ).all()
+        
+        if not watchlist:
+            return {
+                "success": True,
+                "message": "No active watchlist items to refresh",
+                "updated_count": 0
+            }
+        
+        gatekeeper = GomesGatekeeper(db)
+        updated_count = 0
+        errors = []
+        
+        for item in watchlist:
+            try:
+                # Run gatekeeper analysis for each ticker
+                verdict = gatekeeper.evaluate_ticker(item.ticker)
+                
+                if verdict:
+                    # Invalidate old verdicts
+                    old_verdicts = db.query(InvestmentVerdictModel).filter(
+                        InvestmentVerdictModel.ticker == item.ticker,
+                        InvestmentVerdictModel.valid_until == None
+                    ).all()
+                    
+                    for old in old_verdicts:
+                        old.valid_until = datetime.utcnow()
+                    
+                    # Save new verdict
+                    db.add(verdict)
+                    updated_count += 1
+                    
+            except Exception as e:
+                errors.append(f"{item.ticker}: {str(e)}")
+                continue
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Refreshed verdicts for {updated_count} stocks",
+            "updated_count": updated_count,
+            "total_watchlist": len(watchlist),
+            "errors": errors if errors else None
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to refresh verdicts: {str(e)}"
+        )
+
+
+@router.get("/weekly-summary")
+def get_weekly_summary(
+    days: int = Query(7, description="Number of days to look back"),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate weekly investment summary.
+    
+    Returns:
+    - New transcripts from this week
+    - Stocks with score changes (improved/deteriorated)
+    - New BUY/SELL signals
+    - Thesis drift alerts
+    - Top conviction picks
+    """
+    try:
+        from app.services.weekly_summary import WeeklySummary
+        from datetime import datetime, timedelta
+        
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+        
+        summary_service = WeeklySummary(db)
+        summary = summary_service.generate_summary(start_date, end_date)
+        
+        return summary
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate summary: {str(e)}"
+        )
+
+
+@router.post("/weekly-summary/send-email")
+def send_weekly_summary_email_endpoint(
+    recipient_email: str = Query(..., description="Recipient email address"),
+    db: Session = Depends(get_db),
+):
+    """
+    Send weekly summary email to specified address.
+    
+    Requires SMTP settings in environment variables:
+    - EMAIL_HOST
+    - EMAIL_PORT
+    - EMAIL_USERNAME
+    - EMAIL_PASSWORD
+    """
+    try:
+        from app.services.weekly_summary import send_weekly_summary_email
+        
+        success = send_weekly_summary_email(
+            db=db,
+            recipient_email=recipient_email
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Weekly summary sent to {recipient_email}"
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send email - check SMTP settings"
+            )
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send email: {str(e)}"
+        )
+
+
+
