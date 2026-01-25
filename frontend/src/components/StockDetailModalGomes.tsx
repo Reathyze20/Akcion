@@ -334,7 +334,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
                   <label className="block text-xs text-slate-400 mb-2">Inflection Stage</label>
                   <select
                     value={editedData.inflection_status}
-                    onChange={(e) => setEditedData({...editedData, inflection_status: e.target.value})}
+                    onChange={(e) => setEditedData({...editedData, inflection_status: e.target.value as 'WAIT_TIME' | 'UPCOMING' | 'ACTIVE_GOLD_MINE'})}
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
                   >
                     <option value="WAIT_TIME">🔴 The Wait Time</option>
@@ -443,7 +443,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
           </div>
         ) : (
           /* NORMAL VIEW */
-        <div className="grid grid-cols-3 gap-3 p-3 h-[35vh] border-b border-slate-800">
+          <div className="grid grid-cols-3 gap-3 p-3 h-[35vh] border-b border-slate-800">
           {/* LEFT COLUMN: INFLECTION ENGINE (2/3 width) */}
           <div className="col-span-2 bg-gradient-to-br from-slate-800/80 to-indigo-900/20 rounded-lg p-3 border border-indigo-500/20 flex flex-col">
             <h3 className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -560,23 +560,31 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* ======================================================================
             LOGICAL ERROR WARNING: High Score but No Catalyst
             ====================================================================== */}
-        {position.gomes_score >= 9 && (!position.next_catalyst || position.next_catalyst.toUpperCase().includes('NO CATALYST')) && (
-          <div className="mx-3 mb-3 bg-yellow-500/20 border border-yellow-500/60 rounded-lg p-3">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+        {position.gomes_score && position.gomes_score >= 9 && (!position.next_catalyst || position.next_catalyst.toUpperCase().includes('NO CATALYST')) && (
+          <div className="mx-3 mb-3 bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border-2 border-yellow-500/70 rounded-lg p-4 shadow-lg">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-1">
+                <AlertTriangle className="w-6 h-6 text-yellow-300 animate-pulse" />
+              </div>
               <div className="flex-1">
-                <div className="text-sm text-yellow-300 font-bold mb-1">
+                <div className="text-base text-yellow-200 font-bold mb-2 flex items-center gap-2">
                   ⚠️ LOGICAL ERROR: High Score ({position.gomes_score}/10) but No Catalyst
                 </div>
-                <div className="text-xs text-yellow-200/90 leading-relaxed">
-                  Score není obhajitelné bez konkrétního katalyzátoru. Bez katalyzátoru cena padá dolů.
-                  <br />
-                  <strong className="text-yellow-300">Řešení:</strong> Doplň ručně catalyst (např. "Q1 High-Grade Sales Report") přes editaci.
+                <div className="text-sm text-yellow-100/90 leading-relaxed space-y-1">
+                  <p>
+                    <strong className="text-yellow-200">Problém:</strong> Score není obhajitelné bez konkrétního katalyzátoru. 
+                    Bez katalyzátoru cena padá dolů (dead money).
+                  </p>
+                  <p className="mt-2">
+                    <strong className="text-yellow-200">Řešení:</strong> Klikni na <span className="px-2 py-0.5 bg-purple-500/50 rounded text-xs font-bold">UPRAVIT</span> v headeru 
+                    a doplň konkrétní catalyst (např. "Q1 2026 High-Grade Silver Sales Report").
+                  </p>
                 </div>
               </div>
             </div>
