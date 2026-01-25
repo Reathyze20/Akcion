@@ -43,6 +43,29 @@ class SetMarketAlertRequest(BaseModel):
     source: str = Field(default="manual", description="Source: manual, transcript, system")
 
 
+class AnalyzeTickerRequest(BaseModel):
+    """Request for ticker-specific analysis from transcript"""
+    ticker: str = Field(..., min_length=1, max_length=10, description="Stock ticker symbol")
+    source_type: str = Field(..., pattern="^(youtube|transcript|manual)$", description="Type of source")
+    input_text: str = Field(..., min_length=50, description="YouTube URL, transcript, or manual notes")
+    investor_name: str = Field(..., min_length=2, description="Investor/source name (e.g. Mark Gomes)")
+    analysis_date: str = Field(..., description="Date of video/analysis (YYYY-MM-DD)")
+
+
+class AnalyzeTickerResponse(BaseModel):
+    """Response from ticker analysis"""
+    ticker: str
+    warning_level: str = Field(..., pattern="^(CRITICAL|WARNING|WATCH|OK)$")
+    gomes_score: int = Field(..., ge=1, le=10)
+    inflection_status: str
+    thesis_narrative: str
+    next_catalyst: str
+    cash_runway_status: str
+    recommendation: str
+    updated_at: datetime
+    warning_messages: list[str] = Field(default_factory=list)
+
+
 # ============================================================================
 # LIFECYCLE SCHEMAS
 # ============================================================================

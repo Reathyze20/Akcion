@@ -18,6 +18,7 @@ export interface Stock {
   time_horizon: string | null;
   edge: string | null; // Information Arbitrage
   catalysts: string | null;
+  next_catalyst: string | null; // Next catalyst: "Q1 EARNINGS / MAY 26"
   risks: string | null;
   raw_notes: string | null;
   
@@ -38,6 +39,36 @@ export interface Stock {
   grey_line: number | null;
   price_position_pct: number | null; // 0-100%, where 0=at green, 100=at red
   price_zone: 'DEEP_VALUE' | 'BUY_ZONE' | 'ACCUMULATE' | 'FAIR_VALUE' | 'SELL_ZONE' | 'OVERVALUED' | null;
+  
+  // Gomes Master Table (2026-01-25)
+  asset_class?: string | null;
+  cash_runway_months?: number | null;
+  insider_ownership_pct?: number | null;
+  fully_diluted_market_cap?: number | null;
+  enterprise_value?: number | null;
+  quarterly_burn_rate?: number | null;
+  total_cash?: number | null;
+  inflection_status?: 'WAIT_TIME' | 'UPCOMING' | 'ACTIVE_GOLD_MINE' | null;
+  primary_catalyst?: string | null;
+  catalyst_date?: string | null;
+  thesis_narrative?: string | null;
+  price_floor?: number | null;
+  price_target_24m?: number | null;
+  current_valuation_stage?: 'UNDERVALUED' | 'FAIR' | 'OVERVALUED' | 'BUBBLE' | null;
+  price_base?: number | null;
+  price_moon?: number | null;
+  forward_pe_2027?: number | null;
+  max_allocation_cap?: number | null;
+  stop_loss_price?: number | null;
+  insider_activity?: 'BUYING' | 'HOLDING' | 'SELLING' | null;
+  market_cap?: number | null;
+  
+  // Trading Zones (Calculated from Price Lines)
+  max_buy_price?: number | null;
+  start_sell_price?: number | null;
+  risk_to_floor_pct?: number | null;
+  upside_to_ceiling_pct?: number | null;
+  trading_zone_signal?: 'AGGRESSIVE_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | null;
 }
 
 export interface StockAnalysisResult {
@@ -127,6 +158,7 @@ export interface Portfolio {
   created_at: string;
   updated_at: string;
   cash_balance?: number;
+  monthly_contribution?: number; // Měsíční vklad v CZK
   position_count?: number;
   total_value?: number;
 }

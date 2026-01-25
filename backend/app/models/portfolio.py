@@ -85,6 +85,12 @@ class Portfolio(Base):
         default=0.0,
         doc="Available cash for investments"
     )
+    monthly_contribution = Column(
+        Float,
+        nullable=False,
+        default=20000.0,
+        doc="Monthly contribution amount in CZK for allocation planning"
+    )
     created_at = Column(
         DateTime,
         default=datetime.utcnow,

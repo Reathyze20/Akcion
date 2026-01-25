@@ -323,6 +323,16 @@ class ApiClient {
     return response.data;
   }
 
+  async updateMonthlyContribution(
+    portfolioId: number,
+    monthlyContribution: number
+  ): Promise<{ success: boolean; monthly_contribution: number }> {
+    const response = await this.client.put(
+      `/api/portfolio/portfolios/${portfolioId}/monthly-contribution?monthly_contribution=${monthlyContribution}`
+    );
+    return response.data;
+  }
+
   async deleteAllPositions(portfolioId: number): Promise<{ success: boolean; message: string; deleted_count: number }> {
     const response = await this.client.delete(`/api/portfolio/portfolios/${portfolioId}/positions`);
     return response.data;
@@ -637,12 +647,12 @@ class ApiClient {
     transcript: string,
     sourceType: 'earnings' | 'news' | 'chat' | 'transcript' | 'manual' = 'manual'
   ): Promise<StockUpdateResponse> {
-    const params = new URLSearchParams();
-    params.append('transcript', transcript);
-    params.append('source_type', sourceType);
-    
     const response = await this.client.post<StockUpdateResponse>(
-      `/api/gomes/update-stock/${ticker}?${params.toString()}`
+      `/api/gomes/update-stock/${ticker}`,
+      {
+        transcript,
+        source_type: sourceType,
+      }
     );
     return response.data;
   }

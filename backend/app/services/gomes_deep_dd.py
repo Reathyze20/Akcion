@@ -416,7 +416,7 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
                     severity="CRITICAL",
                     old_score=old_score,
                     new_score=data.gomes_score,
-                    message=f"⚠️ THESIS BREAKING: {data.ticker} spadl z {old_score} na {data.gomes_score}/10. Zvažte prodej!",
+                    message=f"THESIS BREAKING: {data.ticker} spadl z {old_score} na {data.gomes_score}/10. Zvazte prodej!",
                 )
                 self.db.add(alert)
             elif result.thesis_drift == "DETERIORATED":
@@ -426,7 +426,7 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
                     severity="WARNING",
                     old_score=old_score,
                     new_score=data.gomes_score,
-                    message=f"⚡ Thesis deteriorating: {data.ticker} klesl z {old_score} na {data.gomes_score}/10.",
+                    message=f"Thesis deteriorating: {data.ticker} klesl z {old_score} na {data.gomes_score}/10.",
                 )
                 self.db.add(alert)
             elif result.thesis_drift == "IMPROVED" and score_change >= 2:
@@ -436,7 +436,7 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
                     severity="INFO",
                     old_score=old_score,
                     new_score=data.gomes_score,
-                    message=f"🚀 Thesis improving: {data.ticker} vzrostl z {old_score} na {data.gomes_score}/10!",
+                    message=f"Thesis improving: {data.ticker} vzrostl z {old_score} na {data.gomes_score}/10!",
                 )
                 self.db.add(alert)
         

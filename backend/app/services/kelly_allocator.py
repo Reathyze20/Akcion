@@ -64,36 +64,38 @@ class AllocationPlan:
 
 class KellyAllocatorService:
     """
-    Kelly Criterion based allocation service.
+    Gomes Gap Analysis Allocation Service.
     
-    Simplified Kelly for Gomes methodology:
-    - Score 9-10: Max 15-20% of portfolio
-    - Score 7-8: Max 10-12% of portfolio
-    - Score 5-6: Max 5-8% of portfolio
-    - Score < 5: Avoid or minimal position
+    Calculates optimal position sizing based on:
+    1. Target weight from Gomes score (conviction mapping)
+    2. Gap analysis (target value - current value)
+    3. Priority-based distribution of monthly contribution
     
-    The service adjusts for:
-    - Existing positions (don't over-allocate)
-    - Portfolio concentration limits
-    - Available cash
+    Hard caps:
+    - MAX_POSITION_WEIGHT: 15% of portfolio
+    - MIN_INVESTMENT: 1000 CZK (to avoid fee overhead)
     """
     
-    # Kelly weight limits by Gomes score
-    KELLY_WEIGHTS = {
-        10: 0.20,  # 20% max
-        9: 0.15,   # 15% max
-        8: 0.12,   # 12% max
-        7: 0.10,   # 10% max
-        6: 0.08,   # 8% max
-        5: 0.05,   # 5% max
-        4: 0.03,   # 3% max - only if already owned
-        3: 0.02,   # 2% max - consider selling
-        2: 0.01,   # 1% max - sell signal
-        1: 0.00,   # 0% - avoid completely
+    # Target weights by Gomes score (% of total portfolio)
+    TARGET_WEIGHTS = {
+        10: 0.15,  # CORE - highest conviction (12-15%)
+        9: 0.15,   # CORE - high conviction
+        8: 0.12,   # STRONG - solid position (10-12%)
+        7: 0.10,   # GROWTH - growth position (7-10%)
+        6: 0.05,   # WATCH - monitor closely (3-5%)
+        5: 0.03,   # WATCH - small position
+        4: 0.00,   # EXIT - should not hold
+        3: 0.00,   # EXIT - sell signal
+        2: 0.00,   # EXIT - strong sell
+        1: 0.00,   # EXIT - avoid completely
         0: 0.00,
     }
     
-    # CZK/EUR exchange rate (should be fetched dynamically in production)
+    # Hard caps (Gomesova pojistka)
+    MAX_POSITION_WEIGHT = 0.15  # Max 15% of portfolio in single stock
+    MIN_INVESTMENT_CZK = 1000  # Min investment (fee overhead)
+    
+    # Default exchange rate (should be fetched dynamically)
     CZK_EUR_RATE = 25.0
     
     def __init__(self, db: Session):
@@ -126,16 +128,17 @@ class KellyAllocatorService:
         
         # Convert CZK to EUR
         additional_eur = additional_cash_czk / self.CZK_EUR_RATE
-        total_available = available_cash_eur + additional_eur
-        total_czk = (available_cash_eur * self.CZK_EUR_RATE) + additional_cash_czk
+        total_available_czk = (available_cash_eur * self.CZK_EUR_RATE) + additional_cash_czk
         
-        # Get current positions and their weights
+        # Get current positions
         positions = self.db.query(Position).filter(
             Position.portfolio_id == portfolio_id
         ).all()
         
-        portfolio_value = sum(
-            (p.current_price or p.avg_cost) * p.shares_count 
+        # Calculate total portfolio value in CZK
+        # Note: In real scenario, we'd convert each position's currency
+        portfolio_value_czk = sum(
+            (p.current_price or p.avg_cost) * p.shares_count * self.CZK_EUR_RATE
             for p in positions
         )
         
@@ -146,65 +149,101 @@ class KellyAllocatorService:
             Stock.is_latest == True
         ).all()
         
-        stock_scores = {s.ticker: s.gomes_score or 5 for s in stocks}
+        stock_scores = {s.ticker: s.gomes_score for s in stocks}
         stock_names = {s.ticker: s.company_name for s in stocks}
         
-        # Calculate current weights and target weights
-        recommendations = []
-        priority = 1
+        # ========================================================
+        # GOMES GAP ANALYSIS
+        # ========================================================
+        
+        gap_analysis = []
         
         for position in positions:
             ticker = position.ticker
-            score = stock_scores.get(ticker, 5)
+            score = stock_scores.get(ticker)  # None if not analyzed
             
-            current_value = (position.current_price or position.avg_cost) * position.shares_count
-            current_weight = current_value / portfolio_value if portfolio_value > 0 else 0
+            # Current position value in CZK
+            current_value_czk = (position.current_price or position.avg_cost) * position.shares_count * self.CZK_EUR_RATE
+            current_weight = current_value_czk / portfolio_value_czk if portfolio_value_czk > 0 else 0
             
-            target_weight = self.KELLY_WEIGHTS.get(score, 0.05)
-            weight_gap = target_weight - current_weight
+            # Target weight from score (0 if score < 5 or None)
+            if score is None:
+                target_weight = 0  # Unanalyzed = don't allocate
+            else:
+                target_weight = self.TARGET_WEIGHTS.get(int(round(score)), 0)
             
-            # Only recommend if underweight and score >= 5
-            if weight_gap > 0.02 and score >= 5:  # At least 2% underweight
-                recommended_amount = weight_gap * portfolio_value
-                recommended_czk = recommended_amount * self.CZK_EUR_RATE
-                
-                recommendations.append(AllocationRecommendation(
-                    ticker=ticker,
-                    company_name=stock_names.get(ticker),
-                    gomes_score=score,
-                    current_weight_pct=round(current_weight * 100, 1),
-                    recommended_weight_pct=round(target_weight * 100, 1),
-                    recommended_amount=round(recommended_amount, 2),
-                    recommended_amount_czk=round(recommended_czk, 0),
-                    priority=priority,
-                    reasoning=self._get_reasoning(score, weight_gap)
-                ))
-                priority += 1
+            # Gap = Target Value - Current Value
+            target_value_czk = portfolio_value_czk * target_weight
+            gap_czk = target_value_czk - current_value_czk
+            
+            gap_analysis.append({
+                'ticker': ticker,
+                'company_name': stock_names.get(ticker),
+                'score': score,
+                'current_weight': current_weight,
+                'target_weight': target_weight,
+                'current_value_czk': current_value_czk,
+                'target_value_czk': target_value_czk,
+                'gap_czk': gap_czk,
+            })
         
-        # Sort by score (highest first), then by weight gap
-        recommendations.sort(key=lambda x: (-x.gomes_score, -x.recommended_amount))
+        # ========================================================
+        # PRIORITIZATION & ALLOCATION
+        # ========================================================
         
-        # Update priorities after sorting
-        for i, rec in enumerate(recommendations):
-            rec.priority = i + 1
+        # Filter: Only allocate to score >= 5 with positive gap
+        eligible = [
+            g for g in gap_analysis 
+            if g['score'] is not None and g['score'] >= 5 and g['gap_czk'] > 0
+        ]
         
-        # Calculate how much to allocate (don't exceed available)
-        total_recommended = sum(r.recommended_amount for r in recommendations)
-        allocated = min(total_recommended, total_available)
+        # Sort by: 1) Score (highest first), 2) Gap (largest first)
+        eligible.sort(key=lambda x: (-x['score'], -x['gap_czk']))
         
-        # Scale recommendations if not enough cash
-        if total_recommended > total_available and total_recommended > 0:
-            scale = total_available / total_recommended
-            for rec in recommendations:
-                rec.recommended_amount = round(rec.recommended_amount * scale, 2)
-                rec.recommended_amount_czk = round(rec.recommended_amount_czk * scale, 0)
+        # Distribute available capital
+        recommendations = []
+        remaining_budget = total_available_czk
+        
+        for i, item in enumerate(eligible):
+            if remaining_budget <= 0:
+                break
+            
+            # Calculate allocation (min of gap and remaining budget)
+            allocation = min(item['gap_czk'], remaining_budget)
+            
+            # Apply hard caps
+            # 1. Don't exceed MAX_POSITION_WEIGHT (15%)
+            max_allowed_value = portfolio_value_czk * self.MAX_POSITION_WEIGHT
+            max_allocation = max_allowed_value - item['current_value_czk']
+            allocation = min(allocation, max(0, max_allocation))
+            
+            # 2. Skip if < MIN_INVESTMENT (fee overhead)
+            if allocation < self.MIN_INVESTMENT_CZK:
+                continue
+            
+            allocation = round(allocation, 0)
+            remaining_budget -= allocation
+            
+            recommendations.append(AllocationRecommendation(
+                ticker=item['ticker'],
+                company_name=item['company_name'],
+                gomes_score=int(item['score']),
+                current_weight_pct=round(item['current_weight'] * 100, 1),
+                recommended_weight_pct=round(item['target_weight'] * 100, 1),
+                recommended_amount=round(allocation / self.CZK_EUR_RATE, 2),  # EUR
+                recommended_amount_czk=allocation,
+                priority=i + 1,
+                reasoning=self._get_reasoning(int(item['score']), item['gap_czk'])
+            ))
+        
+        total_allocated = sum(r.recommended_amount_czk for r in recommendations)
         
         return AllocationPlan(
-            available_capital=total_available,
-            available_capital_czk=total_czk,
+            available_capital=total_available_czk / self.CZK_EUR_RATE,
+            available_capital_czk=total_available_czk,
             recommendations=recommendations[:5],  # Top 5 recommendations
-            total_allocated=allocated,
-            remaining_cash=total_available - allocated
+            total_allocated=total_allocated,
+            remaining_cash=total_available_czk - total_allocated
         )
     
     def detect_family_gaps(
@@ -299,15 +338,17 @@ class KellyAllocatorService:
         
         return gaps
     
-    def _get_reasoning(self, score: int, weight_gap: float) -> str:
+    def _get_reasoning(self, score: int, gap_czk: float) -> str:
         """Generate human-readable reasoning for allocation"""
-        gap_pct = weight_gap * 100
+        gap_k = gap_czk / 1000
         
         if score >= 9:
-            return f"High conviction ({score}/10). Podváha {gap_pct:.1f}%. Priority buy."
+            return f"SNIPER! Score {score}/10. Mezera {gap_k:.1f}k Kc. Prioritni nakup."
+        elif score >= 8:
+            return f"STRONG. Score {score}/10. Mezera {gap_k:.1f}k Kc. Akumulovat."
         elif score >= 7:
-            return f"Solid pick ({score}/10). Podváha {gap_pct:.1f}%. Accumulate."
+            return f"GROWTH. Score {score}/10. Mezera {gap_k:.1f}k Kc. Pridat."
         elif score >= 5:
-            return f"Moderate conviction ({score}/10). Podváha {gap_pct:.1f}%. Consider adding."
+            return f"WATCH. Score {score}/10. Mezera {gap_k:.1f}k Kc. Zvazit."
         else:
-            return f"Low conviction ({score}/10). Review position."
+            return f"EXIT. Score {score}/10. Neposilat penize, zvazit prodej."

@@ -43,7 +43,7 @@ export function handleApiError(error: any): ApiError {
       
       return {
         type: 'network',
-        message: '🌐 Chyba sítě',
+        message: 'Chyba sítě',
         detail: 'Nepodařilo se připojit k serveru. Zkontrolujte připojení.',
         originalError: error
       };
@@ -54,7 +54,7 @@ export function handleApiError(error: any): ApiError {
       const serverMessage = (axiosError.response.data as any)?.detail || '';
       return {
         type: 'rate-limit',
-        message: '⚠️ Yahoo Finance API je přetížené',
+        message: 'Yahoo Finance API je přetížené',
         detail: serverMessage || 'Počkejte prosím 2-3 minuty a zkuste to znovu.',
         statusCode: 429,
         originalError: error
@@ -65,7 +65,7 @@ export function handleApiError(error: any): ApiError {
     if (axiosError.response.status >= 500) {
       return {
         type: 'server',
-        message: '⚠️ Chyba serveru',
+        message: 'Chyba serveru',
         detail: 'Interní chyba serveru. Zkuste to znovu za chvíli.',
         statusCode: axiosError.response.status,
         originalError: error
@@ -79,7 +79,7 @@ export function handleApiError(error: any): ApiError {
                            'Neplatný požadavek';
       return {
         type: 'client',
-        message: '⚠️ Chyba požadavku',
+        message: 'Chyba požadavku',
         detail: serverMessage,
         statusCode: axiosError.response.status,
         originalError: error
@@ -90,7 +90,7 @@ export function handleApiError(error: any): ApiError {
   // Unknown error
   return {
     type: 'unknown',
-    message: '❌ Neočekávaná chyba',
+    message: 'Neočekávaná chyba',
     detail: error?.message || 'Něco se pokazilo. Zkuste to znovu.',
     originalError: error
   };

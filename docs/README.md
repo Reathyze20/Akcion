@@ -11,10 +11,11 @@ Kompletní přehled **Akcion Trading Intelligence** systému.
 1. [System Overview](#system-overview)
 2. [Architecture](#architecture)
 3. [Module Documentation](#module-documentation)
-4. [API Reference](#api-reference)
-5. [Deployment](#deployment)
-6. [Testing](#testing)
-7. [Troubleshooting](#troubleshooting)
+4. [New Features (January 2026)](#new-features)
+5. [API Reference](#api-reference)
+6. [Deployment](#deployment)
+7. [Testing](#testing)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -138,6 +139,71 @@ Kompletní přehled **Akcion Trading Intelligence** systému.
 - Negation handling
 - Amplifier detection
 - Returns 0-100 score
+
+---
+
+## New Features
+
+### 🆕 January 2026 Updates
+
+#### 1. Universal Intelligence Unit
+
+**File**: `backend/app/core/prompts_universal_intelligence.py`
+
+**Purpose**: Multi-source context-aware analysis with automatic source detection
+
+**Features**:
+
+- ✅ Auto-detects source type (Official Filing, Chat Discussion, Analyst Report)
+- ✅ Source-specific reliability (100% for Filings, 30% for Chat, 60% for Analysts)
+- ✅ Context-aware extraction (Chat → sentiment/rumors, Official → hard numbers)
+- ✅ Nested JSON output with meta_info, inflection_updates, financial_updates
+- ✅ Decision tree with source-specific scoring penalties
+
+**API Endpoint**:
+```
+POST /api/intelligence/analyze-ticker?use_universal_prompt=true
+```
+
+📖 **Detailed docs**: [UNIVERSAL_INTELLIGENCE.md](./UNIVERSAL_INTELLIGENCE.md)
+
+---
+
+#### 2. Logical Validation System
+
+**Files**: 
+- `backend/app/routes/intelligence_gomes.py`
+- `frontend/src/components/StockDetailModalGomes.tsx`
+
+**Purpose**: Automatic detection of investment logic errors
+
+**Features**:
+
+- ✅ Validates: Score 9+ requires specific Catalyst
+- ✅ Yellow warning box in frontend when logic error detected
+- ✅ Backend logging for monitoring
+- ✅ Protects against AI blind spots (missing market calendar context)
+
+**Validation Rule**:
+```python
+IF gomes_score >= 9 AND next_catalyst is empty:
+    → Display: "⚠️ LOGICAL ERROR: High Score but No Catalyst"
+```
+
+📖 **Detailed docs**: [LOGICAL_VALIDATION.md](./LOGICAL_VALIDATION.md)
+
+---
+
+#### 3. UI/UX Improvements
+
+**File**: `frontend/src/components/StockDetailModalGomes.tsx`
+
+**Changes**:
+
+- ✅ Trading Deck larger fonts (text-xs instead of text-[9px])
+- ✅ "+ ANALÝZA" button moved to header (right side)
+- ✅ Trading Deck Legend added (3-column explanations in Czech)
+- ✅ Gomes Guardian Intelligence Unit modal with source type selector
 
 ---
 
@@ -482,6 +548,44 @@ chmod 600 .env
 ---
 
 ## Changelog
+
+### January 25, 2026
+
+**🆕 Universal Intelligence Unit**
+- Multi-source prompt with automatic source type detection
+- Context-aware extraction logic per source reliability
+- Nested JSON structure with meta_info, inflection_updates, financial_updates
+- Decision tree with source-specific penalties
+
+**🛡️ Logical Validation System**
+- Backend validation: Score 9+ requires Catalyst
+- Yellow warning display in frontend
+- Protection against AI blind spots
+
+**🎨 UI/UX Improvements**
+- Trading Deck larger fonts (text-xs)
+- "+ ANALÝZA" button relocated to header
+- Trading Deck Legend with 3-column Czech explanations
+- Enhanced Intelligence Unit modal
+
+---
+
+## Documentation Index
+
+| Document | Description |
+|----------|-------------|
+| [README.md](./README.md) | Complete system documentation (this file) |
+| [QUICKSTART.md](./QUICKSTART.md) | Quick setup guide |
+| [SETUP_GUIDE.md](./SETUP_GUIDE.md) | Detailed setup instructions |
+| [MASTER_SIGNAL.md](./MASTER_SIGNAL.md) | Master Signal aggregator docs |
+| [NOTIFICATIONS.md](./NOTIFICATIONS.md) | Alert system configuration |
+| [UNIVERSAL_INTELLIGENCE.md](./UNIVERSAL_INTELLIGENCE.md) | Multi-source analysis system |
+| [LOGICAL_VALIDATION.md](./LOGICAL_VALIDATION.md) | Investment logic validation |
+| [GOMES_TACTICAL_PANELS.md](./GOMES_TACTICAL_PANELS.md) | Gomes methodology panels |
+| [PORTFOLIO_PL_CALCULATION.md](./PORTFOLIO_PL_CALCULATION.md) | P&L calculation logic |
+| [YAHOO_CACHE.md](./YAHOO_CACHE.md) | Yahoo Finance caching |
+
+---
 
 ### v1.0.0 (2025-01-17)
 

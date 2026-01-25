@@ -78,6 +78,7 @@ def get_portfolios(
             **portfolio.__dict__,
             "position_count": len(positions),
             "total_value": total_value,
+            "monthly_contribution": portfolio.monthly_contribution or 20000.0,
         })
     
     return result
@@ -292,7 +293,12 @@ def delete_position(
     ticker: str,
     db: Session = Depends(get_db)
 ):
-    """Delete a position from portfolio."""
+    """
+    Delete a position from portfolio.
+    
+    Automatically adds ticker to watchlist if not already present,
+    allowing continued monitoring after sale.
+    """
     position = db.query(Position).filter(
         Position.portfolio_id == portfolio_id,
         Position.ticker == ticker.upper()
@@ -301,10 +307,49 @@ def delete_position(
     if not position:
         raise HTTPException(status_code=404, detail="Position not found")
     
+    ticker_upper = ticker.upper()
+    
+    # Check if ticker is in watchlist
+    from ..models.trading import ActiveWatchlist
+    from ..models.stock import Stock
+    
+    watchlist_item = db.query(ActiveWatchlist).filter(
+        ActiveWatchlist.ticker == ticker_upper
+    ).first()
+    
+    # If not in watchlist, add it
+    if not watchlist_item:
+        # Get latest stock data
+        stock = db.query(Stock).filter(
+            Stock.ticker == ticker_upper,
+            Stock.is_latest == True
+        ).first()
+        
+        new_watchlist = ActiveWatchlist(
+            ticker=ticker_upper,
+            stock_id=stock.id if stock else None,
+            action_verdict=stock.action_verdict if stock else "WATCH",
+            gomes_score=stock.gomes_score if stock else None,
+            investment_thesis=stock.edge if stock else None,
+            risks=stock.risks if stock else None,
+            is_active=True,
+            notes=f"Auto-added after selling position from portfolio {portfolio_id}"
+        )
+        db.add(new_watchlist)
+    else:
+        # Ensure watchlist item is active
+        watchlist_item.is_active = True
+        watchlist_item.notes = f"Position sold, continuing to monitor (portfolio {portfolio_id})"
+    
+    # Delete the position
     db.delete(position)
     db.commit()
     
-    return {"success": True, "message": f"Position {ticker.upper()} deleted"}
+    return {
+        "success": True,
+        "message": f"Position {ticker_upper} deleted",
+        "added_to_watchlist": watchlist_item is None
+    }
 
 
 @router.put("/portfolios/{portfolio_id}/cash-balance")
@@ -327,6 +372,31 @@ def update_cash_balance(
     db.refresh(portfolio)
     
     return {"success": True, "cash_balance": portfolio.cash_balance}
+
+
+@router.put("/portfolios/{portfolio_id}/monthly-contribution")
+def update_monthly_contribution(
+    portfolio_id: int,
+    monthly_contribution: float,
+    db: Session = Depends(get_db)
+):
+    """Update monthly contribution amount for a portfolio's allocation planning"""
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    
+    if monthly_contribution < 0:
+        raise HTTPException(status_code=400, detail="Monthly contribution cannot be negative")
+    
+    portfolio.monthly_contribution = monthly_contribution
+    db.commit()
+    db.refresh(portfolio)
+    
+    return {
+        "success": True, 
+        "monthly_contribution": portfolio.monthly_contribution
+    }
 
 
 @router.post("/upload-csv", response_model=CSVUploadResponse)

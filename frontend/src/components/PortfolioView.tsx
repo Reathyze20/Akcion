@@ -226,9 +226,9 @@ export const PortfolioView: React.FC = () => {
             className="input text-xs py-1.5 bg-terminal-surface"
           >
             <option value="">All Sentiments</option>
-            <option value="BULLISH">🟢 Bullish</option>
-            <option value="BEARISH">🔴 Bearish</option>
-            <option value="NEUTRAL">⚪ Neutral</option>
+            <option value="BULLISH">Bullish</option>
+            <option value="BEARISH">Bearish</option>
+            <option value="NEUTRAL">Neutral</option>
           </select>
           
           <select
@@ -249,7 +249,7 @@ export const PortfolioView: React.FC = () => {
             disabled={isLoading}
             className="btn-secondary text-xs py-1.5 px-3"
           >
-            {isLoading ? '⏳ Loading...' : '🔄 Refresh'}
+            {isLoading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
       </div>

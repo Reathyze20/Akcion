@@ -20,6 +20,7 @@ import type {
   PortfolioSummary, Position, Stock,
   FamilyAuditResponse, BrokerType
 } from '../types';
+import StockDetailModalGomes from './StockDetailModalGomes';
 
 // ============================================================================
 // TYPES
@@ -28,19 +29,29 @@ import type {
 interface EnrichedPosition extends Position {
   stock?: Stock;
   gomes_score: number | null;
-  kelly_weight_pct: number;
-  kelly_amount: number;
-  weight_in_portfolio: number;
+  // Gomes Gap Analysis
+  max_allocation_cap: number;    // Maximum allocation % (from Gomes Logic)
+  target_weight_pct: number;     // Ideální váha podle skóre (deprecated - use max_allocation_cap)
+  weight_in_portfolio: number;   // Aktuální váha v portfoliu
+  gap_czk: number;               // Mezera v CZK (+ = dokoupit, - = prodat)
+  optimal_size: number;          // Kolik investovat TENTO MĚSÍC (po prioritizaci)
+  allocation_priority: number;   // Priorita (1 = nejvyšší)
+  // Status
   trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   is_deteriorated: boolean;
   is_overweight: boolean;
+  is_underweight: boolean;
+  action_signal: 'BUY' | 'HOLD' | 'SELL' | 'SNIPER';  // Akční signál
   inflection_status?: string;
+  // Next Catalyst
+  next_catalyst?: string;  // Format: "EVENT / DATE" or null
 }
 
 interface FamilyPortfolioData {
   totalValue: number;
   totalValueEUR: number;  // EUR equivalent
   totalCash: number;
+  monthlyContribution: number;  // Celkový měsíční příspěvek ze všech portfolií
   portfolios: PortfolioSummary[];
   allPositions: EnrichedPosition[];
   rocketCount: number;  // High growth (score >= 7)
@@ -50,10 +61,28 @@ interface FamilyPortfolioData {
   riskScore: number;    // 0-100
 }
 
-// Kelly weights mapping (score -> weight %)
-const KELLY_WEIGHTS: Record<number, number> = {
-  10: 20, 9: 15, 8: 12, 7: 10, 6: 8, 5: 5, 4: 3, 3: 2, 2: 1, 1: 0, 0: 0
+// ============================================================================
+// GOMES TARGET WEIGHTS (Conviction Mapping)
+// ============================================================================
+// Kolik % celého portfolia si akcie ZASLOUŽÍ na základě skóre
+const TARGET_WEIGHTS: Record<number, number> = {
+  10: 15,   // CORE - Highest conviction (12-15%)
+  9: 15,    // CORE - High conviction  
+  8: 12,    // STRONG - Solid position (10-12%)
+  7: 10,    // GROWTH - Growth position (7-10%)
+  6: 5,     // WATCH - Monitor closely (3-5%)
+  5: 3,     // WATCH - Small position
+  4: 0,     // EXIT - Should not hold
+  3: 0,     // EXIT - Sell signal
+  2: 0,     // EXIT - Strong sell
+  1: 0,     // EXIT - Avoid completely
+  0: 0,
 };
+
+// Hard Caps (Gomesova pojistka)
+const MAX_POSITION_WEIGHT = 15;  // Max 15% portfolia v jedné akcii
+const MIN_INVESTMENT_CZK = 1000; // Min vklad (kvůli poplatkům)
+const DEFAULT_MONTHLY_CONTRIBUTION = 20000; // Výchozí měsíční vklad v CZK
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -67,7 +96,10 @@ const formatCurrency = (amount: number, currency: string = 'CZK'): string => {
   }).format(amount);
 };
 
-const formatPercent = (value: number): string => {
+const formatPercent = (value: number | undefined | null): string => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return '0.00%';
+  }
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 };
@@ -95,9 +127,72 @@ const calculateMonthsToTarget = (
   return months;
 };
 
-const getKellyWeight = (score: number | null): number => {
+const getTargetWeight = (score: number | null): number => {
   if (score === null) return 0;
-  return KELLY_WEIGHTS[Math.round(score)] ?? 0;
+  const roundedScore = Math.round(score);
+  return TARGET_WEIGHTS[roundedScore] ?? 0;
+};
+
+/**
+ * Get action signal based on score and weight gap
+ */
+const getActionSignal = (
+  score: number | null, 
+  currentWeight: number, 
+  targetWeight: number
+): 'BUY' | 'HOLD' | 'SELL' | 'SNIPER' => {
+  if (score === null) return 'HOLD';
+  if (score < 5) return 'SELL';  // Score < 5 = EXIT
+  
+  const gapPct = targetWeight - currentWeight;
+  
+  // Sniper opportunity: score 8+ and significantly underweight (>5% gap)
+  if (score >= 8 && gapPct > 5) return 'SNIPER';
+  
+  // Buy signal: underweight by >2%
+  if (gapPct > 2) return 'BUY';
+  
+  // Hold: roughly at target
+  return 'HOLD';
+};
+
+/**
+ * Get dynamic action command for position
+ * STRONG BUY, HARD EXIT, HOLD, FREE RIDE
+ */
+const getActionCommand = (
+  score: number | null,
+  currentWeight: number,
+  targetWeight: number,
+  unrealizedProfitPct: number
+): { text: string; color: string; bgColor?: string } => {
+  // Priority 1: Free Ride at 150%+
+  if (unrealizedProfitPct >= 150) {
+    return { text: 'FREE RIDE', color: 'text-amber-400', bgColor: 'bg-amber-500/10' };
+  }
+  
+  // Priority 2: Hard Exit for score < 4
+  if (score !== null && score < 4) {
+    return { text: 'HARD EXIT', color: 'text-red-400', bgColor: 'bg-red-500/20' };
+  }
+  
+  // Priority 3: Strong Buy for score >= 8 and underweight
+  if (score !== null && score >= 8 && currentWeight < targetWeight) {
+    return { text: 'STRONG BUY', color: 'text-green-400 font-bold' };
+  }
+  
+  // Priority 4: Hold if at or above target weight
+  if (score !== null && score >= 5 && currentWeight >= targetWeight) {
+    return { text: 'HOLD', color: 'text-slate-500' };
+  }
+  
+  // Default: BUY signal for underweight positions with score 5-7
+  if (score !== null && score >= 5 && currentWeight < targetWeight) {
+    return { text: 'BUY', color: 'text-emerald-400' };
+  }
+  
+  // No score or edge case
+  return { text: 'ANALYZE', color: 'text-slate-600' };
 };
 
 const getTrendStatus = (stock: Stock | undefined): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
@@ -141,12 +236,12 @@ const RiskMeter: React.FC<{
         <div className="text-xs text-slate-400 uppercase tracking-wider">Risk Exposure</div>
         {hasUnanalyzed && !isOverexposed && (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-600 text-slate-300">
-            📊 RUN DEEP DD
+            RUN DEEP DD
           </span>
         )}
         {isOverexposed && (
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isDangerous ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
-            {isDangerous ? '⚠️ REBALANCE' : '⚡ MONITOR'}
+            {isDangerous ? 'REBALANCE' : 'MONITOR'}
           </span>
         )}
       </div>
@@ -182,7 +277,7 @@ const RiskMeter: React.FC<{
       
       {isOverexposed && (
         <div className={`mt-2 text-[10px] text-center ${isDangerous ? 'text-red-400' : 'text-amber-400'}`}>
-          {isDangerous ? '🚨 Rebalance needed' : '⚠️ Monitor growth allocation'}
+          {isDangerous ? 'Rebalance needed' : 'Monitor growth allocation'}
         </div>
       )}
     </div>
@@ -458,7 +553,7 @@ const CompoundSnowball: React.FC<CompoundSnowballProps> = ({
 interface MeritBadge {
   id: string;
   name: string;
-  emoji: string;
+  icon: string;
   description: string;
   earned: boolean;
   earnedDate?: string;
@@ -473,7 +568,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'weed-cutter',
         name: 'Weed Cutter',
-        emoji: '🌿',
+        icon: 'scissors',
         description: 'Prodej akcii se skóre pod 3',
         earned: false, // Would track in DB when sale happens
         category: 'discipline'
@@ -481,7 +576,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'diamond-hands',
         name: 'Diamond Hands',
-        emoji: '💎',
+        icon: 'diamond',
         description: 'Drž akcii 9/10 i při -20% drawdown',
         earned: positions.some(p => 
           p.gomes_score && p.gomes_score >= 9 && p.unrealized_pl_percent <= -20
@@ -491,7 +586,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'sniper',
         name: 'Sniper',
-        emoji: '🎯',
+        icon: 'target',
         description: 'Nakup přesně na supportu 30WMA',
         earned: false, // Would track entry vs 30WMA
         category: 'strategy'
@@ -499,7 +594,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'first-rocket',
         name: 'First Rocket',
-        emoji: '🚀',
+        icon: 'rocket',
         description: 'Měj první pozici se skóre 9+',
         earned: positions.some(p => p.gomes_score && p.gomes_score >= 9),
         category: 'growth'
@@ -507,7 +602,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'diversified',
         name: 'Diversified',
-        emoji: '🎨',
+        icon: 'grid',
         description: 'Měj 5+ různých pozic',
         earned: positions.length >= 5,
         category: 'strategy'
@@ -515,7 +610,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'free-rider',
         name: 'Free Rider',
-        emoji: '🕊️',
+        icon: 'bird',
         description: 'Měj pozici s P/L 100%+ (house money)',
         earned: positions.some(p => p.unrealized_pl_percent >= 100),
         category: 'growth'
@@ -523,7 +618,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'patient-investor',
         name: 'Patient Investor',
-        emoji: '🧘',
+        icon: 'zen',
         description: 'Drž portfolio bez panického prodeje 6+ měsíců',
         earned: false, // Would track in DB
         category: 'discipline'
@@ -531,7 +626,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'six-figures',
         name: 'Six Figures',
-        emoji: '💰',
+        icon: 'money',
         description: 'Portfolio přesáhlo 100k Kč',
         earned: totalValue >= 100000,
         category: 'growth'
@@ -539,7 +634,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
       {
         id: 'half-million',
         name: 'Half Millionaire',
-        emoji: '🏆',
+        icon: 'trophy',
         description: 'Portfolio přesáhlo 500k Kč',
         earned: totalValue >= 500000,
         category: 'growth'
@@ -576,7 +671,17 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
             `}
             title={badge.description}
           >
-            <div className="text-2xl mb-1">{badge.emoji}</div>
+            <div className={`text-xl mb-1 ${badge.earned ? 'text-amber-400' : 'text-slate-500'}`}>
+              {badge.icon === 'scissors' && <span className="inline-block w-6 h-6">✂</span>}
+              {badge.icon === 'diamond' && <span className="inline-block w-6 h-6">◆</span>}
+              {badge.icon === 'target' && <span className="inline-block w-6 h-6">◎</span>}
+              {badge.icon === 'rocket' && <span className="inline-block w-6 h-6">↑</span>}
+              {badge.icon === 'grid' && <span className="inline-block w-6 h-6">#</span>}
+              {badge.icon === 'bird' && <span className="inline-block w-6 h-6">~</span>}
+              {badge.icon === 'zen' && <span className="inline-block w-6 h-6">○</span>}
+              {badge.icon === 'money' && <span className="inline-block w-6 h-6">$</span>}
+              {badge.icon === 'trophy' && <span className="inline-block w-6 h-6">★</span>}
+            </div>
             <div className={`text-[10px] font-bold ${badge.earned ? 'text-amber-300' : 'text-slate-500'}`}>
               {badge.name}
             </div>
@@ -605,6 +710,30 @@ const PortfolioRow: React.FC<{
     : <BarChart3 className="w-4 h-4 text-slate-400" />;
 
   const plColor = position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400';
+  
+  // Get action command
+  const actionCmd = getActionCommand(
+    position.gomes_score,
+    position.weight_in_portfolio,
+    position.target_weight_pct,
+    position.unrealized_pl_percent
+  );
+  
+  // Check if row should be highlighted (HARD EXIT)
+  const isHardExit = position.gomes_score !== null && position.gomes_score < 4;
+  
+  // Strategy: Free Ride eligible vs Growing
+  const isFreeRideEligible = position.unrealized_pl_percent >= 150;
+  const progressTo150 = Math.min(100, (position.unrealized_pl_percent / 150) * 100);
+  
+  // Calculate shares to sell for Free Ride
+  const sharesToSellForFreeRide = useMemo(() => {
+    if (!isFreeRideEligible) return 0;
+    const currentPrice = position.stock?.current_price ?? position.current_price ?? 0;
+    if (currentPrice <= 0) return 0;
+    const costBasis = position.shares_count * position.avg_cost;
+    return Math.ceil(costBasis / currentPrice);
+  }, [position, isFreeRideEligible]);
 
   return (
     <tr 
@@ -612,70 +741,141 @@ const PortfolioRow: React.FC<{
       className={`
         border-b border-slate-700/50 cursor-pointer transition-all
         hover:bg-slate-800/70
-        ${position.is_deteriorated ? 'animate-pulse bg-red-900/20' : ''}
+        ${isHardExit ? 'bg-red-900/30' : ''}
+        ${position.is_deteriorated && !isHardExit ? 'animate-pulse bg-red-900/20' : ''}
       `}
     >
       {/* Ticker & Name */}
-      <td className="py-3 px-4">
-        <div className="flex items-center gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-white text-lg">{position.ticker}</span>
-              {/* Free Ride indicator - P/L > 100% means you've recouped initial investment */}
-              {position.unrealized_pl_percent >= 100 && (
-                <span title="Free Ride! Recouped initial investment" className="text-lg">🕊️</span>
-              )}
-            </div>
-            <div className="text-xs text-slate-400 truncate max-w-[150px]">
-              {position.company_name || 'Unknown'}
-            </div>
+      <td className="py-3 px-3">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-white text-base">{position.ticker}</span>
+            {position.is_deteriorated && (
+              <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded animate-pulse">
+                REVIEW
+              </span>
+            )}
           </div>
-          {position.is_deteriorated && (
-            <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs font-bold rounded animate-pulse">
-              REVIEW
+          <div className="text-[10px] text-slate-400 truncate">
+            {position.company_name || 'Unknown'}
+          </div>
+        </div>
+      </td>
+
+      {/* ACTION - Dynamic Command */}
+      <td className="py-3 px-3">
+        <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
+          {actionCmd.text}
+        </div>
+      </td>
+
+      {/* Weight % - Aktuální vs Cílová */}
+      <td className="py-3 px-3">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-1">
+            <span className={`font-mono text-sm font-bold ${position.is_overweight ? 'text-red-400' : position.is_underweight ? 'text-amber-400' : 'text-slate-300'}`}>
+              {position.weight_in_portfolio.toFixed(1)}%
             </span>
+            <span className="text-slate-500 text-xs">/</span>
+            <span className="font-mono text-xs text-slate-400">{position.max_allocation_cap.toFixed(1)}%</span>
+          </div>
+          {position.is_overweight && (
+            <div className="text-[9px] text-red-400">OVERWEIGHT</div>
+          )}
+          {position.is_underweight && !position.is_overweight && (
+            <div className="text-[9px] text-amber-400">UNDERWEIGHT</div>
           )}
         </div>
       </td>
 
-      {/* Weight % */}
-      <td className="py-3 px-4">
-        <div className={`font-mono font-bold ${position.is_overweight ? 'text-red-400' : 'text-slate-300'}`}>
-          {position.weight_in_portfolio.toFixed(1)}%
-        </div>
-        {position.is_overweight && (
-          <div className="text-[10px] text-red-400">OVERWEIGHT</div>
-        )}
-      </td>
-
       {/* Gomes Score */}
-      <td className="py-3 px-4">
-        <div className={`text-2xl font-black ${scoreColor}`}>
+      <td className="py-3 px-3 text-center">
+        <div className={`text-xl font-black ${scoreColor}`}>
           {position.gomes_score ?? '-'}
         </div>
       </td>
 
-      {/* Kelly Size - Optimal allocation */}
-      <td className="py-3 px-4">
-        <div className="text-sm font-mono text-emerald-400">
-          {formatCurrency(position.kelly_amount)}
+      {/* Current Price */}
+      <td className="py-3 px-3 text-right">
+        <div className="flex flex-col items-end">
+          {position.current_price ? (
+            <>
+              <div className="text-sm font-bold text-white font-mono">
+                ${position.current_price.toFixed(2)}
+              </div>
+              <div className="text-[9px] text-slate-500">
+                Cost: ${position.avg_cost.toFixed(2)}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-slate-500">-</div>
+          )}
         </div>
-        <div className="text-[10px] text-slate-500">
-          {position.kelly_weight_pct}% allocation
-        </div>
-        {/* Current value in position currency */}
-        {position.market_value > 0 && position.currency && position.currency !== 'CZK' && (
-          <div className="text-[10px] text-slate-400 mt-0.5">
-            ≈ {position.currency} {position.market_value.toFixed(0)}
+      </td>
+
+      {/* Optimal Size - GAP ANALYSIS */}
+      <td className="py-3 px-3">
+        {position.action_signal === 'SELL' ? (
+          <div className="flex flex-col">
+            <div className="text-red-400 font-bold text-xs">SELL</div>
+            <div className="text-[9px] text-red-300">Score &lt; 5</div>
+          </div>
+        ) : position.optimal_size < 0 ? (
+          // OVERWEIGHT: Show how much to SELL (negative optimal_size)
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1">
+              <span className="text-orange-400 font-bold text-[9px]">TRIM</span>
+              <span className="text-sm font-bold text-orange-400 font-mono">
+                {formatCurrency(Math.abs(position.optimal_size))}
+              </span>
+            </div>
+            <div className="text-[9px] text-orange-300">
+              Nad limit {position.max_allocation_cap.toFixed(1)}%
+            </div>
+          </div>
+        ) : position.optimal_size > 0 ? (
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1">
+              {position.action_signal === 'SNIPER' && <span className="text-amber-400 text-[9px] font-bold">SNIPER</span>}
+              <span className="text-sm font-bold text-emerald-400 font-mono">
+                {formatCurrency(position.optimal_size)}
+              </span>
+            </div>
+            <div className="text-[9px] text-slate-500">
+              Gap: {formatCurrency(position.gap_czk)}
+            </div>
+            {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
+              <div className="text-[9px] text-amber-400 font-bold">
+                #{position.allocation_priority} priorita
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            <div className="text-slate-500 font-mono text-xs">0 Kč</div>
+            <div className="text-[9px] text-slate-600">
+              {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
+            </div>
           </div>
         )}
       </td>
 
+      {/* NEXT CATALYST */}
+      <td className="py-3 px-3">
+        {position.next_catalyst ? (
+          <div className="text-[9px] text-slate-400 uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
+            {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
+          </div>
+        ) : (
+          <div className="text-[9px] text-red-400/70 uppercase">NONE</div>
+        )}
+      </td>
+
       {/* 30 WMA Status */}
-      <td className="py-3 px-4">
-        <div className="flex items-center gap-2">
+      <td className="py-3 px-3">
+        <div className="flex flex-col items-center gap-1">
           {trendIcon}
-          <span className={`text-sm ${
+          <span className={`text-[10px] font-medium ${
             position.trend_status === 'BULLISH' ? 'text-green-400' :
             position.trend_status === 'BEARISH' ? 'text-red-400' :
             'text-slate-400'
@@ -685,19 +885,41 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* P/L % */}
-      <td className="py-3 px-4 text-right">
-        <div className={`font-bold ${plColor}`}>
-          {formatPercent(position.unrealized_pl_percent)}
-        </div>
-        <div className="text-xs text-slate-500">
-          {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
-        </div>
-        {position.unrealized_pl_percent >= 150 && (
-          <div className="text-[10px] text-amber-400 font-bold">
-            TAKE PROFIT
+      {/* STRATEGY - Position Health */}
+      <td className="py-3 px-3">
+        {isFreeRideEligible ? (
+          <div className="flex flex-col">
+            <div className="text-[9px] text-amber-400 font-bold uppercase">FREE RIDE</div>
+            <div className="text-[8px] text-amber-300/70">
+              Sell {sharesToSellForFreeRide} shares
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            <div className="text-[9px] text-slate-500 uppercase">GROWING</div>
+            <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
+              <div 
+                className="h-full bg-gradient-to-r from-slate-600 to-emerald-500 transition-all"
+                style={{ width: `${progressTo150}%` }}
+              />
+            </div>
+            <div className="text-[8px] text-slate-600 mt-0.5">
+              {position.unrealized_pl_percent.toFixed(0)}% / 150%
+            </div>
           </div>
         )}
+      </td>
+
+      {/* P/L % */}
+      <td className="py-3 px-3 text-right">
+        <div className={`font-bold text-sm ${plColor}`}>
+          {position.unrealized_pl_percent !== undefined && position.unrealized_pl_percent !== null 
+            ? formatPercent(position.unrealized_pl_percent) 
+            : '0.00%'}
+        </div>
+        <div className="text-[10px] text-slate-500">
+          {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
+        </div>
       </td>
     </tr>
   );
@@ -771,11 +993,11 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
       const result = await apiClient.updateStockAnalysis(position.ticker, updateText, sourceType);
       
       if (result.success) {
-        const driftEmoji = result.thesis_drift === 'IMPROVED' ? '🚀' : 
-                          result.thesis_drift === 'DETERIORATED' ? '⚠️' : '📊';
+        const driftLabel = result.thesis_drift === 'IMPROVED' ? '[UP]' : 
+                          result.thesis_drift === 'DETERIORATED' ? '[DOWN]' : '[STABLE]';
         setUpdateResult({ 
           success: true, 
-          message: `${driftEmoji} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
+          message: `${driftLabel} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
         });
         // Refresh parent data
         setTimeout(() => {
@@ -958,7 +1180,7 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
               <div className="p-4 bg-red-500/20 border-2 border-red-500 rounded-lg flex items-start gap-3 animate-pulse">
                 <TrendingDown className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-red-400 font-black text-lg">⚠️ TREND IS BROKEN</div>
+                  <div className="text-red-400 font-black text-lg">TREND IS BROKEN</div>
                   <div className="text-red-300 text-sm mt-1">
                     Price below 30-week moving average. Re-evaluate fundamentals immediately!
                   </div>
@@ -1336,18 +1558,50 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
               </div>
             </div>
 
-            {/* Kelly Recommendation */}
+            {/* Gomes Gap Analysis Recommendation */}
             <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-              <div className="text-xs text-slate-500 uppercase mb-1">Kelly Criterion Sizing</div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-300">Suggested Allocation</span>
-                <span className="text-xl font-bold text-emerald-400">
-                  {formatCurrency(position.kelly_amount)}
+              <div className="text-xs text-slate-500 uppercase mb-2">Gap Analysis - Tento měsíc</div>
+              
+              {/* Target vs Current Weight */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-slate-400 text-sm">Cílová váha:</span>
+                <span className="font-mono text-white">{position.max_allocation_cap.toFixed(1)}%</span>
+              </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-slate-400 text-sm">Aktuální váha:</span>
+                <span className={`font-mono ${position.is_underweight ? 'text-amber-400' : position.is_overweight ? 'text-red-400' : 'text-green-400'}`}>
+                  {position.weight_in_portfolio.toFixed(1)}%
                 </span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">
-                {position.kelly_weight_pct}% of available capital
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-700">
+                <span className="text-slate-400 text-sm">Mezera (Gap):</span>
+                <span className={`font-mono font-bold ${position.gap_czk > 0 ? 'text-amber-400' : position.gap_czk < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                  {position.gap_czk > 0 ? '+' : ''}{formatCurrency(position.gap_czk)}
+                </span>
               </div>
+              
+              {/* Optimal Size */}
+              <div className="flex items-center justify-between">
+                <span className="text-slate-300 font-semibold">Doporučený vklad:</span>
+                {position.action_signal === 'SELL' ? (
+                  <span className="text-xl font-bold text-red-400">PRODAT</span>
+                ) : (
+                  <span className={`text-xl font-bold ${position.optimal_size > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {formatCurrency(position.optimal_size)}
+                  </span>
+                )}
+              </div>
+              
+              {position.action_signal === 'SNIPER' && (
+                <div className="mt-2 text-xs text-amber-400 flex items-center gap-1">
+                  Sniper příležitost! Vysoké skóre + velká mezera.
+                </div>
+              )}
+              {position.optimal_size === 0 && position.gap_czk > MIN_INVESTMENT_CZK && position.action_signal !== 'SELL' && (
+                <div className="mt-2 text-xs text-slate-500">
+                  Nízká priorita - tento měsíc mají přednost lepší příležitosti
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -1445,11 +1699,11 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
       const result = await apiClient.updateStockAnalysis(stock.ticker, updateText, sourceType);
       
       if (result.success) {
-        const driftEmoji = result.thesis_drift === 'IMPROVED' ? '🚀' : 
-                          result.thesis_drift === 'DETERIORATED' ? '⚠️' : '📊';
+        const driftLabel = result.thesis_drift === 'IMPROVED' ? '[UP]' : 
+                          result.thesis_drift === 'DETERIORATED' ? '[DOWN]' : '[STABLE]';
         setUpdateResult({ 
           success: true, 
-          message: `${driftEmoji} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
+          message: `${driftLabel} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
         });
         setTimeout(() => {
           onUpdate();
@@ -2129,20 +2383,38 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
 
 interface NewAnalysisModalProps {
   onClose: () => void;
-  onSubmit: (transcript: string, ticker?: string) => void;
+  onSubmit: (transcript: string, ticker?: string, sourceType?: 'text' | 'youtube' | 'google-docs', url?: string) => void;
 }
 
 const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }) => {
+  const [inputType, setInputType] = useState<'text' | 'youtube' | 'google-docs'>('text');
   const [transcript, setTranscript] = useState('');
+  const [url, setUrl] = useState('');
   const [ticker, setTicker] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!transcript.trim()) return;
+    setError(null);
+    
+    if (inputType === 'text' && !transcript.trim()) {
+      setError('Please enter transcript text');
+      return;
+    }
+    if ((inputType === 'youtube' || inputType === 'google-docs') && !url.trim()) {
+      setError('Please enter a URL');
+      return;
+    }
+    
     setLoading(true);
-    await onSubmit(transcript, ticker || undefined);
-    setLoading(false);
-    onClose();
+    try {
+      await onSubmit(transcript, ticker || undefined, inputType, url || undefined);
+      onClose();
+    } catch (err) {
+      setError('Analysis failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -2159,8 +2431,50 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
         </div>
         
         <div className="p-4 space-y-4">
+          {/* Input Type Selector */}
+          <div className="flex gap-2 p-1 bg-slate-800 rounded-lg">
+            <button
+              onClick={() => setInputType('text')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'text' 
+                  ? 'bg-indigo-600 text-white' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Text / Transcript
+            </button>
+            <button
+              onClick={() => setInputType('youtube')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'youtube' 
+                  ? 'bg-red-600 text-white' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              YouTube
+            </button>
+            <button
+              onClick={() => setInputType('google-docs')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'google-docs' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Google Docs
+            </button>
+          </div>
+          
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm">
+              {error}
+            </div>
+          )}
+          
+          {/* Ticker (optional for all types) */}
           <div>
-            <label className="text-sm text-slate-400 block mb-2">Ticker Symbol (optional)</label>
+            <label className="text-sm text-slate-400 block mb-2">Ticker Symbol (optional - auto-detected)</label>
             <input
               type="text"
               value={ticker}
@@ -2170,16 +2484,44 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
             />
           </div>
           
-          <div>
-            <label className="text-sm text-slate-400 block mb-2">Transcript / Research Notes</label>
-            <textarea
-              value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
-              placeholder="Paste earnings call transcript, YouTube video notes, or research analysis..."
-              rows={10}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
-            />
-          </div>
+          {/* URL Input for YouTube / Google Docs */}
+          {(inputType === 'youtube' || inputType === 'google-docs') && (
+            <div>
+              <label className="text-sm text-slate-400 block mb-2">
+                {inputType === 'youtube' ? 'YouTube Video URL' : 'Google Docs URL'}
+              </label>
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder={
+                  inputType === 'youtube' 
+                    ? 'https://www.youtube.com/watch?v=...' 
+                    : 'https://docs.google.com/document/d/...'
+                }
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+              <p className="mt-2 text-xs text-slate-500">
+                {inputType === 'youtube' 
+                  ? 'AI will automatically transcribe the video and extract stock analysis.' 
+                  : 'Make sure the document is shared with "Anyone with the link can view".'}
+              </p>
+            </div>
+          )}
+          
+          {/* Text Input */}
+          {inputType === 'text' && (
+            <div>
+              <label className="text-sm text-slate-400 block mb-2">Transcript / Research Notes</label>
+              <textarea
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                placeholder="Paste earnings call transcript, video notes, or research analysis..."
+                rows={10}
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            </div>
+          )}
         </div>
 
         <div className="p-4 border-t border-slate-700 flex gap-3 justify-end">
@@ -2191,7 +2533,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!transcript.trim() || loading}
+            disabled={loading}
             className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-600 text-white font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
@@ -2199,13 +2541,102 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
             ) : (
               <Target className="w-4 h-4" />
             )}
-            Run Analysis
+            {loading ? 'Analyzing...' : 'Run Analysis'}
           </button>
         </div>
       </div>
     </div>
   );
 };
+
+// ============================================================================
+// GOMES LOGIC - Max Allocation Calculator (Frontend Implementation)
+// ============================================================================
+
+/**
+ * Calculate max allocation cap using Gomes Logic rules.
+ * 
+ * Base Caps by Asset Class:
+ * - ANCHOR: 12%
+ * - HIGH_BETA_ROCKET: 8%
+ * - BIOTECH_BINARY: 3%
+ * - TURNAROUND: 2%
+ * - VALUE_TRAP: 0%
+ * 
+ * Safety Multipliers:
+ * - Score < 7: 0.5x
+ * - Cash Runway < 6 months: 0.0x (STOP)
+ * - Cash Runway < 12 months: 0.7x
+ * - Inflection Status = ACTIVE_GOLD_MINE: 1.2x
+ */
+function calculateMaxAllocationCap(
+  stock: Stock | undefined,
+  gomesScore: number | null,
+  fallbackTarget: number
+): number {
+  // If stock has pre-calculated cap from backend, use it
+  if (stock?.max_allocation_cap) {
+    return stock.max_allocation_cap;
+  }
+
+  // Determine asset class
+  const assetClass = stock?.asset_class?.toUpperCase();
+  
+  // Base caps by asset class
+  let baseCap: number;
+  switch (assetClass) {
+    case 'ANCHOR':
+      baseCap = 12.0;
+      break;
+    case 'HIGH_BETA_ROCKET':
+      baseCap = 8.0;
+      break;
+    case 'BIOTECH_BINARY':
+      baseCap = 3.0;
+      break;
+    case 'TURNAROUND':
+      baseCap = 2.0;
+      break;
+    case 'VALUE_TRAP':
+      baseCap = 0.0;
+      break;
+    default:
+      // Unknown asset class: use score-based fallback
+      if (gomesScore !== null && gomesScore >= 9) {
+        baseCap = 8.0; // Treat as High Beta Rocket
+      } else if (gomesScore !== null && gomesScore >= 7) {
+        baseCap = 12.0; // Treat as Anchor
+      } else {
+        return fallbackTarget; // Use old logic
+      }
+  }
+
+  // Start with base cap
+  let finalCap = baseCap;
+
+  // Safety Multiplier 1: Gomes Score
+  if (gomesScore !== null && gomesScore < 7) {
+    finalCap *= 0.5; // Reduce by half if low quality
+  }
+
+  // Safety Multiplier 2: Cash Runway
+  const cashRunway = stock?.cash_runway_months;
+  if (cashRunway !== null && cashRunway !== undefined) {
+    if (cashRunway < 6) {
+      finalCap = 0.0; // HARD STOP - insolvency risk
+    } else if (cashRunway < 12) {
+      finalCap *= 0.7; // Reduce allocation
+    }
+  }
+
+  // Safety Multiplier 3: Inflection Status
+  const inflectionStatus = stock?.inflection_status?.toUpperCase();
+  if (inflectionStatus === 'ACTIVE_GOLD_MINE') {
+    finalCap *= 1.2; // Increase allocation for active inflection
+  }
+
+  return Math.max(0, finalCap);
+}
 
 // ============================================================================
 // MAIN DASHBOARD COMPONENT
@@ -2232,11 +2663,14 @@ export const GomesGuardianDashboard: React.FC = () => {
   const [editCashCurrency, setEditCashCurrency] = useState('CZK');
   const [isSavingCash, setIsSavingCash] = useState(false);
   
+  // Monthly contribution editing state
+  const [isEditingContribution, setIsEditingContribution] = useState(false);
+  const [editContributionValue, setEditContributionValue] = useState('');
+  const [editContributionPortfolioId, setEditContributionPortfolioId] = useState<number | null>(null);
+  const [isSavingContribution, setIsSavingContribution] = useState(false);
+  
   // Available currencies for cash
   const CASH_CURRENCIES = ['CZK', 'EUR', 'USD', 'CAD', 'GBP'];
-  
-  // Available capital for Kelly calculation
-  const AVAILABLE_CAPITAL = 20000; // CZK
   
   // Refresh portfolios helper
   const refreshPortfolios = async () => {
@@ -2309,10 +2743,13 @@ export const GomesGuardianDashboard: React.FC = () => {
     let waitTimeCount = 0;    // Score 1-4 (Wait Time/Avoid)
     let unanalyzedCount = 0;  // No score yet (needs Deep DD)
 
-    // First pass: calculate total value
+    // First pass: calculate total value and monthly contribution
+    let totalMonthlyContribution = 0;
     for (const portfolio of portfolios) {
       totalValue += portfolio.total_market_value || 0;
       totalCash += portfolio.cash_balance || 0;
+      // Sum up monthly contributions from all portfolios
+      totalMonthlyContribution += portfolio.portfolio.monthly_contribution ?? DEFAULT_MONTHLY_CONTRIBUTION;
     }
     
     // Include cash in total
@@ -2322,28 +2759,42 @@ export const GomesGuardianDashboard: React.FC = () => {
     const eurRate = exchangeRates.EUR || 25;
     const totalValueEUR = grandTotal / eurRate;
 
+    // ========================================================================
+    // GOMES GAP ANALYSIS - Výpočet mezer a optimal size
+    // ========================================================================
+    
+    // Temporary array to collect positions before priority sorting
+    const tempPositions: EnrichedPosition[] = [];
+    
     for (const portfolio of portfolios) {
       for (const pos of portfolio.positions) {
         // Find matching stock from Gomes analysis (may not exist)
         const stock = stocks.find(s => s.ticker.toUpperCase() === pos.ticker.toUpperCase());
         const gomesScore = stock?.gomes_score ?? null;
-        const kellyWeight = getKellyWeight(gomesScore);
-        const kellyAmount = (AVAILABLE_CAPITAL * kellyWeight) / 100;
         
-        // Calculate weight based on market value converted to CZK
+        // 1. Cílová váha podle skóre (Target Weight)
+        const targetWeightPct = getTargetWeight(gomesScore);
+        
+        // 2. Aktuální váha v portfoliu
         const positionValueOriginal = pos.market_value > 0 ? pos.market_value : pos.cost_basis;
-        // Convert to CZK using exchange rate for position's currency
         const positionCurrency = pos.currency || 'CZK';
         const currencyRate = exchangeRates[positionCurrency] || 1;
         const positionValueCZK = positionValueOriginal * currencyRate;
-        const weightInPortfolio = grandTotal > 0 ? (positionValueCZK / grandTotal) * 100 : 0;
+        const currentWeightPct = grandTotal > 0 ? (positionValueCZK / grandTotal) * 100 : 0;
         
-        // Classify based on Gomes score:
-        // >= 9: Growth (Rocket) - highest conviction, speculative upside
-        // 7-8: Core (Anchor) - solid positions, proven companies
-        // 5-6: Watch - hold but monitor closely
-        // 1-4: Wait Time / Sell - avoid or reduce
-        // null: Unanalyzed - needs Deep DD
+        // Calculate max_allocation_cap using Gomes Logic
+        const maxAllocationCap = calculateMaxAllocationCap(stock, gomesScore, targetWeightPct);
+        
+        // 3. GAP ANALYSIS - Kolik CZK chybí/přebývá
+        // Gap = (Total_AUM * Max_Allocation_Cap) - Current_Value
+        // Uses max_allocation_cap (dynamic from Gomes Logic) instead of targetWeightPct
+        const targetValueCZK = (grandTotal * maxAllocationCap) / 100;
+        const gapCZK = targetValueCZK - positionValueCZK;
+        
+        // 4. Action signal based on score and gap
+        const actionSignal = getActionSignal(gomesScore, currentWeightPct, maxAllocationCap);
+        
+        // 5. Classify for risk meter
         if (gomesScore !== null && gomesScore >= 9) {
           rocketCount++;
         } else if (gomesScore !== null && gomesScore >= 7) {
@@ -2351,29 +2802,99 @@ export const GomesGuardianDashboard: React.FC = () => {
         } else if (gomesScore !== null && gomesScore >= 5) {
           waitTimeCount++;
         } else if (gomesScore !== null) {
-          waitTimeCount++; // 1-4 also counts as "wait/sell"
+          waitTimeCount++; // 1-4 = sell candidates
         } else {
           unanalyzedCount++;
+        }
+
+        // Calculate optimal_size for OVERWEIGHT positions (how much to SELL)
+        let initialOptimalSize = 0;
+        if (currentWeightPct > maxAllocationCap && gapCZK < 0) {
+          // OVERWEIGHT: optimal_size = negative (amount to SELL in CZK)
+          initialOptimalSize = Math.round(gapCZK); // gapCZK is already negative
         }
 
         const enriched: EnrichedPosition = {
           ...pos,
           stock,
           gomes_score: gomesScore,
-          kelly_weight_pct: kellyWeight,
-          kelly_amount: kellyAmount,
-          weight_in_portfolio: weightInPortfolio,
+          max_allocation_cap: maxAllocationCap,
+          weight_in_portfolio: currentWeightPct,
+          gap_czk: gapCZK,
+          optimal_size: initialOptimalSize, // Negative for OVERWEIGHT, will be recalculated for UNDERWEIGHT
+          allocation_priority: 999, // Will be set after sorting
           trend_status: getTrendStatus(stock),
           is_deteriorated: gomesScore !== null && gomesScore < 4,
-          is_overweight: weightInPortfolio > 15,
+          is_overweight: currentWeightPct > maxAllocationCap,
+          is_underweight: currentWeightPct < maxAllocationCap && gapCZK > MIN_INVESTMENT_CZK,
+          action_signal: actionSignal,
           inflection_status: 'UPCOMING',
+          next_catalyst: stock?.next_catalyst ?? undefined,
         };
 
-        allPositions.push(enriched);
+        tempPositions.push(enriched);
       }
     }
+    
+    // ========================================================================
+    // PRIORITIZACE A DISTRIBUCE MĚSÍČNÍHO VKLADU
+    // ========================================================================
+    
+    // Sort by: 1) Score (highest first), 2) Gap (largest positive first)
+    // Only positions with score >= 5 and positive gap get allocation
+    const sortedForAllocation = [...tempPositions]
+      .filter(p => p.gomes_score !== null && p.gomes_score >= 5 && p.gap_czk > 0)
+      .sort((a, b) => {
+        // Primary: Higher score = higher priority
+        const scoreDiff = (b.gomes_score ?? 0) - (a.gomes_score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        // Secondary: Larger gap = higher priority
+        return b.gap_czk - a.gap_czk;
+      });
+    
+    // Distribute monthly contribution according to priority
+    let remainingBudget = totalMonthlyContribution;
+    
+    for (let i = 0; i < sortedForAllocation.length; i++) {
+      const pos = sortedForAllocation[i];
+      pos.allocation_priority = i + 1;
+      
+      if (remainingBudget <= 0) {
+        pos.optimal_size = 0;
+        continue;
+      }
+      
+      // Calculate how much to allocate (min of gap and remaining budget)
+      let allocation = Math.min(pos.gap_czk, remainingBudget);
+      
+      // Apply hard caps
+      // 1. Don't exceed max_allocation_cap (dynamic from Gomes Logic: 3-15%)
+      const currentValueCZK = (grandTotal * pos.weight_in_portfolio) / 100;
+      const maxAllowedValue = (grandTotal * pos.max_allocation_cap) / 100;
+      const maxAllocation = maxAllowedValue - currentValueCZK;
+      allocation = Math.min(allocation, Math.max(0, maxAllocation));
+      
+      // 2. If allocation < MIN_INVESTMENT, skip (not worth the fees)
+      if (allocation < MIN_INVESTMENT_CZK) {
+        allocation = 0;
+      }
+      
+      pos.optimal_size = Math.round(allocation);
+      remainingBudget -= pos.optimal_size;
+    }
+    
+    // Set priority=0 and optimal_size=0 for positions not in allocation list
+    // (score < 5 or negative gap or no score)
+    for (const pos of tempPositions) {
+      if (!sortedForAllocation.includes(pos)) {
+        pos.allocation_priority = 0;
+        pos.optimal_size = 0;
+      }
+    }
+    
+    // Copy to final array
+    allPositions.push(...tempPositions);
 
-    // Calculate risk score (higher rockets = higher risk)
     // Calculate risk score (only from analyzed positions)
     const analyzedTotal = rocketCount + anchorCount + waitTimeCount;
     const riskScore = analyzedTotal > 0 ? Math.round((rocketCount / analyzedTotal) * 100) : 0;
@@ -2382,6 +2903,7 @@ export const GomesGuardianDashboard: React.FC = () => {
       totalValue: grandTotal,
       totalValueEUR,
       totalCash,
+      monthlyContribution: totalMonthlyContribution,
       portfolios,
       allPositions,
       rocketCount,
@@ -2452,14 +2974,29 @@ export const GomesGuardianDashboard: React.FC = () => {
   }, [watchlistStocks, searchQuery]);
 
   // Handle new analysis
-  const handleNewAnalysis = async (transcript: string, ticker?: string) => {
+  const handleNewAnalysis = async (
+    transcript: string, 
+    ticker?: string, 
+    sourceType?: 'text' | 'youtube' | 'google-docs',
+    url?: string
+  ) => {
     try {
-      await apiClient.runDeepDD(transcript, ticker);
+      if (sourceType === 'youtube' && url) {
+        // YouTube analysis
+        await apiClient.analyzeYouTube({ url, speaker: 'Mark Gomes' });
+      } else if (sourceType === 'google-docs' && url) {
+        // Google Docs analysis
+        await apiClient.analyzeGoogleDocs({ url, speaker: 'Mark Gomes' });
+      } else {
+        // Text/transcript analysis
+        await apiClient.runDeepDD(transcript, ticker);
+      }
       // Refresh data
       const stocksData = await apiClient.getStocks();
       setStocks(stocksData.stocks);
     } catch (err) {
       console.error('Analysis failed:', err);
+      throw err; // Re-throw to show error in modal
     }
   };
 
@@ -2546,14 +3083,13 @@ export const GomesGuardianDashboard: React.FC = () => {
                   const remainingMonths = months % 12;
                   return months > 0 ? (
                     <div className="text-[10px] text-indigo-400 mt-1 flex items-center justify-center gap-1">
-                      <span>🎯</span>
                       <span>
                         {years > 0 ? `${years}y ` : ''}{remainingMonths}m to target
                         {' '}(15% return + 20k/mo)
                       </span>
                     </div>
                   ) : (
-                    <div className="text-[10px] text-green-400 mt-1">🎉 Target reached!</div>
+                    <div className="text-[10px] text-green-400 mt-1">Target reached!</div>
                   );
                 })()}
               </div>
@@ -2804,18 +3340,141 @@ export const GomesGuardianDashboard: React.FC = () => {
           </div>
         )}
 
+        {/* Gomes Allocation Plan - Monthly Summary */}
+        {activeTab === 'portfolio' && (
+          <div className="mb-4 p-4 bg-gradient-to-r from-emerald-900/30 to-slate-800/50 rounded-xl border border-emerald-500/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 rounded-lg">
+                  <Target className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-emerald-300 uppercase tracking-wider">
+                    Měsíční alokační plán
+                  </h3>
+                  {isEditingContribution ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-slate-400">Rozpočet:</span>
+                      <input
+                        type="number"
+                        value={editContributionValue}
+                        onChange={(e) => setEditContributionValue(e.target.value)}
+                        className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm font-mono focus:outline-none focus:border-emerald-500"
+                        placeholder="20000"
+                      />
+                      <span className="text-xs text-slate-400">Kč</span>
+                      <button
+                        onClick={async () => {
+                          const amount = parseFloat(editContributionValue);
+                          if (isNaN(amount) || amount < 0) return;
+                          setIsSavingContribution(true);
+                          try {
+                            // Update monthly contribution for all portfolios proportionally
+                            // For simplicity, update first portfolio with total amount
+                            if (portfolios.length > 0) {
+                              const perPortfolio = amount / portfolios.length;
+                              for (const p of portfolios) {
+                                await apiClient.updateMonthlyContribution(p.portfolio.id, perPortfolio);
+                              }
+                              await refreshPortfolios();
+                            }
+                            setIsEditingContribution(false);
+                          } catch (err) {
+                            console.error('Failed to update contribution:', err);
+                          } finally {
+                            setIsSavingContribution(false);
+                          }
+                        }}
+                        disabled={isSavingContribution}
+                        className="p-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded transition-colors"
+                      >
+                        {isSavingContribution ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      </button>
+                      <button
+                        onClick={() => setIsEditingContribution(false)}
+                        className="p-1 bg-slate-600 hover:bg-slate-500 text-slate-300 rounded transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 flex items-center gap-2">
+                      <span>
+                        Rozpočet: <span className="font-bold text-emerald-400">{formatCurrency(familyData.monthlyContribution)}</span>
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEditContributionValue(familyData.monthlyContribution.toString());
+                          setIsEditingContribution(true);
+                        }}
+                        className="p-0.5 hover:bg-slate-700 rounded transition-colors"
+                        title="Upravit měsíční rozpočet"
+                      >
+                        <Edit3 className="w-3 h-3 text-slate-500 hover:text-emerald-400" />
+                      </button>
+                      <span className="text-slate-600">|</span>
+                      <span>Alokováno: {formatCurrency(familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
+                      <span className="text-slate-600">|</span>
+                      <span>Zbývá: {formatCurrency(familyData.monthlyContribution - familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+              
+              {/* Top 3 recommendations */}
+              <div className="flex items-center gap-2">
+                {familyData.allPositions
+                  .filter(p => p.optimal_size > 0)
+                  .sort((a, b) => a.allocation_priority - b.allocation_priority)
+                  .slice(0, 3)
+                  .map((pos, i) => (
+                    <div 
+                      key={pos.ticker}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                        i === 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' :
+                        'bg-slate-700/50 text-slate-300'
+                      }`}
+                    >
+                      {pos.action_signal === 'SNIPER' && '[S] '}
+                      {pos.ticker}: {formatCurrency(pos.optimal_size)}
+                    </div>
+                  ))
+                }
+                {familyData.allPositions.filter(p => p.action_signal === 'SELL').length > 0 && (
+                  <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/50">
+                    {familyData.allPositions.filter(p => p.action_signal === 'SELL').length}x PRODAT
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
         <div className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
-          <table className="w-full">
+          <table className="w-full table-fixed">
             <thead>
               <tr className="border-b border-slate-700 bg-slate-800/50">
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Symbol</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Weight</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Score</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Optimal Size</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Trend</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">P/L</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[140px]">Symbol</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">Action</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">
+                  <div>Váha</div>
+                  <div className="text-[9px] text-slate-500 font-normal">Aktuální / Cíl</div>
+                </th>
+                <th className="text-center py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[70px]">Score</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[100px]">
+                  <div>Price</div>
+                  <div className="text-[9px] text-slate-500 font-normal">Current</div>
+                </th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[140px]">
+                  <div>Optimal Size</div>
+                  <div className="text-[9px] text-slate-500 font-normal">Tento měsíc</div>
+                </th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[120px]">Catalyst</th>
+                <th className="text-center py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[100px]">Trend</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[120px]">Strategy</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">P/L</th>
               </tr>
             </thead>
             <tbody>
@@ -2828,7 +3487,7 @@ export const GomesGuardianDashboard: React.FC = () => {
               ))}
               {displayedPositions.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-slate-500">
+                  <td colSpan={10} className="text-center py-12 text-slate-500">
                     {searchQuery ? 'No positions found' : 'No positions in portfolio. Import your DEGIRO CSV to get started.'}
                   </td>
                 </tr>
@@ -3052,12 +3711,13 @@ export const GomesGuardianDashboard: React.FC = () => {
 
       {/* MODALS */}
       {selectedPosition && (
-        <StockDetailModal
+        <StockDetailModalGomes
           position={selectedPosition}
-          familyGaps={familyGaps}
           onClose={() => setSelectedPosition(null)}
           onUpdate={async () => {
-            // Refresh stocks data after update
+            // Refresh portfolio data after position update
+            await refreshPortfolios();
+            // Also refresh stocks data for Gomes scores
             const stocksData = await apiClient.getStocks();
             setStocks(stocksData.stocks);
           }}

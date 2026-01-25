@@ -12,7 +12,7 @@ Date: 2026-01-17
 from typing import List, Optional
 from datetime import datetime, date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from pydantic import BaseModel, Field
@@ -50,6 +50,12 @@ class MarketDataInput(BaseModel):
     """Optional market data input"""
     insider_buying: Optional[bool] = None
     earnings_date: Optional[datetime] = None
+
+
+class StockUpdateRequest(BaseModel):
+    """Request body pro update stock analýzy"""
+    transcript: str = Field(..., min_length=50, description="New information text")
+    source_type: str = Field("manual", description="Source: earnings, news, chat, transcript, manual")
 
 
 class GomesAnalyzeRequest(BaseModel):
@@ -1189,12 +1195,15 @@ async def run_deep_due_diligence_batch(
 @router.post("/update-stock/{ticker}")
 async def update_stock_analysis(
     ticker: str,
-    transcript: str = Query(..., min_length=50, description="New information text (earnings, news, chat)"),
-    source_type: str = Query("manual", description="Source: earnings, news, chat, transcript, manual"),
+    request_body: Optional[StockUpdateRequest] = Body(None),
+    transcript: Optional[str] = Query(None, min_length=50, description="New information text (deprecated, use body)"),
+    source_type: str = Query("manual", description="Source type (deprecated, use body)"),
     db: Session = Depends(get_db),
 ):
     """
     Update existing stock with new information.
+    
+    Supports both POST body (preferred) and query params (legacy).
     
     Use this to add:
     - Earnings report summaries
@@ -1209,18 +1218,29 @@ async def update_stock_analysis(
     4. Track changes in score_history
     5. Create drift alerts if significant change
     
-    Example:
-        POST /api/gomes/update-stock/GKPRF?transcript=Q4%20earnings%20beat...&source_type=earnings
+    Example (new):
+        POST /api/gomes/update-stock/GKPRF
+        Body: {"transcript": "Q4 earnings...", "source_type": "earnings"}
+    
+    Example (legacy):
+        POST /api/gomes/update-stock/GKPRF?transcript=Q4%20earnings...&source_type=earnings
     """
     from app.services.gomes_deep_dd import GomesDeepDueDiligenceService
     from app.schemas.gomes import DeepDueDiligenceRequest
+    
+    # Support both body and query params (body takes precedence)
+    final_transcript = request_body.transcript if request_body else transcript
+    final_source_type = request_body.source_type if request_body else source_type
+    
+    if not final_transcript:
+        raise HTTPException(status_code=400, detail="transcript is required (in body or query param)")
     
     try:
         service = GomesDeepDueDiligenceService(db)
         
         # Always include existing data for context
         request = DeepDueDiligenceRequest(
-            transcript=transcript,
+            transcript=final_transcript,
             ticker=ticker.upper(),
             include_existing_data=True,
         )
@@ -1270,6 +1290,124 @@ async def update_stock_analysis(
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
+
+
+@router.post("/update-stock-ai/{ticker}")
+async def update_stock_with_ai_analyst(
+    ticker: str,
+    request_body: StockUpdateRequest = Body(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Update stock using Gomes AI Analyst (NEW 2026-01-25).
+    
+    This endpoint uses structured AI prompts to:
+    1. Extract cash metrics (runway, burn rate, total cash)
+    2. Detect inflection status (WAIT_TIME, UPCOMING, ACTIVE_GOLD_MINE)
+    3. Generate Gomes score (0-10) with specific deltas
+    4. Update thesis narrative
+    5. Identify catalysts and dates
+    
+    AI output is validated against structured schema before DB update.
+    
+    Example:
+        POST /api/gomes/update-stock-ai/KUYA.V
+        Body: {
+            "transcript": "Q4 earnings: Revenue $5M, cash $25M, burn $2M/quarter...",
+            "source_type": "quarterly_report"
+        }
+    
+    Returns:
+        {
+            "success": true,
+            "ticker": "KUYA.V",
+            "analysis": {
+                "gomes_score": 9,
+                "score_delta": +2,
+                "cash_runway_months": 12,
+                "inflection_status": "ACTIVE_GOLD_MINE",
+                "primary_catalyst": "Q2 Production Ramp",
+                ...
+            }
+        }
+    """
+    from app.services.gomes_ai_analyst import GomesAIAnalyst
+    
+    try:
+        # Get or create stock
+        stock = db.query(Stock).filter(Stock.ticker == ticker.upper()).first()
+        if not stock:
+            stock = Stock(
+                ticker=ticker.upper(),
+                company_name=None,  # Will be filled by AI
+                source_type=request_body.source_type,
+                is_latest=True,
+                version=1
+            )
+            db.add(stock)
+            db.flush()
+        
+        # Run AI analysis
+        analyst = GomesAIAnalyst()
+        analysis = await analyst.analyze_document(
+            ticker=ticker.upper(),
+            document_text=request_body.transcript,
+            source_type=request_body.source_type,
+            current_score=stock.gomes_score,
+            previous_thesis=stock.thesis_narrative
+        )
+        
+        # Update stock with AI results
+        await analyst.update_stock_from_analysis(stock, analysis)
+        
+        # Track score history if score changed
+        if analysis.score_delta != 0:
+            from app.models.score_history import GomesScoreHistory
+            
+            history_record = GomesScoreHistory(
+                ticker=ticker.upper(),
+                gomes_score=stock.gomes_score,
+                thesis_status=stock.inflection_status,
+                action_signal=None,  # Could derive from GomesLogicEngine
+                price_at_analysis=stock.current_price,
+                analysis_source=request_body.source_type,
+                recorded_at=datetime.utcnow()
+            )
+            db.add(history_record)
+        
+        db.commit()
+        db.refresh(stock)
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "analysis": {
+                "gomes_score": stock.gomes_score,
+                "score_delta": analysis.score_delta,
+                "score_reasoning": analysis.score_reasoning,
+                "cash_runway_months": stock.cash_runway_months,
+                "total_cash": stock.total_cash,
+                "quarterly_burn_rate": stock.quarterly_burn_rate,
+                "inflection_status": stock.inflection_status,
+                "primary_catalyst": stock.primary_catalyst,
+                "catalyst_date": stock.catalyst_date.isoformat() if stock.catalyst_date else None,
+                "thesis_narrative": stock.thesis_narrative,
+                "insider_activity": stock.insider_activity,
+                "red_flags": analysis.red_flags,
+                "green_flags": analysis.green_flags,
+            },
+            "updated_fields": [
+                "gomes_score", "cash_runway_months", "total_cash", 
+                "quarterly_burn_rate", "inflection_status", "primary_catalyst",
+                "catalyst_date", "thesis_narrative", "insider_activity"
+            ]
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"Validation error: {str(e)}")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
 
 # ============================================================================
@@ -1426,4 +1564,269 @@ def acknowledge_alert(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/refresh-all-verdicts")
+def refresh_all_verdicts(
+    force: bool = Query(False, description="Force refresh all stocks"),
+    db: Session = Depends(get_db),
+):
+    """
+    Refresh investment verdicts for all stocks in watchlist.
+    
+    Called automatically after importing new transcript.
+    Updates verdicts based on latest Gomes scores, lifecycle phase,
+    price lines, and market alert level.
+    """
+    try:
+        from app.models.gomes import InvestmentVerdictModel
+        from app.services.gomes_gatekeeper import GomesGatekeeper
+        
+        # Get all active watchlist tickers
+        watchlist = db.query(ActiveWatchlist).filter(
+            ActiveWatchlist.is_active == True
+        ).all()
+        
+        if not watchlist:
+            return {
+                "success": True,
+                "message": "No active watchlist items to refresh",
+                "updated_count": 0
+            }
+        
+        gatekeeper = GomesGatekeeper(db)
+        updated_count = 0
+        errors = []
+        
+        for item in watchlist:
+            try:
+                # Run gatekeeper analysis for each ticker
+                verdict = gatekeeper.evaluate_ticker(item.ticker)
+                
+                if verdict:
+                    # Invalidate old verdicts
+                    old_verdicts = db.query(InvestmentVerdictModel).filter(
+                        InvestmentVerdictModel.ticker == item.ticker,
+                        InvestmentVerdictModel.valid_until == None
+                    ).all()
+                    
+                    for old in old_verdicts:
+                        old.valid_until = datetime.utcnow()
+                    
+                    # Save new verdict
+                    db.add(verdict)
+                    updated_count += 1
+                    
+            except Exception as e:
+                errors.append(f"{item.ticker}: {str(e)}")
+                continue
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Refreshed verdicts for {updated_count} stocks",
+            "updated_count": updated_count,
+            "total_watchlist": len(watchlist),
+            "errors": errors if errors else None
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to refresh verdicts: {str(e)}"
+        )
+
+
+@router.get("/weekly-summary")
+def get_weekly_summary(
+    days: int = Query(7, description="Number of days to look back"),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate weekly investment summary.
+    
+    Returns:
+    - New transcripts from this week
+    - Stocks with score changes (improved/deteriorated)
+    - New BUY/SELL signals
+    - Thesis drift alerts
+    - Top conviction picks
+    """
+    try:
+        from app.services.weekly_summary import WeeklySummary
+        from datetime import datetime, timedelta
+        
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+        
+        summary_service = WeeklySummary(db)
+        summary = summary_service.generate_summary(start_date, end_date)
+        
+        return summary
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate summary: {str(e)}"
+        )
+
+
+@router.post("/weekly-summary/send-email")
+def send_weekly_summary_email_endpoint(
+    recipient_email: str = Query(..., description="Recipient email address"),
+    db: Session = Depends(get_db),
+):
+    """
+    Send weekly summary email to specified address.
+    
+    Requires SMTP settings in environment variables:
+    - EMAIL_HOST
+    - EMAIL_PORT
+    - EMAIL_USERNAME
+    - EMAIL_PASSWORD
+    """
+    try:
+        from app.services.weekly_summary import send_weekly_summary_email
+        
+        success = send_weekly_summary_email(
+            db=db,
+            recipient_email=recipient_email
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Weekly summary sent to {recipient_email}"
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send email - check SMTP settings"
+            )
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send email: {str(e)}"
+        )
+
+
+# ============================================================================
+# GOMES LOGIC ENGINE - Position Analysis
+# ============================================================================
+
+class GomesDecisionResponse(BaseModel):
+    """Response from Gomes Logic Engine"""
+    ticker: str
+    max_allocation_cap: float
+    action_signal: str  # HARD_EXIT, SELL, TRIM, HOLD, ACCUMULATE, SNIPER
+    warnings: List[str]
+    metrics: dict  # Raw metrics used for calculation
+    decision_log: str  # Human-readable explanation
+
+
+@router.get("/analyze-position/{ticker}", response_model=GomesDecisionResponse)
+async def analyze_position_with_gomes_logic(
+    ticker: str,
+    portfolio_id: int = Query(..., description="Portfolio ID to analyze position in"),
+    db: Session = Depends(get_db)
+):
+    """
+    Apply Gomes Logic Engine to a position.
+    
+    Calculates:
+    - Max allocation cap (based on asset class, score, runway)
+    - Action signal (HARD_EXIT, SELL, TRIM, HOLD, ACCUMULATE, SNIPER)
+    - Risk warnings
+    
+    This is the core algorithm - hard-coded rules, no AI interpretation.
+    """
+    from app.core.gomes_logic import GomesLogicEngine, StockMetrics, AssetClass
+    from app.models.portfolio import Position
+    
+    # Get stock
+    stock = db.query(Stock).filter(Stock.ticker == ticker).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
+    
+    # Get position
+    position = db.query(Position).filter(
+        Position.ticker == ticker,
+        Position.portfolio_id == portfolio_id
+    ).first()
+    
+    if not position:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Position {ticker} not found in portfolio {portfolio_id}"
+        )
+    
+    # Calculate total portfolio value
+    all_positions = db.query(Position).filter(
+        Position.portfolio_id == portfolio_id
+    ).all()
+    total_value = sum(
+        (p.shares_count * (p.current_price or p.avg_cost)) 
+        for p in all_positions
+    )
+    
+    if total_value == 0:
+        raise HTTPException(status_code=400, detail="Portfolio has zero value")
+    
+    # Calculate current weight
+    position_value = position.shares_count * (position.current_price or position.avg_cost)
+    current_weight_pct = (position_value / total_value) * 100
+    
+    # Build StockMetrics
+    try:
+        asset_class = AssetClass(stock.asset_class) if stock.asset_class else AssetClass.HIGH_BETA_ROCKET
+    except ValueError:
+        asset_class = AssetClass.HIGH_BETA_ROCKET
+    
+    metrics = StockMetrics(
+        ticker=ticker,
+        asset_class=asset_class,
+        gomes_score=stock.gomes_score,
+        cash_runway_months=stock.cash_runway_months,
+        inflection_status=stock.inflection_status,
+        current_price=stock.current_price or position.current_price or 0,
+        price_floor=stock.price_floor,
+        price_target_24m=stock.price_target_24m,
+        current_weight_pct=current_weight_pct
+    )
+    
+    # Execute Gomes Logic
+    decision = GomesLogicEngine.execute(metrics)
+    
+    # Update stock with calculated max_allocation_cap
+    stock.max_allocation_cap = decision.max_allocation_cap
+    db.commit()
+    
+    # Build decision log
+    log_lines = [
+        f"Asset Class: {asset_class.value}",
+        f"Gomes Score: {stock.gomes_score}/10",
+        f"Cash Runway: {stock.cash_runway_months} months" if stock.cash_runway_months else "Cash Runway: Unknown",
+        f"Inflection: {stock.inflection_status}" if stock.inflection_status else "Inflection: Unknown",
+        f"Current Weight: {current_weight_pct:.2f}%",
+        f"Max Allocation Cap: {decision.max_allocation_cap:.2f}%",
+        f"Action Signal: {decision.action_signal.value}",
+        f"Warnings: {len(decision.warnings)}"
+    ]
+    
+    return GomesDecisionResponse(
+        ticker=ticker,
+        max_allocation_cap=decision.max_allocation_cap,
+        action_signal=decision.action_signal.value,
+        warnings=decision.warnings,
+        metrics={
+            "asset_class": asset_class.value,
+            "gomes_score": stock.gomes_score,
+            "cash_runway_months": stock.cash_runway_months,
+            "inflection_status": stock.inflection_status,
+            "current_price": metrics.current_price,
+            "current_weight_pct": current_weight_pct
+        },
+        decision_log="\n".join(log_lines)
+    )
 
