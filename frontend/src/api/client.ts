@@ -647,12 +647,12 @@ class ApiClient {
     transcript: string,
     sourceType: 'earnings' | 'news' | 'chat' | 'transcript' | 'manual' = 'manual'
   ): Promise<StockUpdateResponse> {
-    const params = new URLSearchParams();
-    params.append('transcript', transcript);
-    params.append('source_type', sourceType);
-    
     const response = await this.client.post<StockUpdateResponse>(
-      `/api/gomes/update-stock/${ticker}?${params.toString()}`
+      `/api/gomes/update-stock/${ticker}`,
+      {
+        transcript,
+        source_type: sourceType,
+      }
     );
     return response.data;
   }

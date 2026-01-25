@@ -20,6 +20,7 @@ import type {
   PortfolioSummary, Position, Stock,
   FamilyAuditResponse, BrokerType
 } from '../types';
+import StockDetailModalGomes from './StockDetailModalGomes';
 
 // ============================================================================
 // TYPES
@@ -29,7 +30,8 @@ interface EnrichedPosition extends Position {
   stock?: Stock;
   gomes_score: number | null;
   // Gomes Gap Analysis
-  target_weight_pct: number;     // Cílová váha podle skóre
+  max_allocation_cap: number;    // Maximum allocation % (from Gomes Logic)
+  target_weight_pct: number;     // Ideální váha podle skóre (deprecated - use max_allocation_cap)
   weight_in_portfolio: number;   // Aktuální váha v portfoliu
   gap_czk: number;               // Mezera v CZK (+ = dokoupit, - = prodat)
   optimal_size: number;          // Kolik investovat TENTO MĚSÍC (po prioritizaci)
@@ -94,7 +96,10 @@ const formatCurrency = (amount: number, currency: string = 'CZK'): string => {
   }).format(amount);
 };
 
-const formatPercent = (value: number): string => {
+const formatPercent = (value: number | undefined | null): string => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return '0.00%';
+  }
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 };
@@ -741,83 +746,114 @@ const PortfolioRow: React.FC<{
       `}
     >
       {/* Ticker & Name */}
-      <td className="py-3 px-4">
-        <div className="flex items-center gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-white text-lg">{position.ticker}</span>
-            </div>
-            <div className="text-xs text-slate-400 truncate max-w-[150px]">
-              {position.company_name || 'Unknown'}
-            </div>
+      <td className="py-3 px-3">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-white text-base">{position.ticker}</span>
+            {position.is_deteriorated && (
+              <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded animate-pulse">
+                REVIEW
+              </span>
+            )}
           </div>
-          {position.is_deteriorated && (
-            <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs font-bold rounded animate-pulse">
-              REVIEW
-            </span>
-          )}
+          <div className="text-[10px] text-slate-400 truncate">
+            {position.company_name || 'Unknown'}
+          </div>
         </div>
       </td>
 
       {/* ACTION - Dynamic Command */}
       <td className="py-3 px-3">
-        <div className={`text-xs font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
+        <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
           {actionCmd.text}
         </div>
       </td>
 
       {/* Weight % - Aktuální vs Cílová */}
-      <td className="py-3 px-4">
-        <div className="flex items-center gap-1">
-          <span className={`font-mono font-bold ${position.is_overweight ? 'text-red-400' : position.is_underweight ? 'text-amber-400' : 'text-slate-300'}`}>
-            {position.weight_in_portfolio.toFixed(1)}%
-          </span>
-          <span className="text-slate-500">/</span>
-          <span className="font-mono text-slate-400">{position.target_weight_pct}%</span>
+      <td className="py-3 px-3">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-1">
+            <span className={`font-mono text-sm font-bold ${position.is_overweight ? 'text-red-400' : position.is_underweight ? 'text-amber-400' : 'text-slate-300'}`}>
+              {position.weight_in_portfolio.toFixed(1)}%
+            </span>
+            <span className="text-slate-500 text-xs">/</span>
+            <span className="font-mono text-xs text-slate-400">{position.max_allocation_cap.toFixed(1)}%</span>
+          </div>
+          {position.is_overweight && (
+            <div className="text-[9px] text-red-400">OVERWEIGHT</div>
+          )}
+          {position.is_underweight && !position.is_overweight && (
+            <div className="text-[9px] text-amber-400">UNDERWEIGHT</div>
+          )}
         </div>
-        {position.is_overweight && (
-          <div className="text-[10px] text-red-400">OVERWEIGHT</div>
-        )}
-        {position.is_underweight && !position.is_overweight && (
-          <div className="text-[10px] text-amber-400">UNDERWEIGHT</div>
-        )}
       </td>
 
       {/* Gomes Score */}
-      <td className="py-3 px-4">
-        <div className={`text-2xl font-black ${scoreColor}`}>
+      <td className="py-3 px-3 text-center">
+        <div className={`text-xl font-black ${scoreColor}`}>
           {position.gomes_score ?? '-'}
         </div>
       </td>
 
+      {/* Current Price */}
+      <td className="py-3 px-3 text-right">
+        <div className="flex flex-col items-end">
+          {position.current_price ? (
+            <>
+              <div className="text-sm font-bold text-white font-mono">
+                ${position.current_price.toFixed(2)}
+              </div>
+              <div className="text-[9px] text-slate-500">
+                Cost: ${position.avg_cost.toFixed(2)}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-slate-500">-</div>
+          )}
+        </div>
+      </td>
+
       {/* Optimal Size - GAP ANALYSIS */}
-      <td className="py-3 px-4">
+      <td className="py-3 px-3">
         {position.action_signal === 'SELL' ? (
-          <div className="text-center">
-            <div className="text-red-400 font-bold text-sm">SELL</div>
-            <div className="text-[10px] text-red-300">Score &lt; 5</div>
+          <div className="flex flex-col">
+            <div className="text-red-400 font-bold text-xs">SELL</div>
+            <div className="text-[9px] text-red-300">Score &lt; 5</div>
+          </div>
+        ) : position.optimal_size < 0 ? (
+          // OVERWEIGHT: Show how much to SELL (negative optimal_size)
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1">
+              <span className="text-orange-400 font-bold text-[9px]">TRIM</span>
+              <span className="text-sm font-bold text-orange-400 font-mono">
+                {formatCurrency(Math.abs(position.optimal_size))}
+              </span>
+            </div>
+            <div className="text-[9px] text-orange-300">
+              Nad limit {position.max_allocation_cap.toFixed(1)}%
+            </div>
           </div>
         ) : position.optimal_size > 0 ? (
-          <div>
+          <div className="flex flex-col">
             <div className="flex items-center gap-1">
-              {position.action_signal === 'SNIPER' && <span className="text-amber-400 text-xs font-bold">SNIPER</span>}
-              <span className="text-lg font-bold text-emerald-400 font-mono">
+              {position.action_signal === 'SNIPER' && <span className="text-amber-400 text-[9px] font-bold">SNIPER</span>}
+              <span className="text-sm font-bold text-emerald-400 font-mono">
                 {formatCurrency(position.optimal_size)}
               </span>
             </div>
-            <div className="text-[10px] text-slate-500">
+            <div className="text-[9px] text-slate-500">
               Gap: {formatCurrency(position.gap_czk)}
             </div>
             {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
-              <div className="text-[10px] text-amber-400 font-bold">
+              <div className="text-[9px] text-amber-400 font-bold">
                 #{position.allocation_priority} priorita
               </div>
             )}
           </div>
         ) : (
-          <div className="text-center">
-            <div className="text-slate-500 font-mono text-sm">0 Kč</div>
-            <div className="text-[10px] text-slate-600">
+          <div className="flex flex-col">
+            <div className="text-slate-500 font-mono text-xs">0 Kč</div>
+            <div className="text-[9px] text-slate-600">
               {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
             </div>
           </div>
@@ -827,19 +863,19 @@ const PortfolioRow: React.FC<{
       {/* NEXT CATALYST */}
       <td className="py-3 px-3">
         {position.next_catalyst ? (
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide font-mono truncate max-w-[100px]" title={position.next_catalyst}>
-            {position.next_catalyst.length > 20 ? position.next_catalyst.slice(0, 20) + '...' : position.next_catalyst}
+          <div className="text-[9px] text-slate-400 uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
+            {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
           </div>
         ) : (
-          <div className="text-[10px] text-red-400/70 uppercase">NONE</div>
+          <div className="text-[9px] text-red-400/70 uppercase">NONE</div>
         )}
       </td>
 
       {/* 30 WMA Status */}
-      <td className="py-3 px-4">
-        <div className="flex items-center gap-2">
+      <td className="py-3 px-3">
+        <div className="flex flex-col items-center gap-1">
           {trendIcon}
-          <span className={`text-sm ${
+          <span className={`text-[10px] font-medium ${
             position.trend_status === 'BULLISH' ? 'text-green-400' :
             position.trend_status === 'BEARISH' ? 'text-red-400' :
             'text-slate-400'
@@ -852,16 +888,16 @@ const PortfolioRow: React.FC<{
       {/* STRATEGY - Position Health */}
       <td className="py-3 px-3">
         {isFreeRideEligible ? (
-          <div>
-            <div className="text-[10px] text-amber-400 font-bold uppercase">FREE RIDE</div>
-            <div className="text-[9px] text-amber-300/70">
+          <div className="flex flex-col">
+            <div className="text-[9px] text-amber-400 font-bold uppercase">FREE RIDE</div>
+            <div className="text-[8px] text-amber-300/70">
               Sell {sharesToSellForFreeRide} shares
             </div>
           </div>
         ) : (
-          <div>
-            <div className="text-[10px] text-slate-500 uppercase">GROWING</div>
-            <div className="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
+          <div className="flex flex-col">
+            <div className="text-[9px] text-slate-500 uppercase">GROWING</div>
+            <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
               <div 
                 className="h-full bg-gradient-to-r from-slate-600 to-emerald-500 transition-all"
                 style={{ width: `${progressTo150}%` }}
@@ -875,11 +911,13 @@ const PortfolioRow: React.FC<{
       </td>
 
       {/* P/L % */}
-      <td className="py-3 px-4 text-right">
-        <div className={`font-bold ${plColor}`}>
-          {formatPercent(position.unrealized_pl_percent)}
+      <td className="py-3 px-3 text-right">
+        <div className={`font-bold text-sm ${plColor}`}>
+          {position.unrealized_pl_percent !== undefined && position.unrealized_pl_percent !== null 
+            ? formatPercent(position.unrealized_pl_percent) 
+            : '0.00%'}
         </div>
-        <div className="text-xs text-slate-500">
+        <div className="text-[10px] text-slate-500">
           {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
         </div>
       </td>
@@ -1527,7 +1565,7 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
               {/* Target vs Current Weight */}
               <div className="flex items-center justify-between mb-2">
                 <span className="text-slate-400 text-sm">Cílová váha:</span>
-                <span className="font-mono text-white">{position.target_weight_pct}%</span>
+                <span className="font-mono text-white">{position.max_allocation_cap.toFixed(1)}%</span>
               </div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-slate-400 text-sm">Aktuální váha:</span>
@@ -2512,6 +2550,95 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
 };
 
 // ============================================================================
+// GOMES LOGIC - Max Allocation Calculator (Frontend Implementation)
+// ============================================================================
+
+/**
+ * Calculate max allocation cap using Gomes Logic rules.
+ * 
+ * Base Caps by Asset Class:
+ * - ANCHOR: 12%
+ * - HIGH_BETA_ROCKET: 8%
+ * - BIOTECH_BINARY: 3%
+ * - TURNAROUND: 2%
+ * - VALUE_TRAP: 0%
+ * 
+ * Safety Multipliers:
+ * - Score < 7: 0.5x
+ * - Cash Runway < 6 months: 0.0x (STOP)
+ * - Cash Runway < 12 months: 0.7x
+ * - Inflection Status = ACTIVE_GOLD_MINE: 1.2x
+ */
+function calculateMaxAllocationCap(
+  stock: Stock | undefined,
+  gomesScore: number | null,
+  fallbackTarget: number
+): number {
+  // If stock has pre-calculated cap from backend, use it
+  if (stock?.max_allocation_cap) {
+    return stock.max_allocation_cap;
+  }
+
+  // Determine asset class
+  const assetClass = stock?.asset_class?.toUpperCase();
+  
+  // Base caps by asset class
+  let baseCap: number;
+  switch (assetClass) {
+    case 'ANCHOR':
+      baseCap = 12.0;
+      break;
+    case 'HIGH_BETA_ROCKET':
+      baseCap = 8.0;
+      break;
+    case 'BIOTECH_BINARY':
+      baseCap = 3.0;
+      break;
+    case 'TURNAROUND':
+      baseCap = 2.0;
+      break;
+    case 'VALUE_TRAP':
+      baseCap = 0.0;
+      break;
+    default:
+      // Unknown asset class: use score-based fallback
+      if (gomesScore !== null && gomesScore >= 9) {
+        baseCap = 8.0; // Treat as High Beta Rocket
+      } else if (gomesScore !== null && gomesScore >= 7) {
+        baseCap = 12.0; // Treat as Anchor
+      } else {
+        return fallbackTarget; // Use old logic
+      }
+  }
+
+  // Start with base cap
+  let finalCap = baseCap;
+
+  // Safety Multiplier 1: Gomes Score
+  if (gomesScore !== null && gomesScore < 7) {
+    finalCap *= 0.5; // Reduce by half if low quality
+  }
+
+  // Safety Multiplier 2: Cash Runway
+  const cashRunway = stock?.cash_runway_months;
+  if (cashRunway !== null && cashRunway !== undefined) {
+    if (cashRunway < 6) {
+      finalCap = 0.0; // HARD STOP - insolvency risk
+    } else if (cashRunway < 12) {
+      finalCap *= 0.7; // Reduce allocation
+    }
+  }
+
+  // Safety Multiplier 3: Inflection Status
+  const inflectionStatus = stock?.inflection_status?.toUpperCase();
+  if (inflectionStatus === 'ACTIVE_GOLD_MINE') {
+    finalCap *= 1.2; // Increase allocation for active inflection
+  }
+
+  return Math.max(0, finalCap);
+}
+
+// ============================================================================
 // MAIN DASHBOARD COMPONENT
 // ============================================================================
 
@@ -2655,13 +2782,17 @@ export const GomesGuardianDashboard: React.FC = () => {
         const positionValueCZK = positionValueOriginal * currencyRate;
         const currentWeightPct = grandTotal > 0 ? (positionValueCZK / grandTotal) * 100 : 0;
         
+        // Calculate max_allocation_cap using Gomes Logic
+        const maxAllocationCap = calculateMaxAllocationCap(stock, gomesScore, targetWeightPct);
+        
         // 3. GAP ANALYSIS - Kolik CZK chybí/přebývá
-        // Gap = (Total_AUM * Target_Weight) - Current_Value
-        const targetValueCZK = (grandTotal * targetWeightPct) / 100;
+        // Gap = (Total_AUM * Max_Allocation_Cap) - Current_Value
+        // Uses max_allocation_cap (dynamic from Gomes Logic) instead of targetWeightPct
+        const targetValueCZK = (grandTotal * maxAllocationCap) / 100;
         const gapCZK = targetValueCZK - positionValueCZK;
         
         // 4. Action signal based on score and gap
-        const actionSignal = getActionSignal(gomesScore, currentWeightPct, targetWeightPct);
+        const actionSignal = getActionSignal(gomesScore, currentWeightPct, maxAllocationCap);
         
         // 5. Classify for risk meter
         if (gomesScore !== null && gomesScore >= 9) {
@@ -2676,19 +2807,26 @@ export const GomesGuardianDashboard: React.FC = () => {
           unanalyzedCount++;
         }
 
+        // Calculate optimal_size for OVERWEIGHT positions (how much to SELL)
+        let initialOptimalSize = 0;
+        if (currentWeightPct > maxAllocationCap && gapCZK < 0) {
+          // OVERWEIGHT: optimal_size = negative (amount to SELL in CZK)
+          initialOptimalSize = Math.round(gapCZK); // gapCZK is already negative
+        }
+
         const enriched: EnrichedPosition = {
           ...pos,
           stock,
           gomes_score: gomesScore,
-          target_weight_pct: targetWeightPct,
+          max_allocation_cap: maxAllocationCap,
           weight_in_portfolio: currentWeightPct,
           gap_czk: gapCZK,
-          optimal_size: 0, // Will be calculated after sorting
+          optimal_size: initialOptimalSize, // Negative for OVERWEIGHT, will be recalculated for UNDERWEIGHT
           allocation_priority: 999, // Will be set after sorting
           trend_status: getTrendStatus(stock),
           is_deteriorated: gomesScore !== null && gomesScore < 4,
-          is_overweight: currentWeightPct > MAX_POSITION_WEIGHT,
-          is_underweight: gapCZK > MIN_INVESTMENT_CZK,
+          is_overweight: currentWeightPct > maxAllocationCap,
+          is_underweight: currentWeightPct < maxAllocationCap && gapCZK > MIN_INVESTMENT_CZK,
           action_signal: actionSignal,
           inflection_status: 'UPCOMING',
           next_catalyst: stock?.next_catalyst ?? undefined,
@@ -2730,9 +2868,9 @@ export const GomesGuardianDashboard: React.FC = () => {
       let allocation = Math.min(pos.gap_czk, remainingBudget);
       
       // Apply hard caps
-      // 1. Don't exceed MAX_POSITION_WEIGHT (15%)
+      // 1. Don't exceed max_allocation_cap (dynamic from Gomes Logic: 3-15%)
       const currentValueCZK = (grandTotal * pos.weight_in_portfolio) / 100;
-      const maxAllowedValue = (grandTotal * MAX_POSITION_WEIGHT) / 100;
+      const maxAllowedValue = (grandTotal * pos.max_allocation_cap) / 100;
       const maxAllocation = maxAllowedValue - currentValueCZK;
       allocation = Math.min(allocation, Math.max(0, maxAllocation));
       
@@ -3315,24 +3453,28 @@ export const GomesGuardianDashboard: React.FC = () => {
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
         <div className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
-          <table className="w-full">
+          <table className="w-full table-fixed">
             <thead>
               <tr className="border-b border-slate-700 bg-slate-800/50">
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Symbol</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Action</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[140px]">Symbol</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">Action</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">
                   <div>Váha</div>
                   <div className="text-[9px] text-slate-500 font-normal">Aktuální / Cíl</div>
                 </th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Score</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                <th className="text-center py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[70px]">Score</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[100px]">
+                  <div>Price</div>
+                  <div className="text-[9px] text-slate-500 font-normal">Current</div>
+                </th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[140px]">
                   <div>Optimal Size</div>
                   <div className="text-[9px] text-slate-500 font-normal">Tento měsíc</div>
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Catalyst</th>
-                <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Trend</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Strategy</th>
-                <th className="text-right py-3 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">P/L</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[120px]">Catalyst</th>
+                <th className="text-center py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[100px]">Trend</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[120px]">Strategy</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">P/L</th>
               </tr>
             </thead>
             <tbody>
@@ -3345,7 +3487,7 @@ export const GomesGuardianDashboard: React.FC = () => {
               ))}
               {displayedPositions.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-slate-500">
+                  <td colSpan={10} className="text-center py-12 text-slate-500">
                     {searchQuery ? 'No positions found' : 'No positions in portfolio. Import your DEGIRO CSV to get started.'}
                   </td>
                 </tr>
@@ -3569,12 +3711,13 @@ export const GomesGuardianDashboard: React.FC = () => {
 
       {/* MODALS */}
       {selectedPosition && (
-        <StockDetailModal
+        <StockDetailModalGomes
           position={selectedPosition}
-          familyGaps={familyGaps}
           onClose={() => setSelectedPosition(null)}
           onUpdate={async () => {
-            // Refresh stocks data after update
+            // Refresh portfolio data after position update
+            await refreshPortfolios();
+            // Also refresh stocks data for Gomes scores
             const stocksData = await apiClient.getStocks();
             setStocks(stocksData.stocks);
           }}

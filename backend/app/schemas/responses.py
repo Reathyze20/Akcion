@@ -81,6 +81,36 @@ class StockResponse(BaseModel):
     price_position_pct: float | None = None
     price_zone: str | None = None  # "UNDERVALUED", "FAIR", "OVERVALUED"
     
+    # Gomes Master Table (2026-01-25)
+    asset_class: str | None = None
+    cash_runway_months: int | None = None
+    insider_ownership_pct: float | None = None
+    fully_diluted_market_cap: float | None = None
+    enterprise_value: float | None = None
+    quarterly_burn_rate: float | None = None
+    total_cash: float | None = None
+    inflection_status: str | None = None  # WAIT_TIME, UPCOMING, ACTIVE_GOLD_MINE
+    primary_catalyst: str | None = None
+    catalyst_date: str | None = None
+    thesis_narrative: str | None = None
+    price_floor: float | None = None
+    price_target_24m: float | None = None
+    current_valuation_stage: str | None = None  # UNDERVALUED, FAIR, OVERVALUED, BUBBLE
+    price_base: float | None = None
+    price_moon: float | None = None
+    forward_pe_2027: float | None = None
+    max_allocation_cap: float | None = None
+    stop_loss_price: float | None = None
+    insider_activity: str | None = None  # BUYING, HOLDING, SELLING
+    market_cap: float | None = None
+    
+    # Trading Zones (Calculated from Price Lines)
+    max_buy_price: float | None = None
+    start_sell_price: float | None = None
+    risk_to_floor_pct: float | None = None
+    upside_to_ceiling_pct: float | None = None
+    trading_zone_signal: str | None = None  # AGGRESSIVE_BUY, BUY, HOLD, SELL, STRONG_SELL
+    
     model_config = {"from_attributes": True}
 
 

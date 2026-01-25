@@ -24,7 +24,7 @@ requests==2.32.3
 python-docx==1.1.0
 
 # Portfolio Management & Market Data
-# NOTE: yfinance removed - using DB data + Deep DD analysis instead
+yfinance==0.2.49  # Yahoo Finance API for smart caching
 pandas==2.2.3  # Data processing
 numpy==1.26.2
 

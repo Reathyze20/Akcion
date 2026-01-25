@@ -37,6 +37,8 @@ from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analy
 from .routes import intelligence_gomes, master_signal, notifications
 from .routes import investment  # Investment Intelligence
 from .routes import currency  # Currency exchange rates
+from .routes import yahoo_finance  # Yahoo Finance Smart Cache
+from .routes import dev_utils  # Development utilities (DISABLE IN PRODUCTION!)
 
 # Import alert scheduler
 from .services.alert_scheduler import start_scheduler, stop_scheduler
@@ -130,6 +132,8 @@ app.include_router(master_signal.action_router)
 app.include_router(notifications.router)
 app.include_router(investment.router)  # Investment Intelligence
 app.include_router(currency.router)  # Currency exchange rates
+app.include_router(yahoo_finance.router)  # Yahoo Finance Smart Cache
+app.include_router(dev_utils.router)  # Development utilities (DISABLE IN PRODUCTION!)
 
 
 # ==============================================================================
