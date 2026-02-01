@@ -13,7 +13,7 @@ interface MasterSignalResult {
   buy_confidence: number;
   signal_strength: "STRONG_BUY" | "BUY" | "WEAK_BUY" | "NEUTRAL" | "AVOID";
   components: {
-    gomes_score: number;
+    conviction_score: number;
     ml_confidence: number;
     technical_score: number;
     sentiment_score: number;
@@ -78,9 +78,9 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
   };
 
   const getConfidenceBarColor = (confidence: number): string => {
-    if (confidence >= 80) return "bg-green-500";
+    if (confidence >= 80) return "bg-positive";
     if (confidence >= 60) return "bg-blue-500";
-    if (confidence >= 40) return "bg-yellow-500";
+    if (confidence >= 40) return "bg-warning";
     return "bg-gray-400";
   };
 
@@ -117,7 +117,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
         <div className="text-center text-red-600">
           <p className="font-semibold">Chyba při načítání příležitostí</p>
           <p className="text-sm mt-2">{error}</p>
-          <button onClick={fetchOpportunities} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+          <button onClick={fetchOpportunities} className="mt-4 px-4 py-2 bg-blue-500 text-text-primary rounded hover:bg-blue-600">
             Zkusit znovu
           </button>
         </div>
@@ -212,8 +212,8 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
                 <summary className="cursor-pointer text-xs text-blue-600 hover:text-blue-800">Zobrazit rozklad signálu</summary>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Gomes:</span>
-                    <span className="font-semibold">{opp.components.gomes_score.toFixed(1)}</span>
+                    <span className="text-gray-600">Score:</span>
+                    <span className="font-semibold">{opp.components.conviction_score.toFixed(1)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">ML:</span>
@@ -246,3 +246,5 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
 };
 
 export default ActionCenter;
+
+

@@ -1,7 +1,7 @@
 /**
  * TickerTimeline Component
  * 
- * Displays historical mentions of a ticker from Mark Gomes transcripts.
+ * Displays historical mentions of a ticker from analyst transcripts.
  * Shows sentiment evolution over time with weighted scoring.
  */
 
@@ -17,15 +17,15 @@ interface TickerTimelineProps {
 const getSentimentColor = (sentiment: string) => {
   switch (sentiment) {
     case 'VERY_BULLISH':
-      return 'text-green-400 bg-green-500/20';
+      return 'text-positive bg-positive/20';
     case 'BULLISH':
-      return 'text-green-500 bg-green-500/10';
+      return 'text-positive bg-positive/10';
     case 'NEUTRAL':
       return 'text-gray-400 bg-gray-500/10';
     case 'BEARISH':
-      return 'text-orange-400 bg-orange-500/10';
+      return 'text-warning bg-warning/10';
     case 'VERY_BEARISH':
-      return 'text-red-400 bg-red-500/20';
+      return 'text-negative bg-negative/20';
     default:
       return 'text-gray-400 bg-gray-500/10';
   }
@@ -53,12 +53,12 @@ const getActionBadge = (action: string | null) => {
   
   const colors: Record<string, string> = {
     'BUY_NOW': 'bg-green-600',
-    'ACCUMULATE': 'bg-green-500',
-    'BUY': 'bg-green-500',
+    'ACCUMULATE': 'bg-positive',
+    'BUY': 'bg-positive',
     'WATCH': 'bg-yellow-600',
     'HOLD': 'bg-yellow-600',
-    'TRIM': 'bg-orange-500',
-    'SELL': 'bg-red-500',
+    'TRIM': 'bg-warning',
+    'SELL': 'bg-negative',
     'AVOID': 'bg-red-600',
   };
   
@@ -84,7 +84,7 @@ const WeightedSentimentBar: React.FC<{ score: number }> = ({ score }) => {
   
   return (
     <div className="flex items-center gap-3">
-      <span className="text-sm text-red-400">Medvěd</span>
+      <span className="text-sm text-negative">Medvěd</span>
       <div className="flex-1 h-3 bg-gray-700 rounded-full overflow-hidden">
         <div 
           className="h-full transition-all duration-500"
@@ -100,7 +100,7 @@ const WeightedSentimentBar: React.FC<{ score: number }> = ({ score }) => {
           }}
         />
       </div>
-      <span className="text-sm text-green-400">Býk</span>
+      <span className="text-sm text-positive">Býk</span>
       <span className="text-sm font-mono text-gray-400 w-16 text-right">
         {score >= 0 ? '+' : ''}{(score * 100).toFixed(0)}%
       </span>
@@ -147,7 +147,7 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
           <ul className="text-sm text-gray-400 space-y-1 mb-2">
             {mention.key_points.map((point, i) => (
               <li key={i} className="flex items-start gap-2">
-                <span className="text-blue-400">•</span>
+                <span className="text-accent">•</span>
                 <span>{point}</span>
               </li>
             ))}
@@ -156,7 +156,7 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
         
         {/* Price target */}
         {mention.price_target && (
-          <div className="text-sm text-yellow-400">
+          <div className="text-sm text-warning">
             Cenový cíl: ${mention.price_target.toFixed(2)}
           </div>
         )}
@@ -170,7 +170,7 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
                 href={mention.video_url} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="ml-2 text-blue-400 hover:underline"
+                className="ml-2 text-accent hover:underline"
               >
                 Sledovat
               </a>
@@ -221,12 +221,12 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
   if (error) {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-red-700">
-        <div className="text-red-400 text-center">
+        <div className="text-negative text-center">
           <span className="text-2xl mb-2"></span>
           <p>{error}</p>
           <button 
             onClick={fetchTimeline}
-            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white"
+            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-text-primary"
           >
             Zkusit znovu
           </button>
@@ -240,7 +240,7 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
         <div className="text-center text-gray-400">
           <span className="text-4xl mb-4 block"></span>
-          <h3 className="text-lg font-medium text-white mb-2">Žádné zmínky nenalezeny</h3>
+          <h3 className="text-lg font-medium text-text-primary mb-2">Žádné zmínky nenalezeny</h3>
           <p className="text-sm">
             {ticker} nebyl zmíněn v žádném importovaném přepisu.
           </p>
@@ -257,7 +257,7 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
       {/* Header */}
       <div className="p-4 border-b border-gray-700 bg-gray-800/50">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
             {ticker} Časová osa
             <span className="text-sm font-normal text-gray-400">
               ({timeline.total_mentions} zmínek)
@@ -266,7 +266,7 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
           {onClose && (
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="text-gray-400 hover:text-text-primary transition-colors"
             >
               ✕
             </button>
@@ -308,3 +308,5 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
 };
 
 export default TickerTimeline;
+
+

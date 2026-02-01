@@ -310,7 +310,7 @@ class NewsMonitorService:
                         message=f"{item.ticker} at ${current_price:.2f} - IN ENTRY ZONE (${entry_price:.2f}). Gomes: {stock.action_verdict or 'ACCUMULATE'}",
                         urgency=NewsUrgency.ACTION_REQUIRED,
                         gomes_context={
-                            'score': stock.gomes_score,
+                            'score': stock.conviction_score,
                             'sentiment': stock.sentiment,
                             'action': stock.action_verdict,
                             'edge': stock.edge,
@@ -387,7 +387,7 @@ class NewsMonitorService:
                         'catalysts': stock.catalysts,
                         'risks': stock.risks,
                         'sentiment': stock.sentiment,
-                        'score': stock.gomes_score
+                        'score': stock.conviction_score
                     }
             
             # Fetch and classify news

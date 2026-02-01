@@ -140,8 +140,8 @@ class GeminiConfig:
     
     Frozen dataclass ensures these values cannot be accidentally modified.
     """
-    model_name: str = "gemini-3-pro-preview"
-    """Most intelligent Gemini model for financial analysis."""
+    model_name: str = "gemini-2.0-flash"
+    """Stable Gemini model for financial analysis."""
     
     max_output_tokens: int = 8192
     """Maximum response length."""

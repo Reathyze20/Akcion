@@ -1,7 +1,7 @@
 /**
  * ScoreHistoryMiniChart Component
  * 
- * Mini sparkline graph showing Gomes score evolution over time.
+ * Mini sparkline graph showing Conviction Score evolution over time.
  * Used in StockCard to show thesis drift visually.
  */
 
@@ -41,7 +41,7 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
         if (data.history.length >= 2) {
           const latest = data.history[0];
           const previous = data.history[1];
-          if (latest.gomes_score < previous.gomes_score && 
+          if (latest.conviction_score < previous.conviction_score && 
               latest.price_at_analysis && previous.price_at_analysis &&
               latest.price_at_analysis > previous.price_at_analysis * 1.1) {
             setHasAlert(true);
@@ -66,8 +66,8 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
   const minScore = 0;
   const points = history.map((point, index) => {
     const x = (index / (history.length - 1)) * width;
-    const y = height - ((point.gomes_score - minScore) / (maxScore - minScore)) * height;
-    return { x, y, score: point.gomes_score };
+    const y = height - ((point.conviction_score - minScore) / (maxScore - minScore)) * height;
+    return { x, y, score: point.conviction_score };
   });
 
   const pathD = points.map((p, i) => 
@@ -124,16 +124,16 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
       <div className="flex flex-col items-center">
         <TrendIcon 
           className={`w-4 h-4 ${
-            trend === 'UP' ? 'text-green-400' : 
-            trend === 'DOWN' ? 'text-red-400' : 
-            'text-slate-400'
+            trend === 'UP' ? 'text-positive' : 
+            trend === 'DOWN' ? 'text-negative' : 
+            'text-text-secondary'
           }`} 
         />
         {currentScore !== undefined && (
           <span className={`text-xs font-bold ${
-            currentScore >= 8 ? 'text-green-400' :
-            currentScore >= 5 ? 'text-yellow-400' :
-            'text-red-400'
+            currentScore >= 8 ? 'text-positive' :
+            currentScore >= 5 ? 'text-warning' :
+            'text-negative'
           }`}>
             {currentScore}
           </span>
@@ -143,7 +143,7 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
       {/* Thesis Drift Alert */}
       {showAlert && hasAlert && (
         <div className="relative group">
-          <AlertTriangle className="w-4 h-4 text-amber-400 animate-pulse" />
+          <AlertTriangle className="w-4 h-4 text-warning animate-pulse" />
           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 
                           bg-amber-900/90 text-amber-200 text-[10px] rounded whitespace-nowrap
                           opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none
@@ -157,3 +157,5 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
 };
 
 export default ScoreHistoryMiniChart;
+
+

@@ -20,15 +20,15 @@ interface TopPicksWidgetProps {
 const getRatingBadge = (rating: GomesRating) => {
   switch (rating) {
     case 'STRONG_BUY':
-      return { bg: 'bg-green-500', text: 'text-white', icon: '', label: 'SILNÝ NÁKUP' };
+      return { bg: 'bg-positive', text: 'text-text-primary', icon: '', label: 'SILNÝ NÁKUP' };
     case 'BUY':
-      return { bg: 'bg-green-600', text: 'text-white', icon: '', label: 'NÁKUP' };
+      return { bg: 'bg-green-600', text: 'text-text-primary', icon: '', label: 'NÁKUP' };
     case 'HOLD':
-      return { bg: 'bg-yellow-600', text: 'text-white', icon: '', label: 'DRŽET' };
+      return { bg: 'bg-yellow-600', text: 'text-text-primary', icon: '', label: 'DRŽET' };
     case 'HIGH_RISK':
-      return { bg: 'bg-red-500', text: 'text-white', icon: '', label: 'VYSOKÉ RIZIKO' };
+      return { bg: 'bg-negative', text: 'text-text-primary', icon: '', label: 'VYSOKÉ RIZIKO' };
     default:
-      return { bg: 'bg-gray-600', text: 'text-white', icon: '', label: 'VYHNOUT SE' };
+      return { bg: 'bg-gray-600', text: 'text-text-primary', icon: '', label: 'VYHNOUT SE' };
   }
 };
 
@@ -72,7 +72,7 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-white">Nejlepší týpky</h3>
+          <h3 className="text-lg font-bold text-text-primary">Nejlepší týpky</h3>
           <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
         </div>
         <div className="space-y-3">
@@ -86,12 +86,12 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
 
   if (error) {
     return (
-      <div className="bg-gray-900 rounded-lg p-6 border border-red-500/30">
-        <h3 className="text-lg font-bold text-white mb-2">Nejlepší týpky</h3>
-        <div className="text-red-400 text-sm">{error}</div>
+      <div className="bg-gray-900 rounded-lg p-6 border border-negative/30">
+        <h3 className="text-lg font-bold text-text-primary mb-2">Nejlepší týpky</h3>
+        <div className="text-negative text-sm">{error}</div>
         <button
           onClick={fetchTopPicks}
-          className="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition-colors"
+          className="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-text-primary rounded text-sm transition-colors"
         >
           Zkusit znovu
         </button>
@@ -102,13 +102,13 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
   if (rankings.length === 0) {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
-        <h3 className="text-lg font-bold text-white mb-2">Nejlepší týpky</h3>
+        <h3 className="text-lg font-bold text-text-primary mb-2">Nejlepší týpky</h3>
         <p className="text-gray-400 text-sm">
           Žádné týpky odpovídající kritériím ({minRating} nebo lepší)
         </p>
         <button
           onClick={fetchTopPicks}
-          className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
+          className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-text-primary rounded text-sm transition-colors"
         >
           Obnovit
         </button>
@@ -121,7 +121,7 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
             Nejlepší týpky
             <span className="text-sm font-normal text-gray-400">
               ({rankings.length})
@@ -179,7 +179,7 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
                     {medalEmoji || `${rank}.`}
                   </div>
                   <div>
-                    <div className="font-bold text-white text-lg">
+                    <div className="font-bold text-text-primary text-lg">
                       {item.ticker}
                     </div>
                     <div className="text-xs text-gray-400">
@@ -190,7 +190,7 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
 
                 {/* Right: Score & Rating */}
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-green-400">
+                  <div className="text-2xl font-bold text-positive">
                     {item.score}/10
                   </div>
                   <div className={`text-xs px-2 py-0.5 rounded ${badge.bg} ${badge.text} inline-block mt-1`}>
@@ -221,3 +221,5 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
 };
 
 export default TopPicksWidget;
+
+

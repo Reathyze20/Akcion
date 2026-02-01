@@ -51,7 +51,7 @@ export const Sidebar: React.FC = () => {
           company_name: s.company_name || '',
           action_verdict: s.action_verdict,
           conviction_score: s.conviction_score || null,
-          gomes_score: s.gomes_score || null,
+          conviction_score: s.conviction_score || null,
           current_price: s.current_price || null,
           created_at: new Date().toISOString(),
           source_type: s.source_type || 'transcript',
@@ -103,12 +103,12 @@ export const Sidebar: React.FC = () => {
   const isDisabled = (inputType === 'text' ? !transcript : !url);
 
   return (
-    <aside className="w-80 bg-terminal-surface border-r border-terminal-border flex flex-col h-full shadow-xl">
+    <aside className="w-80 bg-surface-base border-r border-border flex flex-col h-full shadow-xl">
       {/* Header */}
-      <div className="p-6 border-b border-terminal-border">
+      <div className="p-6 border-b border-border">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-blue to-accent-purple flex items-center justify-center">
-            <TrendingUp className="w-6 h-6 text-white" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-muted flex items-center justify-center">
+            <TrendingUp className="w-6 h-6 text-text-primary" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-text-primary">AKCION</h1>
@@ -118,14 +118,14 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="px-4 py-3 border-b border-terminal-border">
+      <div className="px-4 py-3 border-b border-border">
         <div className="flex gap-2">
           <button
             onClick={() => setCurrentView('analysis')}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-button font-medium text-sm transition-all ${
               currentView === 'analysis'
-                ? 'bg-accent-blue text-white shadow-card'
-                : 'bg-terminal-card text-text-secondary hover:bg-terminal-hover hover:text-text-primary'
+                ? 'bg-accent text-text-primary shadow-card'
+                : 'bg-surface-raised text-text-secondary hover:bg-surface-hover hover:text-text-primary'
             }`}
           >
             <Sparkles className="w-4 h-4" />
@@ -135,8 +135,8 @@ export const Sidebar: React.FC = () => {
             onClick={() => setCurrentView('portfolio')}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-button font-medium text-sm transition-all ${
               currentView === 'portfolio'
-                ? 'bg-accent-blue text-white shadow-card'
-                : 'bg-terminal-card text-text-secondary hover:bg-terminal-hover hover:text-text-primary'
+                ? 'bg-accent text-text-primary shadow-card'
+                : 'bg-surface-raised text-text-secondary hover:bg-surface-hover hover:text-text-primary'
             }`}
           >
             <BarChart3 className="w-4 h-4" />
@@ -157,8 +157,8 @@ export const Sidebar: React.FC = () => {
               onClick={() => setInputType('text')}
               className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border transition-all ${
                 inputType === 'text'
-                  ? 'bg-terminal-hover border-accent-blue text-accent-blue'
-                  : 'bg-terminal-card border-terminal-border text-text-muted hover:border-terminal-border-light hover:text-text-secondary'
+                  ? 'bg-surface-hover border-accent text-accent'
+                  : 'bg-surface-raised border-border text-text-muted hover:border-border-light hover:text-text-secondary'
               }`}
             >
               <FileText className="w-5 h-5" />
@@ -168,8 +168,8 @@ export const Sidebar: React.FC = () => {
               onClick={() => setInputType('youtube')}
               className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border transition-all ${
                 inputType === 'youtube'
-                  ? 'bg-terminal-hover border-accent-blue text-accent-blue'
-                  : 'bg-terminal-card border-terminal-border text-text-muted hover:border-terminal-border-light hover:text-text-secondary'
+                  ? 'bg-surface-hover border-accent text-accent'
+                  : 'bg-surface-raised border-border text-text-muted hover:border-border-light hover:text-text-secondary'
               }`}
             >
               <Youtube className="w-5 h-5" />
@@ -179,8 +179,8 @@ export const Sidebar: React.FC = () => {
               onClick={() => setInputType('google-docs')}
               className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border transition-all ${
                 inputType === 'google-docs'
-                  ? 'bg-terminal-hover border-accent-blue text-accent-blue'
-                  : 'bg-terminal-card border-terminal-border text-text-muted hover:border-terminal-border-light hover:text-text-secondary'
+                  ? 'bg-surface-hover border-accent text-accent'
+                  : 'bg-surface-raised border-border text-text-muted hover:border-border-light hover:text-text-secondary'
               }`}
             >
               <FileCode className="w-5 h-5" />
@@ -198,7 +198,7 @@ export const Sidebar: React.FC = () => {
             type="text"
             value={speaker}
             onChange={(e) => setSpeaker(e.target.value)}
-            placeholder="např. Mark Gomes (nebo ponechte prázdné)"
+            placeholder="např. investment committee (nebo ponechte prázdné)"
             className="input"
           />
         </div>
@@ -256,26 +256,26 @@ export const Sidebar: React.FC = () => {
         </button>
 
         {/* Info Card */}
-        <div className="card p-4 space-y-3 border-l-2 border-l-accent-blue">
+        <div className="card p-4 space-y-3 border-l-2 border-l-accent">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-accent-blue" />
+            <Sparkles className="w-4 h-4 text-accent" />
             <h3 className="text-sm font-semibold text-text-primary">Poháněno Gemini 3 Pro</h3>
           </div>
           <ul className="space-y-2 text-xs text-text-secondary">
             <li className="flex items-start gap-2">
-              <span className="text-semantic-bullish mt-0.5">•</span>
+              <span className="text-positive mt-0.5">•</span>
               <span>Profesionální analýza s Google vyhledáváním</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-semantic-bullish mt-0.5">•</span>
+              <span className="text-positive mt-0.5">•</span>
               <span>Agresivní extrakce zmínek o akciích</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-semantic-bullish mt-0.5">•</span>
-              <span>Gomes Rules hodnotící framework</span>
+              <span className="text-positive mt-0.5">•</span>
+              <span>Fiduciary Rules hodnotící framework</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-semantic-bullish mt-0.5">•</span>
+              <span className="text-positive mt-0.5">•</span>
               <span>Identifikace Edge, Katalyzátorů a Rizik</span>
             </li>
           </ul>
@@ -284,3 +284,5 @@ export const Sidebar: React.FC = () => {
     </aside>
   );
 };
+
+

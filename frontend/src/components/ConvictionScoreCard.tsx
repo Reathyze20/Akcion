@@ -1,29 +1,29 @@
 /**
- * GomesScoreCard Component
+ * ConvictionScoreCard Component
  * 
- * Displays detailed Gomes Investment Committee analysis for a ticker.
+ * Displays detailed Investment Intelligence analysis for a ticker.
  * Shows lifecycle phase, score breakdown, green/red lines, and risk factors.
  */
 
 import React from 'react';
-import type { GomesScoreResponse, GomesRating, LifecyclePhase, MarketAlert } from '../types';
+import type { ConvictionScoreResponse, ConvictionRating, LifecyclePhase, MarketAlert } from '../types';
 
-interface GomesScoreCardProps {
-  score: GomesScoreResponse;
+interface ConvictionScoreCardProps {
+  score: ConvictionScoreResponse;
   onAnalyze?: (ticker: string) => void;
 }
 
 // Rating colors and icons
-const getRatingStyle = (rating: GomesRating) => {
+const getRatingStyle = (rating: ConvictionRating) => {
   switch (rating) {
     case 'STRONG_BUY':
-      return { bg: 'bg-green-900/30', border: 'border-green-500', text: 'text-green-400', icon: '' };
+      return { bg: 'bg-green-900/30', border: 'border-positive', text: 'text-positive', icon: '' };
     case 'BUY':
-      return { bg: 'bg-green-900/20', border: 'border-green-600', text: 'text-green-500', icon: '' };
+      return { bg: 'bg-green-900/20', border: 'border-green-600', text: 'text-positive', icon: '' };
     case 'HOLD':
-      return { bg: 'bg-yellow-900/20', border: 'border-yellow-600', text: 'text-yellow-500', icon: '' };
+      return { bg: 'bg-yellow-900/20', border: 'border-yellow-600', text: 'text-warning', icon: '' };
     case 'HIGH_RISK':
-      return { bg: 'bg-red-900/30', border: 'border-red-500', text: 'text-red-400', icon: '' };
+      return { bg: 'bg-red-900/30', border: 'border-negative', text: 'text-negative', icon: '' };
     case 'AVOID':
     default:
       return { bg: 'bg-gray-900/30', border: 'border-gray-600', text: 'text-gray-400', icon: '' };
@@ -34,11 +34,11 @@ const getRatingStyle = (rating: GomesRating) => {
 const getLifecycleStyle = (phase?: LifecyclePhase) => {
   switch (phase) {
     case 'GREAT_FIND':
-      return { bg: 'bg-purple-900/30', text: 'text-purple-400', icon: '' };
+      return { bg: 'bg-purple-900/30', text: 'text-accent', icon: '' };
     case 'GOLD_MINE':
-      return { bg: 'bg-amber-900/30', text: 'text-amber-400', icon: '' };
+      return { bg: 'bg-amber-900/30', text: 'text-warning', icon: '' };
     case 'WAIT_TIME':
-      return { bg: 'bg-orange-900/30', text: 'text-orange-400', icon: '' };
+      return { bg: 'bg-orange-900/30', text: 'text-warning', icon: '' };
     default:
       return { bg: 'bg-gray-900/30', text: 'text-gray-400', icon: '' };
   }
@@ -48,19 +48,19 @@ const getLifecycleStyle = (phase?: LifecyclePhase) => {
 const getMarketAlertStyle = (alert?: MarketAlert | null) => {
   switch (alert) {
     case 'GREEN':
-      return { bg: 'bg-green-900/30', text: 'text-green-400', icon: '' };
+      return { bg: 'bg-green-900/30', text: 'text-positive', icon: '' };
     case 'YELLOW':
-      return { bg: 'bg-yellow-900/30', text: 'text-yellow-400', icon: '' };
+      return { bg: 'bg-yellow-900/30', text: 'text-warning', icon: '' };
     case 'ORANGE':
-      return { bg: 'bg-orange-900/30', text: 'text-orange-400', icon: '' };
+      return { bg: 'bg-orange-900/30', text: 'text-warning', icon: '' };
     case 'RED':
-      return { bg: 'bg-red-900/30', text: 'text-red-400', icon: '' };
+      return { bg: 'bg-red-900/30', text: 'text-negative', icon: '' };
     default:
       return null;
   }
 };
 
-const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => {
+const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnalyze }) => {
   const ratingStyle = getRatingStyle(score.rating);
   const lifecycleStyle = getLifecycleStyle(score.lifecycle_phase);
   const marketAlertStyle = score.market_alert ? getMarketAlertStyle(score.market_alert) : null;
@@ -71,7 +71,7 @@ const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => 
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h3 className="text-2xl font-bold text-white">{score.ticker}</h3>
+            <h3 className="text-2xl font-bold text-text-primary">{score.ticker}</h3>
             <span className={`text-3xl font-bold ${ratingStyle.text}`}>
               {score.total_score}/10
             </span>
@@ -136,7 +136,7 @@ const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => 
           <div className="grid grid-cols-2 gap-4">
             {(score.green_line || score.is_undervalued) && (
               <div>
-                <div className="text-xs text-green-400 mb-1">Zelená linie (NÁKUP)</div>
+                <div className="text-xs text-positive mb-1">Zelená linie (NÁKUP)</div>
                 <div className="text-lg font-bold text-green-300">
                   {score.green_line ? `$${score.green_line.toFixed(2)}` : 'Podhodnoceno'}
                 </div>
@@ -144,7 +144,7 @@ const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => 
             )}
             {score.red_line && (
               <div>
-                <div className="text-xs text-red-400 mb-1">Červená linie (PRODEJ)</div>
+                <div className="text-xs text-negative mb-1">Červená linie (PRODEJ)</div>
                 <div className="text-lg font-bold text-red-300">
                   ${score.red_line.toFixed(2)}
                 </div>
@@ -158,7 +158,7 @@ const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => 
       {score.firing_on_10_cylinders !== undefined && score.firing_on_10_cylinders !== null && (
         <div className={`rounded-lg p-3 border ${
           score.firing_on_10_cylinders 
-            ? 'bg-green-900/20 border-green-500/30' 
+            ? 'bg-green-900/20 border-positive/30' 
             : 'bg-orange-900/20 border-orange-500/30'
         }`}>
           <div className="flex items-center gap-2">
@@ -185,14 +185,14 @@ const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => 
       {(score.bull_case || score.bear_case) && (
         <div className="grid md:grid-cols-2 gap-4">
           {score.bull_case && (
-            <div className="bg-green-900/10 border border-green-500/20 rounded-lg p-3">
-              <div className="text-xs text-green-400 font-semibold mb-2">BÝČÍ SCÉNÁŘ</div>
+            <div className="bg-green-900/10 border border-positive/20 rounded-lg p-3">
+              <div className="text-xs text-positive font-semibold mb-2">BÝČÍ SCÉNÁŘ</div>
               <div className="text-sm text-gray-300">{score.bull_case}</div>
             </div>
           )}
           {score.bear_case && (
-            <div className="bg-red-900/10 border border-red-500/20 rounded-lg p-3">
-              <div className="text-xs text-red-400 font-semibold mb-2">MEDVĚDÍ SCÉNÁŘ</div>
+            <div className="bg-red-900/10 border border-negative/20 rounded-lg p-3">
+              <div className="text-xs text-negative font-semibold mb-2">MEDVĚDÍ SCÉNÁŘ</div>
               <div className="text-sm text-gray-300">{score.bear_case}</div>
             </div>
           )}
@@ -202,11 +202,11 @@ const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => 
       {/* Catalysts */}
       {score.catalysts && score.catalysts.length > 0 && (
         <div className="bg-black/30 rounded-lg p-4">
-          <div className="text-xs text-green-400 font-semibold mb-2">KATALYZÁTORY</div>
+          <div className="text-xs text-positive font-semibold mb-2">KATALYZÁTORY</div>
           <ul className="space-y-1">
             {score.catalysts.map((catalyst, idx) => (
               <li key={idx} className="text-sm text-gray-300 flex items-start gap-2">
-                <span className="text-green-400">•</span>
+                <span className="text-positive">•</span>
                 <span>{catalyst}</span>
               </li>
             ))}
@@ -216,12 +216,12 @@ const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => 
 
       {/* Risk Factors */}
       {score.risk_factors.length > 0 && (
-        <div className="bg-red-900/10 border border-red-500/20 rounded-lg p-4">
-          <div className="text-xs text-red-400 font-semibold mb-2">RIZIKOVÉ FAKTORY</div>
+        <div className="bg-red-900/10 border border-negative/20 rounded-lg p-4">
+          <div className="text-xs text-negative font-semibold mb-2">RIZIKOVÉ FAKTORY</div>
           <ul className="space-y-1">
             {score.risk_factors.map((risk, idx) => (
               <li key={idx} className="text-sm text-gray-300 flex items-start gap-2">
-                <span className="text-red-400">•</span>
+                <span className="text-negative">•</span>
                 <span>{risk}</span>
               </li>
             ))}
@@ -244,7 +244,7 @@ const GomesScoreCard: React.FC<GomesScoreCardProps> = ({ score, onAnalyze }) => 
       {onAnalyze && (
         <button
           onClick={() => onAnalyze(score.ticker)}
-          className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+          className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-text-primary rounded-lg font-semibold transition-colors"
         >
           Obnovit analýzu
         </button>
@@ -261,13 +261,13 @@ const ScoreItem: React.FC<{ label: string; value: number; max: number; negative?
   negative
 }) => {
   const percentage = max > 0 ? (value / max) * 100 : 0;
-  const color = negative ? 'bg-red-500' : value === max ? 'bg-green-500' : value > 0 ? 'bg-yellow-500' : 'bg-gray-600';
+  const color = negative ? 'bg-negative' : value === max ? 'bg-positive' : value > 0 ? 'bg-warning' : 'bg-gray-600';
 
   return (
     <div className="bg-black/30 rounded p-2">
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs text-gray-400">{label}</span>
-        <span className={`text-sm font-bold ${negative ? 'text-red-400' : 'text-white'}`}>
+        <span className={`text-sm font-bold ${negative ? 'text-negative' : 'text-text-primary'}`}>
           {value}/{max}
         </span>
       </div>
@@ -281,4 +281,6 @@ const ScoreItem: React.FC<{ label: string; value: number; max: number; negative?
   );
 };
 
-export default GomesScoreCard;
+export default ConvictionScoreCard;
+
+

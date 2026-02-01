@@ -54,22 +54,22 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
   const getSeverityStyle = (severity: string) => {
     switch (severity) {
       case 'CRITICAL': return {
-        border: 'border-red-500/50',
-        bg: 'bg-red-500/10',
-        icon: 'text-red-400',
-        badge: 'bg-red-500/20 text-red-400'
+        border: 'border-negative/50',
+        bg: 'bg-negative/10',
+        icon: 'text-negative',
+        badge: 'bg-negative/20 text-negative'
       };
       case 'WARNING': return {
         border: 'border-amber-500/50',
-        bg: 'bg-amber-500/10',
-        icon: 'text-amber-400',
-        badge: 'bg-amber-500/20 text-amber-400'
+        bg: 'bg-warning/10',
+        icon: 'text-warning',
+        badge: 'bg-warning/20 text-warning'
       };
       default: return {
         border: 'border-blue-500/50',
         bg: 'bg-blue-500/10',
-        icon: 'text-blue-400',
-        badge: 'bg-blue-500/20 text-blue-400'
+        icon: 'text-accent',
+        badge: 'bg-blue-500/20 text-accent'
       };
     }
   };
@@ -97,11 +97,11 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
 
   if (loading) {
     return (
-      <div className="bg-slate-800/50 rounded-lg p-4 animate-pulse">
-        <div className="h-6 bg-slate-700 rounded w-1/3 mb-4" />
+      <div className="bg-surface-raised/50 rounded-lg p-4 animate-pulse">
+        <div className="h-6 bg-surface-hover rounded w-1/3 mb-4" />
         <div className="space-y-2">
-          <div className="h-16 bg-slate-700 rounded" />
-          <div className="h-16 bg-slate-700 rounded" />
+          <div className="h-16 bg-surface-hover rounded" />
+          <div className="h-16 bg-surface-hover rounded" />
         </div>
       </div>
     );
@@ -113,23 +113,23 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="p-2 bg-amber-500/20 rounded-lg">
-              <Bell className="w-5 h-5 text-amber-400" />
+            <div className="p-2 bg-warning/20 rounded-lg">
+              <Bell className="w-5 h-5 text-warning" />
             </div>
             {unacknowledgedCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full 
-                               text-xs font-bold text-white flex items-center justify-center animate-pulse">
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-negative rounded-full 
+                               text-xs font-bold text-text-primary flex items-center justify-center animate-pulse">
                 {unacknowledgedCount}
               </span>
             )}
           </div>
           <div>
-            <h3 className="text-lg font-bold text-white">Thesis Drift Alerty</h3>
-            <p className="text-xs text-slate-400">Když cena a fundament jdou proti sobě</p>
+            <h3 className="text-lg font-bold text-text-primary">Thesis Drift Alerty</h3>
+            <p className="text-xs text-text-secondary">Když cena a fundament jdou proti sobě</p>
           </div>
         </div>
         {onClose && (
-          <button onClick={onClose} className="text-slate-400 hover:text-white">
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
             <X className="w-5 h-5" />
           </button>
         )}
@@ -151,43 +151,43 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
                     <div>
                       {/* Ticker & Type */}
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-white text-lg">{alert.ticker}</span>
+                        <span className="font-bold text-text-primary text-lg">{alert.ticker}</span>
                         <span className={`text-xs px-2 py-0.5 rounded ${style.badge}`}>
                           {alert.severity}
                         </span>
                       </div>
                       
                       {/* Alert Type */}
-                      <div className="text-sm font-semibold text-white mb-1">
+                      <div className="text-sm font-semibold text-text-primary mb-1">
                         {getAlertTypeLabel(alert.alert_type)}
                       </div>
                       
                       {/* Message */}
-                      <p className="text-sm text-slate-300">{alert.message}</p>
+                      <p className="text-sm text-text-secondary">{alert.message}</p>
                       
                       {/* Score Change & Price */}
                       <div className="flex items-center gap-4 mt-2 text-xs">
                         {alert.old_score !== null && alert.new_score !== null && (
                           <div className="flex items-center gap-1">
-                            <span className="text-slate-400">Skóre:</span>
-                            <span className={alert.new_score < alert.old_score ? 'text-red-400' : 'text-green-400'}>
+                            <span className="text-text-secondary">Skóre:</span>
+                            <span className={alert.new_score < alert.old_score ? 'text-negative' : 'text-positive'}>
                               {alert.old_score} → {alert.new_score}
                             </span>
                             {alert.new_score < alert.old_score ? 
-                              <TrendingDown className="w-3 h-3 text-red-400" /> :
-                              <TrendingUp className="w-3 h-3 text-green-400" />
+                              <TrendingDown className="w-3 h-3 text-negative" /> :
+                              <TrendingUp className="w-3 h-3 text-positive" />
                             }
                           </div>
                         )}
                         {alert.price_change_pct !== null && (
                           <div className="flex items-center gap-1">
-                            <span className="text-slate-400">Cena:</span>
-                            <span className={alert.price_change_pct > 0 ? 'text-green-400' : 'text-red-400'}>
+                            <span className="text-text-secondary">Cena:</span>
+                            <span className={alert.price_change_pct > 0 ? 'text-positive' : 'text-negative'}>
                               {alert.price_change_pct > 0 ? '+' : ''}{alert.price_change_pct.toFixed(1)}%
                             </span>
                           </div>
                         )}
-                        <span className="text-slate-500">{formatTimeAgo(alert.created_at)}</span>
+                        <span className="text-text-muted">{formatTimeAgo(alert.created_at)}</span>
                       </div>
                     </div>
                   </div>
@@ -195,10 +195,10 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
                   {/* Acknowledge Button */}
                   <button
                     onClick={() => acknowledgeAlert(alert.id)}
-                    className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors group"
+                    className="p-2 hover:bg-surface-hover/50 rounded-lg transition-colors group"
                     title="Potvrdit alert"
                   >
-                    <Check className="w-4 h-4 text-slate-400 group-hover:text-green-400" />
+                    <Check className="w-4 h-4 text-text-secondary group-hover:text-positive" />
                   </button>
                 </div>
               </div>
@@ -208,8 +208,8 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
       ) : (
         <div className="text-center py-8">
           <Bell className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-          <p className="text-slate-400">Žádné aktivní alerty</p>
-          <p className="text-xs text-slate-500 mt-1">Vše je v pořádku</p>
+          <p className="text-text-secondary">Žádné aktivní alerty</p>
+          <p className="text-xs text-text-muted mt-1">Vše je v pořádku</p>
         </div>
       )}
     </div>
@@ -217,3 +217,5 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
 };
 
 export default DriftAlertsWidget;
+
+

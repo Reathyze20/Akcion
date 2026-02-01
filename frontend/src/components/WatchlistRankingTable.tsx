@@ -1,7 +1,7 @@
 /**
  * WatchlistRankingTable Component
  * 
- * Full table view of watchlist ranked by Gomes scores.
+ * Full table view of watchlist ranked by Conviction Scores.
  * Includes filtering and detailed information.
  */
 
@@ -18,13 +18,13 @@ interface WatchlistRankingTableProps {
 const getRatingColor = (rating: GomesRating) => {
   switch (rating) {
     case 'STRONG_BUY':
-      return 'text-green-400 bg-green-900/30';
+      return 'text-positive bg-green-900/30';
     case 'BUY':
-      return 'text-green-500 bg-green-900/20';
+      return 'text-positive bg-green-900/20';
     case 'HOLD':
-      return 'text-yellow-500 bg-yellow-900/20';
+      return 'text-warning bg-yellow-900/20';
     case 'HIGH_RISK':
-      return 'text-red-400 bg-red-900/30';
+      return 'text-negative bg-red-900/30';
     default:
       return 'text-gray-400 bg-gray-900/30';
   }
@@ -68,7 +68,7 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
   if (loading) {
     return (
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
-        <h3 className="text-xl font-bold text-white mb-4">Žebříček sledování</h3>
+        <h3 className="text-xl font-bold text-text-primary mb-4">Žebříček sledování</h3>
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin h-8 w-8 border-3 border-blue-500 border-t-transparent rounded-full" />
           <span className="ml-3 text-gray-400">Skenování sledovaných...</span>
@@ -79,12 +79,12 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
 
   if (error) {
     return (
-      <div className="bg-gray-900 rounded-lg p-6 border border-red-500/30">
-        <h3 className="text-xl font-bold text-white mb-4">Žebříček sledování</h3>
-        <div className="text-red-400 mb-4">{error}</div>
+      <div className="bg-gray-900 rounded-lg p-6 border border-negative/30">
+        <h3 className="text-xl font-bold text-text-primary mb-4">Žebříček sledování</h3>
+        <div className="text-negative mb-4">{error}</div>
         <button
           onClick={() => scanWatchlist(false)}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-text-primary rounded transition-colors"
         >
           Zkusit znovu
         </button>
@@ -97,7 +97,7 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+          <h3 className="text-xl font-bold text-text-primary flex items-center gap-2">
             Žebříček sledování
             {scanning && <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />}
           </h3>
@@ -113,7 +113,7 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
             <select
               value={filterScore}
               onChange={(e) => setFilterScore(Number(e.target.value))}
-              className="bg-gray-800 text-white border border-gray-600 rounded px-3 py-1.5 text-sm"
+              className="bg-gray-800 text-text-primary border border-gray-600 rounded px-3 py-1.5 text-sm"
             >
               <option value="0">Vše (0+)</option>
               <option value="5">5+</option>
@@ -126,14 +126,14 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
           <button
             onClick={() => scanWatchlist(false)}
             disabled={scanning}
-            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded transition-colors disabled:opacity-50 text-sm"
+            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-text-primary rounded transition-colors disabled:opacity-50 text-sm"
           >
             Obnovit
           </button>
           <button
             onClick={() => scanWatchlist(true)}
             disabled={scanning}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 text-sm flex items-center gap-2"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-text-primary rounded transition-colors disabled:opacity-50 text-sm flex items-center gap-2"
           >
             {scanning ? (
               <>
@@ -194,7 +194,7 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
 
                     {/* Ticker */}
                     <td className="py-4 px-4">
-                      <span className="font-bold text-white text-lg">
+                      <span className="font-bold text-text-primary text-lg">
                         {item.ticker}
                       </span>
                     </td>
@@ -202,7 +202,7 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
                     {/* Score */}
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
-                        <span className="text-2xl font-bold text-green-400">
+                        <span className="text-2xl font-bold text-positive">
                           {item.score}
                         </span>
                         <span className="text-gray-500">/10</span>
@@ -262,3 +262,5 @@ const WatchlistRankingTable: React.FC<WatchlistRankingTableProps> = ({
 };
 
 export default WatchlistRankingTable;
+
+

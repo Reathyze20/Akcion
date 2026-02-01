@@ -96,7 +96,7 @@ Generate a JSON object. Fields not found in text should be "UNCHANGED" or "NOT_F
   }},
   
   "score_impact_recommendation": {{
-    "gomes_score": NUMBER (1-10, apply penalties based on source type and missing data),
+    "conviction_score": NUMBER (1-10, apply penalties based on source type and missing data),
     "direction": "[Upgrade | Maintain | Downgrade | Critical_Review]",
     "reasoning": "Explain why score changed (reference source type and specific findings)",
     "suggested_adjustment": NUMBER (e.g., -1, +2, 0),
@@ -148,7 +148,7 @@ Output:
   "meta_info": {{"detected_source_type": "OFFICIAL_FILING", "confidence_level": "High", "source_reliability": "100%"}},
   "inflection_updates": {{"thesis_sentiment_shift": "Positive", "potential_catalyst": "Q1 2026 Production Target"}},
   "financial_updates": {{"cash_runway_months": 18, "cash_runway_status": "Safe"}},
-  "score_impact_recommendation": {{"gomes_score": 8, "direction": "Upgrade", "reasoning": "Strong cash position + confirmed catalyst"}},
+  "score_impact_recommendation": {{"conviction_score": 8, "direction": "Upgrade", "reasoning": "Strong cash position + confirmed catalyst"}},
   "recommendation": "ACCUMULATE"
 }}
 
@@ -169,7 +169,7 @@ Output:
   }},
   "financial_updates": {{"cash_runway_status": "UNCHANGED", "revenue_guidance": "DELAYED TO 2026 (Unconfirmed)"}},
   "score_impact_recommendation": {{
-    "gomes_score": 6,
+    "conviction_score": 6,
     "direction": "Downgrade",
     "reasoning": "Management credibility questioned by lead investors. Timeline delay implies 'Dead Money' risk. Chat source = low reliability but sentiment shift is significant.",
     "suggested_adjustment": -1,
@@ -186,7 +186,7 @@ Output:
   "inflection_updates": {{"thesis_sentiment_shift": "Neutral", "key_takeaways_bullets": ["Marketing campaign announced", "No concrete metrics provided"]}},
   "financial_updates": {{"cash_runway_status": "UNKNOWN - DATA GAP", "revenue_guidance": "UNCHANGED"}},
   "score_impact_recommendation": {{
-    "gomes_score": 5,
+    "conviction_score": 5,
     "direction": "Downgrade",
     "reasoning": "Official press release but MISSING FINANCIALS. No cash update is RED FLAG. Vague 'exciting growth' without numbers.",
     "suggested_adjustment": -2,

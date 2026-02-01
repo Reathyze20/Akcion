@@ -238,7 +238,7 @@ class NotificationService:
             
             <p><strong>Thesis Status:</strong> {decision.thesis_status.value}</p>
             
-            {"<p><strong>Gomes Score:</strong> " + str(decision.gomes_score) + "/10</p>" if decision.gomes_score else ""}
+            {"<p><strong>Conviction Score:</strong> " + str(decision.conviction_score) + "/10</p>" if decision.conviction_score else ""}
             
             {edge_html}
             {catalysts_html}
@@ -297,7 +297,7 @@ class NotificationService:
                 <p style="margin: 5px 0;"><strong>Thesis:</strong> {decision.thesis_status.value}</p>
             </div>
             
-            {"<p><strong>Gomes Score:</strong> " + str(decision.gomes_score) + "/10</p>" if decision.gomes_score else ""}
+            {"<p><strong>Conviction Score:</strong> " + str(decision.conviction_score) + "/10</p>" if decision.conviction_score else ""}
             {"<p><strong>Sentiment:</strong> " + decision.gomes_sentiment + "</p>" if decision.gomes_sentiment else ""}
             
             <div style="background: #ecfdf5; padding: 15px; border-radius: 8px; margin: 15px 0;">
@@ -477,7 +477,7 @@ class NotificationService:
             rows = "".join([
                 f"<tr><td style='padding: 5px; border-bottom: 1px solid #e5e7eb;'>{d.ticker}</td>"
                 f"<td style='padding: 5px; border-bottom: 1px solid #e5e7eb;'>${d.current_price:.2f}</td>"
-                f"<td style='padding: 5px; border-bottom: 1px solid #e5e7eb;'>{d.gomes_score or '-'}/10</td></tr>"
+                f"<td style='padding: 5px; border-bottom: 1px solid #e5e7eb;'>{d.conviction_score or '-'}/10</td></tr>"
                 for d in items
             ])
             return f"<table style='width: 100%; border-collapse: collapse;'><tr style='background: {color}20;'><th style='text-align: left; padding: 5px;'>Ticker</th><th style='text-align: left; padding: 5px;'>Price</th><th style='text-align: left; padding: 5px;'>Score</th></tr>{rows}</table>"

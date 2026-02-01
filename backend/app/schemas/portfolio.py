@@ -183,7 +183,7 @@ class EnrichedStockResponse(BaseModel):
     price_target_long: str | None
     stop_loss_risk: str | None
     moat_rating: int | None
-    gomes_score: int | None
+    conviction_score: int | None
     sentiment: str | None
     edge: str | None
     risks: str | None

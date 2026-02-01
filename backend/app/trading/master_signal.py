@@ -5,7 +5,7 @@ Master Signal v2.0 - Simplified 3-Pillar System
 SIMPLIFIED for Micro-Cap investing (The Gomes Way).
 
 OLD (6 components):
-- Gomes Intelligence (30%)
+- Investment Intelligence (30%)
 - ML Predictions (25%)     ❌ REMOVED - Micro-caps are unpredictable
 - Technical (15%)          ❌ SIMPLIFIED to 30 WMA only
 - Sentiment (15%)          ❌ REMOVED - No Bloomberg for micro-caps
@@ -13,7 +13,7 @@ OLD (6 components):
 - Risk/Reward (5%)
 
 NEW (3 pillars):
-- Thesis Tracker (60%)     ✅ Gomes Intelligence + Milestones + Red Flags
+- Thesis Tracker (60%)     ✅ Investment Intelligence + Milestones + Red Flags
 - Valuation & Cash (25%)   ✅ Cash runway, burn rate, dilution risk
 - Weinstein Guard (15%)    ✅ 30-Week Moving Average only
 
@@ -102,7 +102,7 @@ WeightConfigV2.validate()
 @dataclass
 class ThesisTrackerScore:
     """Thesis Tracker component (60% weight)"""
-    gomes_score: float              # 0-100 from Gomes Intelligence
+    conviction_score: float              # 0-100 from Investment Intelligence
     milestones_hit: int             # Count of achieved milestones
     red_flags_count: int            # Count of red flags (dilution, delays, etc.)
     verdict: str                    # Gomes verdict string
@@ -177,7 +177,7 @@ class MasterSignalResultV2:
             "components": {
                 "thesis_tracker": {
                     "score": round(self.components.thesis_tracker.combined_score, 2),
-                    "gomes_score": round(self.components.thesis_tracker.gomes_score, 2),
+                    "conviction_score": round(self.components.thesis_tracker.conviction_score, 2),
                     "milestones_hit": self.components.thesis_tracker.milestones_hit,
                     "red_flags": self.components.thesis_tracker.red_flags_count,
                     "verdict": self.components.thesis_tracker.verdict,
@@ -366,7 +366,7 @@ class MasterSignalAggregatorV2:
         This is the heart of Gomes methodology - AI analysis of transcripts.
         
         Components:
-        - Gomes Intelligence Score (main)
+        - Investment Intelligence Score (main)
         - Milestones achieved (contracts, certifications, revenue)
         - Red flags (dilution, delays, leadership changes)
         """
@@ -381,7 +381,7 @@ class MasterSignalAggregatorV2:
                 InvestmentVerdict.SELL: 25.0,
                 InvestmentVerdict.AVOID: 5.0,
             }
-            gomes_score = verdict_scores.get(verdict.verdict, 50.0)
+            conviction_score = verdict_scores.get(verdict.verdict, 50.0)
             
             # Count milestones from latest analysis
             # TODO: Implement milestone tracking from transcripts
@@ -394,13 +394,13 @@ class MasterSignalAggregatorV2:
                 red_flags_count += 1
             
             # Apply penalties/bonuses
-            combined_score = gomes_score
+            combined_score = conviction_score
             combined_score += milestones_hit * 5  # +5 per milestone
             combined_score -= red_flags_count * 15  # -15 per red flag
             combined_score = max(0, min(100, combined_score))
             
             return ThesisTrackerScore(
-                gomes_score=gomes_score,
+                conviction_score=conviction_score,
                 milestones_hit=milestones_hit,
                 red_flags_count=red_flags_count,
                 verdict=verdict.verdict.value,
@@ -410,7 +410,7 @@ class MasterSignalAggregatorV2:
         except Exception as e:
             logger.warning(f"Thesis Tracker error for {ticker}: {e}")
             return ThesisTrackerScore(
-                gomes_score=50.0,
+                conviction_score=50.0,
                 milestones_hit=0,
                 red_flags_count=0,
                 verdict="UNKNOWN",

@@ -107,7 +107,11 @@ def _create_engine(connection_url: str) -> Engine:
 def _create_tables() -> None:
     """Create all tables if they don't exist."""
     if _engine is not None:
-        Base.metadata.create_all(_engine)
+        try:
+            Base.metadata.create_all(_engine, checkfirst=True)
+        except Exception as e:
+            # Ignore errors for existing objects (indexes, constraints, etc.)
+            logger.warning(f"Table creation warning (probably already exists): {e}")
 
 
 def _reset_globals() -> None:

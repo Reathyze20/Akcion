@@ -9,7 +9,7 @@ Key Principles:
 1. Max allocation is dynamically calculated based on risk
 2. Action signals are deterministic (no AI interpretation)
 3. Cash runway is the primary survival metric
-4. Gomes Score is AI-generated but rules are code-enforced
+4. Conviction Score is AI-generated but rules are code-enforced
 
 Author: GitHub Copilot with Claude Sonnet 4.5
 Date: 2026-01-25
@@ -70,7 +70,7 @@ class StockMetrics(BaseModel):
     asset_class: AssetClass
     
     # Quality Score (AI-generated)
-    gomes_score: Optional[int] = None  # 0-10
+    conviction_score: Optional[int] = None  # 0-10
     
     # Financial Fortress
     cash_runway_months: Optional[int] = None
@@ -119,7 +119,7 @@ class GomesLogicEngine:
     @staticmethod
     def calculate_max_allocation(
         asset_class: AssetClass,
-        gomes_score: Optional[int],
+        conviction_score: Optional[int],
         cash_runway_months: Optional[int],
         inflection_status: Optional[InflectionStatus]
     ) -> float:
@@ -150,7 +150,7 @@ class GomesLogicEngine:
         safety_multiplier = 1.0
         
         # Quality penalty
-        if gomes_score is not None and gomes_score < 7:
+        if conviction_score is not None and conviction_score < 7:
             safety_multiplier *= 0.5  # Cut allocation in half for low quality
         
         # Survival penalty (CRITICAL)
@@ -176,7 +176,7 @@ class GomesLogicEngine:
         current_price: float,
         price_target_24m: Optional[float],
         price_floor: Optional[float],
-        gomes_score: Optional[int],
+        conviction_score: Optional[int],
         cash_runway_months: Optional[int],
         inflection_status: Optional[InflectionStatus],
         current_weight_pct: float,
@@ -192,7 +192,7 @@ class GomesLogicEngine:
         """
         
         # Rule 1: HARD EXIT - Thesis Broken
-        if gomes_score is not None and gomes_score < 4:
+        if conviction_score is not None and conviction_score < 4:
             return ActionSignal.HARD_EXIT, "Thesis Broken (Score < 4/10)"
         
         # Rule 2: SELL - Insolvency Risk
@@ -214,13 +214,13 @@ class GomesLogicEngine:
             return ActionSignal.SELL, "Bubble Territory (>150% of target)"
         
         # Rule 6: SNIPER - Perfect Setup
-        if (gomes_score is not None and gomes_score >= 9 and
+        if (conviction_score is not None and conviction_score >= 9 and
             cash_runway_months is not None and cash_runway_months >= 18 and
             price_floor is not None and current_price <= price_floor * 1.2):
             return ActionSignal.SNIPER, "Perfect Setup: High quality + Safe + Cheap"
         
         # Rule 7: ACCUMULATE - Quality at Discount
-        if (gomes_score is not None and gomes_score >= 7 and
+        if (conviction_score is not None and conviction_score >= 7 and
             price_target_24m is not None and current_price < price_target_24m * 0.7):
             return ActionSignal.ACCUMULATE, "Quality at Discount (>30% upside)"
         
@@ -229,7 +229,7 @@ class GomesLogicEngine:
     
     @staticmethod
     def generate_warnings(
-        gomes_score: Optional[int],
+        conviction_score: Optional[int],
         cash_runway_months: Optional[int],
         insider_ownership_pct: Optional[float],
         current_weight_pct: float,
@@ -240,10 +240,10 @@ class GomesLogicEngine:
         warnings = []
         
         # Quality warnings
-        if gomes_score is not None:
-            if gomes_score < 5:
+        if conviction_score is not None:
+            if conviction_score < 5:
                 warnings.append("⚠️ Low Quality Score - High Risk")
-            elif gomes_score < 7:
+            elif conviction_score < 7:
                 warnings.append("⚠️ Below Target Quality (< 7/10)")
         
         # Survival warnings
@@ -274,7 +274,7 @@ class GomesLogicEngine:
         # Step 1: Calculate max safe allocation
         max_allocation_cap = cls.calculate_max_allocation(
             asset_class=metrics.asset_class,
-            gomes_score=metrics.gomes_score,
+            conviction_score=metrics.conviction_score,
             cash_runway_months=metrics.cash_runway_months,
             inflection_status=metrics.inflection_status
         )
@@ -284,7 +284,7 @@ class GomesLogicEngine:
             current_price=metrics.current_price,
             price_target_24m=metrics.price_target_24m,
             price_floor=metrics.price_floor,
-            gomes_score=metrics.gomes_score,
+            conviction_score=metrics.conviction_score,
             cash_runway_months=metrics.cash_runway_months,
             inflection_status=metrics.inflection_status,
             current_weight_pct=metrics.current_weight_pct,
@@ -293,7 +293,7 @@ class GomesLogicEngine:
         
         # Step 3: Generate warnings
         warnings = cls.generate_warnings(
-            gomes_score=metrics.gomes_score,
+            conviction_score=metrics.conviction_score,
             cash_runway_months=metrics.cash_runway_months,
             insider_ownership_pct=metrics.insider_ownership_pct,
             current_weight_pct=metrics.current_weight_pct,
@@ -373,7 +373,7 @@ if __name__ == "__main__":
     kuya_metrics = StockMetrics(
         ticker="KUYA.V",
         asset_class=AssetClass.HIGH_BETA_ROCKET,
-        gomes_score=9,
+        conviction_score=9,
         cash_runway_months=24,
         insider_ownership_pct=15.0,
         inflection_status=InflectionStatus.ACTIVE_GOLD_MINE,

@@ -1,7 +1,7 @@
 /**
- * Stock Detail Modal - Gomes Edition
+ * Stock Detail Modal - Enterprise Edition
  * ==================================
- * Redesigned according to Mark Gomes investing philosophy:
+ * Redesigned according to Investment Committee investment methodology:
  * - Focus on CATALYSTS (future), not P/L (past)  
  * - Cash runway & survival metrics
  * - 4 tactical panels for decision-making
@@ -16,7 +16,7 @@ import {
   Zap, DollarSign, Target, Calendar,
   Clock, Rocket, ArrowUpCircle, ArrowDownCircle, Scale,
   Banknote, Briefcase, Globe, BookOpen, CalendarClock, 
-  Scissors, ShieldCheck, Info, FileText, Plus
+  Scissors, ShieldCheck, Info, FileText, Plus, HelpCircle
 } from 'lucide-react';
 import type { Stock } from '../types';
 
@@ -32,7 +32,7 @@ interface EnrichedPosition {
   unrealized_pl: number;
   unrealized_pl_percent: number;
   stock?: Stock;
-  gomes_score: number | null;
+  conviction_score: number | null;
   trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   is_deteriorated: boolean;
   target_weight_pct: number;
@@ -54,7 +54,7 @@ interface EnrichedPosition {
   unrealized_pl: number;
   unrealized_pl_percent: number;
   stock?: Stock;
-  gomes_score: number | null;
+  conviction_score: number | null;
   trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   is_deteriorated: boolean;
   target_weight_pct: number;
@@ -71,7 +71,7 @@ interface Props {
   onUpdate?: () => void;
 }
 
-const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
+const AssetDetailModal: React.FC<Props> = ({ position, onClose }) => {
   const stock = position.stock;
   const currentPrice = stock?.current_price ?? position.current_price ?? 0;
   
@@ -84,16 +84,19 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
   const [sourceType, setSourceType] = useState<'youtube' | 'transcript' | 'manual'>('youtube');
   const [inputText, setInputText] = useState<string>('');
-  const [investorName, setInvestorName] = useState<string>('Mark Gomes');
+  const [investorName, setInvestorName] = useState<string>('Investment Committee');
   const [analysisDate, setAnalysisDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   
   // State for Edit Mode
   const [showEditModal, setShowEditModal] = useState(false);
+  
+  // State for Legend Popup
+  const [showLegend, setShowLegend] = useState(false);
   const [editedData, setEditedData] = useState({
     next_catalyst: stock?.next_catalyst ?? '',
     thesis_narrative: stock?.thesis_narrative ?? '',
-    gomes_score: stock?.gomes_score ?? 5,
+    conviction_score: stock?.conviction_score ?? 5,
     inflection_status: stock?.inflection_status ?? 'WAIT_TIME',
     price_floor: stock?.price_floor ?? 0,
     price_base: stock?.price_base ?? 0,
@@ -178,7 +181,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
     setEditedData({
       next_catalyst: stock?.next_catalyst ?? '',
       thesis_narrative: stock?.thesis_narrative ?? '',
-      gomes_score: stock?.gomes_score ?? 5,
+      conviction_score: stock?.conviction_score ?? 5,
       inflection_status: stock?.inflection_status ?? 'WAIT_TIME',
       price_floor: stock?.price_floor ?? 0,
       price_base: stock?.price_base ?? 0,
@@ -191,20 +194,20 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
   
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-2">
-      <div className="bg-slate-950 border border-slate-700 rounded-xl w-full max-w-7xl h-[95vh] flex flex-col overflow-hidden">
+      <div className="bg-surface-base border border-border rounded-xl w-full max-w-7xl h-[95vh] flex flex-col overflow-hidden">
         
         {/* ======================================================================
             ROW 1: ULTRA-DENSE HEADER (Bloomberg Style)
             ====================================================================== */}
-        <div className="bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-between">
+        <div className="bg-surface-overlay border-b border-border px-4 py-2 flex items-center justify-between">
           {/* LEFT: Ticker + Price + Change */}
           <div className="flex items-center gap-4">
-            <h2 className="text-3xl font-black text-white tracking-tight">{position.ticker}</h2>
-            <div className="text-sm text-slate-400">{stock?.company_name || position.company_name || 'Unknown'}</div>
-            <div className="h-8 w-px bg-slate-600" />
+            <h2 className="text-3xl font-black text-text-primary tracking-tight">{position.ticker}</h2>
+            <div className="text-sm text-text-secondary">{stock?.company_name || position.company_name || 'Unknown'}</div>
+            <div className="h-8 w-px bg-border" />
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-mono font-bold text-white">${currentPrice.toFixed(2)}</span>
-              <span className={`text-sm font-mono ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <span className="text-2xl font-mono font-bold text-text-primary">${currentPrice.toFixed(2)}</span>
+              <span className={`text-sm font-mono ${position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'}`}>
                 {position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(1)}%
               </span>
             </div>
@@ -214,43 +217,48 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
           <div className="flex items-center gap-2">
             {/* Cash Runway Badge */}
             <div className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1.5 
-              bg-${runwayStatus.color}-500/20 border border-${runwayStatus.color}-500/50 text-${runwayStatus.color}-400`}>
+              ${runwayStatus.severity === 'danger' ? 'bg-negative-bg border border-negative-border text-negative' :
+                runwayStatus.severity === 'warning' ? 'bg-warning-bg border border-warning-border text-warning' :
+                runwayStatus.severity === 'safe' ? 'bg-positive-bg border border-positive-border text-positive' :
+                'bg-surface-hover border border-border text-text-secondary'}`}>
               <Banknote className="w-3 h-3" />
               Cash {cashRunwayMonths !== null ? `${cashRunwayMonths}m` : '?'} {runwayStatus.label}
             </div>
             
             {/* Insider Activity Badge */}
             <div className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1.5
-              bg-${insiderColor}-500/20 border border-${insiderColor}-500/50 text-${insiderColor}-400`}>
+              ${insiderActivity === 'BUYING' ? 'bg-positive-bg border border-positive-border text-positive' :
+                insiderActivity === 'SELLING' ? 'bg-negative-bg border border-negative-border text-negative' :
+                'bg-surface-hover border border-border text-text-secondary'}`}>
               <Briefcase className="w-3 h-3" />
               {insiderActivity}
             </div>
             
             {/* Market Cap Badge */}
             {stock?.market_cap && (
-              <div className="px-2 py-1 rounded text-xs font-bold flex items-center gap-1.5 bg-slate-700/50 border border-slate-600 text-slate-300">
+              <div className="px-2 py-1 rounded text-xs font-bold flex items-center gap-1.5 bg-surface-hover border border-border text-text-secondary">
                 <Globe className="w-3 h-3" />
                 ${(stock.market_cap / 1_000_000).toFixed(0)}M
               </div>
             )}
             
-            <div className="h-8 w-px bg-slate-600 mx-1" />
+            <div className="h-8 w-px bg-border mx-1" />
             
-            {/* Gomes Score */}
+            {/* Conviction Score */}
             <div className={`px-3 py-1 rounded-lg flex items-center gap-2 font-black text-lg border-2
-              ${position.gomes_score && position.gomes_score >= 7 
-                ? 'bg-green-500/30 text-green-400 border-green-500' :
-                position.gomes_score && position.gomes_score >= 5 
-                ? 'bg-yellow-500/30 text-yellow-400 border-yellow-500' :
-                'bg-red-500/30 text-red-400 border-red-500'}`}>
+              ${position.conviction_score && position.conviction_score >= 7 
+                ? 'bg-positive-bg text-positive border-positive' :
+                position.conviction_score && position.conviction_score >= 5 
+                ? 'bg-warning-bg text-warning border-warning' :
+                'bg-negative-bg text-negative border-negative'}`}>
               <Target className="w-4 h-4" />
-              {position.gomes_score ?? '?'}/10
+              {position.conviction_score ?? '?'}/10
             </div>
             
             {/* Add Analysis Button */}
             <button
               onClick={() => setShowTranscriptModal(true)}
-              className="px-3 py-2 bg-indigo-500 hover:bg-indigo-600 border border-indigo-400 rounded-lg text-sm text-white font-bold transition-colors flex items-center gap-2"
+              className="px-3 py-2 bg-surface-active hover:bg-surface-hover border border-border rounded-lg text-sm text-text-primary font-bold transition-colors flex items-center gap-2"
               title="Přidat analýzu z transkriptů"
             >
               <Plus className="w-4 h-4" />
@@ -261,7 +269,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             {!showEditModal ? (
               <button
                 onClick={() => setShowEditModal(true)}
-                className="px-3 py-2 bg-purple-500 hover:bg-purple-600 border border-purple-400 rounded-lg text-sm text-white font-bold transition-colors flex items-center gap-2"
+                className="px-3 py-2 bg-surface-active hover:bg-surface-hover border border-border rounded-lg text-sm text-text-primary font-bold transition-colors flex items-center gap-2"
                 title="Ručně upravit údaje"
               >
                 <FileText className="w-4 h-4" />
@@ -270,8 +278,8 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             ) : null}
             
             {/* Close Button */}
-            <button onClick={onClose} className="ml-2 p-1.5 hover:bg-slate-700 rounded transition-colors">
-              <X className="w-5 h-5 text-slate-400" />
+            <button onClick={onClose} className="ml-2 p-1.5 hover:bg-surface-hover rounded transition-colors">
+              <X className="w-5 h-5 text-text-muted" />
             </button>
           </div>
         </div>
@@ -280,27 +288,29 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             ROW 2: NARRATIVE & POSITION (2-Column Grid: 2/3 + 1/3)
             Height: ~35% of viewport
             ====================================================================== */}
-        <div className="grid grid-cols-3 gap-3 p-3 h-[35vh] border-b border-slate-800">
+        <div className="grid grid-cols-3 gap-3 p-3 h-[35vh] border-b border-border">
           {/* LEFT COLUMN: INFLECTION ENGINE (2/3 width) */}
-          <div className="col-span-2 bg-gradient-to-br from-slate-800/80 to-indigo-900/20 rounded-lg p-3 border border-indigo-500/20 flex flex-col">
-            <h3 className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <div className="col-span-2 bg-surface-raised rounded-lg p-3 border border-border flex flex-col">
+            <h3 className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Zap className="w-3 h-3" /> INFLECTION ENGINE
             </h3>
             
             {/* The Thesis (2 lines max) */}
             <div className="mb-3">
-              <div className="text-[10px] text-slate-500 mb-1 flex items-center gap-1">
+              <div className="text-[10px] text-text-muted mb-1 flex items-center gap-1">
                 <BookOpen className="w-3 h-3 opacity-70" />
                 THE SETUP
               </div>
-              <p className="text-xs text-white leading-tight line-clamp-2">{thesisNarrative}</p>
+              <p className="text-xs text-text-primary leading-tight line-clamp-2">{thesisNarrative}</p>
             </div>
             
             {/* Stage */}
             <div className="mb-3">
-              <div className="text-[10px] text-slate-500 mb-1">STAGE</div>
+              <div className="text-[10px] text-text-muted mb-1">STAGE</div>
               <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded border text-[10px]
-                bg-${stage.color}-500/20 border-${stage.color}-500/50 text-${stage.color}-400`}>
+                ${stage.color === 'red' ? 'bg-negative-bg border-negative-border text-negative' :
+                  stage.color === 'yellow' ? 'bg-warning-bg border-warning-border text-warning' :
+                  'bg-positive-bg border-positive-border text-positive'}`}>
                 <stage.icon className="w-3 h-3" />
                 <span className="font-bold">{stage.label}</span>
               </div>
@@ -308,22 +318,22 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             
             {/* Next Catalyst (Highlighted) */}
             <div className="flex-1">
-              <div className="text-[10px] text-slate-500 mb-1.5 flex items-center gap-1">
+              <div className="text-[10px] text-text-muted mb-1.5 flex items-center gap-1">
                 <CalendarClock className="w-3 h-3 opacity-70" />
                 NEXT CATALYST
               </div>
               {position.next_catalyst ? (
-                <div className="bg-indigo-500/20 border border-indigo-500/40 rounded-lg p-2 h-full flex items-center">
+                <div className="bg-surface-hover border border-border rounded-lg p-2 h-full flex items-center">
                   <div className="flex items-start gap-2">
-                    <Calendar className="w-3 h-3 text-indigo-400 mt-0.5 flex-shrink-0" />
-                    <div className="text-xs text-white leading-tight">{position.next_catalyst}</div>
+                    <Calendar className="w-3 h-3 text-text-secondary mt-0.5 flex-shrink-0" />
+                    <div className="text-xs text-text-primary leading-tight">{position.next_catalyst}</div>
                   </div>
                 </div>
               ) : (
-                <div className="bg-red-500/20 border border-red-500/40 rounded-lg p-2 h-full flex items-center justify-center">
+                <div className="bg-warning-bg border border-warning-border rounded-lg p-2 h-full flex items-center justify-center">
                   <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-400" />
-                    <span className="text-xs text-red-300 font-semibold">No catalyst - position questionable</span>
+                    <AlertTriangle className="w-4 h-4 text-warning" />
+                    <span className="text-xs text-warning font-semibold">No catalyst - position questionable</span>
                   </div>
                 </div>
               )}
@@ -331,37 +341,37 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
           </div>
 
           {/* RIGHT COLUMN: POSITION COMMAND (1/3 width) */}
-          <div className="bg-gradient-to-br from-slate-800/80 to-purple-900/20 rounded-lg p-3 border border-purple-500/20 flex flex-col">
-            <h3 className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <div className="bg-surface-raised rounded-lg p-3 border border-border flex flex-col">
+            <h3 className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <DollarSign className="w-3 h-3" /> POSITION COMMAND
             </h3>
             
             {/* Compact Risk Alert (if over-allocated) */}
             {isOverAllocated && (
-              <div className="mb-2 p-2 bg-red-500/20 border border-red-500 rounded flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                <div className="text-[10px] text-red-300 font-bold">RISK: OVER-ALLOCATED</div>
+              <div className="mb-2 p-2 bg-negative-bg border border-negative rounded flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-negative flex-shrink-0" />
+                <div className="text-[10px] text-negative font-bold">RISK: OVER-ALLOCATED</div>
               </div>
             )}
             
             {/* Trend Warning (if bearish) */}
             {position.trend_status === 'BEARISH' && (
-              <div className="mb-2 p-2 bg-red-500/20 border border-red-500 rounded flex items-center gap-2">
-                <TrendingDown className="w-4 h-4 text-red-400 flex-shrink-0" />
-                <div className="text-[10px] text-red-300 font-bold">TREND BROKEN</div>
+              <div className="mb-2 p-2 bg-negative-bg border border-negative rounded flex items-center gap-2">
+                <TrendingDown className="w-4 h-4 text-negative flex-shrink-0" />
+                <div className="text-[10px] text-negative font-bold">TREND BROKEN</div>
               </div>
             )}
             
             {/* Current vs Max Allocation */}
             <div className="mb-3">
-              <div className="text-[10px] text-slate-500 mb-1">ALLOCATION</div>
+              <div className="text-[10px] text-text-muted mb-1">ALLOCATION</div>
               <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-black text-white">{position.weight_in_portfolio.toFixed(1)}%</span>
-                <span className="text-xs text-slate-400">/ {maxAllocationPct}%</span>
+                <span className="text-2xl font-black text-text-primary">{position.weight_in_portfolio.toFixed(1)}%</span>
+                <span className="text-xs text-text-secondary">/ {maxAllocationPct}%</span>
               </div>
-              <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1.5">
+              <div className="h-1.5 bg-surface-active rounded-full overflow-hidden mt-1.5">
                 <div 
-                  className={`h-full ${isOverAllocated ? 'bg-red-500' : 'bg-green-500'}`}
+                  className={`h-full ${isOverAllocated ? 'bg-negative' : 'bg-positive'}`}
                   style={{ width: `${Math.min(100, (position.weight_in_portfolio / maxAllocationPct) * 100)}%` }}
                 />
               </div>
@@ -372,17 +382,17 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               {isOverAllocated ? (
                 <button 
                   onClick={() => setShowTrimModal(true)}
-                  className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-black text-sm rounded-lg border-2 border-red-400 transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-negative hover:bg-negative-muted text-text-primary font-black text-sm rounded-lg border-2 border-negative transition-colors flex items-center justify-center gap-2"
                 >
                   <Scissors className="w-4 h-4" />
                   TRIM POSITION
                 </button>
               ) : position.optimal_size > 0 ? (
-                <button className="w-full py-3 bg-green-500 hover:bg-green-600 text-white font-black text-sm rounded-lg border-2 border-green-400 transition-colors">
+                <button className="w-full py-3 bg-positive hover:bg-positive-muted text-text-primary font-black text-sm rounded-lg border-2 border-positive transition-colors">
                   ACCUMULATE
                 </button>
               ) : (
-                <button className="w-full py-3 bg-slate-600 text-slate-300 font-black text-sm rounded-lg border-2 border-slate-500 cursor-not-allowed flex items-center justify-center gap-2">
+                <button className="w-full py-3 bg-surface-active text-text-secondary font-black text-sm rounded-lg border-2 border-border cursor-not-allowed flex items-center justify-center gap-2">
                   <ShieldCheck className="w-4 h-4" />
                   HOLD
                 </button>
@@ -390,8 +400,8 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               
               {/* Gap Display */}
               <div className="mt-2 text-center">
-                <div className="text-[10px] text-slate-500">OPTIMAL SIZE</div>
-                <div className={`text-lg font-bold font-mono ${position.optimal_size < 0 ? 'text-red-400' : 'text-white'}`}>
+                <div className="text-[10px] text-text-muted">OPTIMAL SIZE</div>
+                <div className={`text-lg font-bold font-mono ${position.optimal_size < 0 ? 'text-negative' : 'text-text-primary'}`}>
                   {position.optimal_size < 0 ? '-' : '+'}{Math.abs(position.optimal_size).toLocaleString('cs-CZ')} Kč
                 </div>
               </div>
@@ -402,23 +412,23 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
         {/* ======================================================================
             LOGICAL ERROR WARNING: High Score but No Catalyst
             ====================================================================== */}
-        {position.gomes_score && position.gomes_score >= 9 && (!position.next_catalyst || position.next_catalyst.toUpperCase().includes('NO CATALYST')) && (
-          <div className="mx-3 mb-3 bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border-2 border-yellow-500/70 rounded-lg p-4 shadow-lg">
+        {position.conviction_score && position.conviction_score >= 9 && (!position.next_catalyst || position.next_catalyst.toUpperCase().includes('NO CATALYST')) && (
+          <div className="mx-3 mb-3 bg-warning-bg border-2 border-warning rounded-lg p-4 shadow-lg">
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 mt-1">
-                <AlertTriangle className="w-6 h-6 text-yellow-300 animate-pulse" />
+                <AlertTriangle className="w-6 h-6 text-warning animate-pulse" />
               </div>
               <div className="flex-1">
-                <div className="text-base text-yellow-200 font-bold mb-2 flex items-center gap-2">
-                  ⚠️ LOGICAL ERROR: High Score ({position.gomes_score}/10) but No Catalyst
+                <div className="text-base text-warning font-bold mb-2 flex items-center gap-2">
+                  ⚠️ LOGICAL ERROR: High Score ({position.conviction_score}/10) but No Catalyst
                 </div>
-                <div className="text-sm text-yellow-100/90 leading-relaxed space-y-1">
+                <div className="text-sm text-text-secondary leading-relaxed space-y-1">
                   <p>
-                    <strong className="text-yellow-200">Problém:</strong> Score není obhajitelné bez konkrétního katalyzátoru. 
+                    <strong className="text-warning">Problém:</strong> Score není obhajitelné bez konkrétního katalyzátoru. 
                     Bez katalyzátoru cena padá dolů (dead money).
                   </p>
                   <p className="mt-2">
-                    <strong className="text-yellow-200">Řešení:</strong> Klikni na <span className="px-2 py-0.5 bg-purple-500/50 rounded text-xs font-bold">UPRAVIT</span> v headeru 
+                    <strong className="text-warning">Řešení:</strong> Klikni na <span className="px-2 py-0.5 bg-surface-hover rounded text-xs font-bold text-text-secondary">UPRAVIT</span> v headeru 
                     a doplň konkrétní catalyst (např. "Q1 2026 High-Grade Silver Sales Report").
                   </p>
                 </div>
@@ -431,46 +441,46 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             ROW 3: THE TRADING DECK (Compact Table Layout)
             Height: ~40% of viewport
             ====================================================================== */}
-        <div className="px-3 pb-3 pt-2 bg-slate-900/50">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+        <div className="px-3 pb-3 pt-2 bg-surface-raised">
+          <h3 className="text-xs font-bold text-warning uppercase tracking-wider mb-2 flex items-center gap-2">
             <Target className="w-4 h-4" /> THE TRADING DECK
           </h3>
           
           <div className="grid grid-cols-3 gap-2">
             {/* BLOCK 1: DOWNSIDE REALITY - Table Format */}
-            <div className="bg-gradient-to-br from-red-900/20 to-slate-800 rounded-lg border border-red-500/30 overflow-hidden">
-              <div className="bg-red-500/10 px-2 py-1.5 border-b border-red-500/30 flex items-center justify-between">
+            <div className="bg-surface-overlay rounded-lg border border-negative-border overflow-hidden">
+              <div className="bg-negative-bg px-2 py-1.5 border-b border-negative-border flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <ArrowDownCircle className="w-3 h-3 text-red-400" />
-                  <span className="text-[10px] font-bold text-red-400 uppercase">DOWNSIDE</span>
+                  <ArrowDownCircle className="w-3 h-3 text-negative" />
+                  <span className="text-[10px] font-bold text-negative uppercase">DOWNSIDE</span>
                 </div>
                 <div className="group relative">
-                  <Info className="w-3 h-3 text-slate-500 cursor-help" />
-                  <div className="absolute right-0 top-full mt-1 w-48 p-2 bg-slate-950 border border-slate-700 rounded text-[9px] text-slate-300 hidden group-hover:block z-10">
+                  <Info className="w-3 h-3 text-text-muted cursor-help" />
+                  <div className="absolute right-0 top-full mt-1 w-48 p-2 bg-surface-base border border-border rounded text-[9px] text-text-secondary hidden group-hover:block z-10">
                     Hodnocení rizika: Likvidační hodnota vs technická podpora
                   </div>
                 </div>
               </div>
               <div className="p-2 space-y-1">
                 <div className="grid grid-cols-2 text-xs">
-                  <span className="text-slate-500">Liquidation Floor</span>
-                  <span className="text-red-400 font-mono font-bold text-right">${priceFloor.toFixed(2)}</span>
+                  <span className="text-text-muted">Liquidation Floor</span>
+                  <span className="text-negative font-mono font-bold text-right">${priceFloor.toFixed(2)}</span>
                 </div>
                 {position.stock?.green_line && (
                   <div className="grid grid-cols-2 text-xs">
-                    <span className="text-slate-500">Tech. Support</span>
-                    <span className="text-green-400 font-mono font-bold text-right">${position.stock.green_line.toFixed(2)}</span>
+                    <span className="text-text-muted">Tech. Support</span>
+                    <span className="text-positive font-mono font-bold text-right">${position.stock.green_line.toFixed(2)}</span>
                   </div>
                 )}
                 {position.stock?.max_buy_price && (
                   <div className="grid grid-cols-2 text-xs">
-                    <span className="text-slate-500">Buy Limit</span>
-                    <span className="text-green-300 font-mono text-right">${position.stock.max_buy_price.toFixed(2)}</span>
+                    <span className="text-text-muted">Buy Limit</span>
+                    <span className="text-positive font-mono text-right">${position.stock.max_buy_price.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="grid grid-cols-2 text-xs pt-1 border-t border-slate-700">
-                  <span className="text-slate-500 font-bold">Risk to Floor</span>
-                  <span className="text-red-400 font-bold text-right">
+                <div className="grid grid-cols-2 text-xs pt-1 border-t border-border">
+                  <span className="text-text-muted font-bold">Risk to Floor</span>
+                  <span className="text-negative font-bold text-right">
                     {position.stock?.risk_to_floor_pct 
                       ? `${position.stock.risk_to_floor_pct.toFixed(0)}%`
                       : `${((priceFloor / currentPrice - 1) * 100).toFixed(0)}%`}
@@ -480,41 +490,42 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             </div>
 
             {/* BLOCK 2: CURRENT PRICE - Compact */}
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg border border-slate-600 overflow-hidden">
-              <div className="bg-slate-700/30 px-2 py-1.5 border-b border-slate-600 flex items-center justify-between">
+            <div className="bg-surface-overlay rounded-lg border border-border overflow-hidden">
+              <div className="bg-surface-hover px-2 py-1.5 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <Scale className="w-3 h-3 text-blue-400" />
-                  <span className="text-[10px] font-bold text-blue-400 uppercase">CURRENT</span>
+                  <Scale className="w-3 h-3 text-text-secondary" />
+                  <span className="text-[10px] font-bold text-text-secondary uppercase">CURRENT</span>
                 </div>
               </div>
               <div className="p-2">
                 <div className="text-center mb-2">
-                  <div className="text-3xl font-black font-mono text-blue-400">${currentPrice.toFixed(2)}</div>
+                  <div className="text-3xl font-black font-mono text-text-secondary">${currentPrice.toFixed(2)}</div>
                 </div>
                 
                 {/* Compact Slider */}
                 <div className="mb-2">
-                  <div className="relative h-3 bg-slate-700 rounded-full mb-1">
-                    <div className="absolute inset-0 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full opacity-40" />
+                  <div className="relative h-3 bg-surface-active rounded-full mb-1">
+                    <div className="absolute inset-0 bg-gradient-to-r from-negative via-warning to-positive rounded-full opacity-40" />
                     <div 
-                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white border-2 border-blue-500 rounded-full shadow-lg"
+                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white border border-border rounded-full shadow-lg"
                       style={{ left: `${pricePosition}%`, transform: 'translate(-50%, -50%)' }}
                     />
                   </div>
                   <div className="grid grid-cols-3 text-[8px]">
-                    <span className="text-red-400 font-bold">Floor</span>
-                    <span className="text-yellow-400 font-bold text-center">Base</span>
-                    <span className="text-green-400 font-bold text-right">Moon</span>
+                    <span className="text-negative font-bold">Floor</span>
+                    <span className="text-warning font-bold text-center">Base</span>
+                    <span className="text-positive font-bold text-right">Moon</span>
                   </div>
                 </div>
                 
                 {/* Signal Badge */}
                 {position.stock?.trading_zone_signal && (
                   <div className="text-center">
-                    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border\n                      ${isOverAllocated ? 'bg-red-500/20 text-red-400 border-red-500' :
-                        position.stock.trading_zone_signal.includes('BUY') ? 'bg-green-500/20 text-green-400 border-green-500' :
-                        position.stock.trading_zone_signal.includes('SELL') ? 'bg-red-500/20 text-red-400 border-red-500' :
-                        'bg-slate-600/20 text-slate-400 border-slate-600'}`}>
+                    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border
+                      ${isOverAllocated ? 'bg-negative-bg text-negative border-negative' :
+                        position.stock.trading_zone_signal.includes('BUY') ? 'bg-positive-bg text-positive border-positive' :
+                        position.stock.trading_zone_signal.includes('SELL') ? 'bg-negative-bg text-negative border-negative' :
+                        'bg-surface-hover text-text-secondary border-border'}`}>
                       {isOverAllocated ? (
                         <>
                           <Scissors className="w-2.5 h-2.5" />
@@ -530,15 +541,15 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
             </div>
 
             {/* BLOCK 3: UPSIDE POTENTIAL - Table Format */}
-            <div className="bg-gradient-to-br from-green-900/20 to-slate-800 rounded-lg border border-green-500/30 overflow-hidden">
-              <div className="bg-green-500/10 px-2 py-1.5 border-b border-green-500/30 flex items-center justify-between">
+            <div className="bg-surface-overlay rounded-lg border border-positive-border overflow-hidden">
+              <div className="bg-positive-bg px-2 py-1.5 border-b border-positive-border flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <ArrowUpCircle className="w-3 h-3 text-green-400" />
-                  <span className="text-[10px] font-bold text-green-400 uppercase">UPSIDE</span>
+                  <ArrowUpCircle className="w-3 h-3 text-positive" />
+                  <span className="text-[10px] font-bold text-positive uppercase">UPSIDE</span>
                 </div>
                 <div className="group relative">
-                  <Info className="w-3 h-3 text-slate-500 cursor-help" />
-                  <div className="absolute right-0 top-full mt-1 w-48 p-2 bg-slate-950 border border-slate-700 rounded text-[9px] text-slate-300 hidden group-hover:block z-10">
+                  <Info className="w-3 h-3 text-text-muted cursor-help" />
+                  <div className="absolute right-0 top-full mt-1 w-48 p-2 bg-surface-base border border-border rounded text-[9px] text-text-secondary hidden group-hover:block z-10">
                     Potenciál růstu: Technický odpor vs fundamentální cíl
                   </div>
                 </div>
@@ -546,26 +557,26 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               <div className="p-2 space-y-1">
                 {position.stock?.red_line && (
                   <div className="grid grid-cols-2 text-xs">
-                    <span className="text-slate-500">Tech. Resistance</span>
-                    <span className="text-red-400 font-mono font-bold text-right">${position.stock.red_line.toFixed(2)}</span>
+                    <span className="text-text-muted">Tech. Resistance</span>
+                    <span className="text-negative font-mono font-bold text-right">${position.stock.red_line.toFixed(2)}</span>
                   </div>
                 )}
                 {position.stock?.start_sell_price && (
                   <div className="grid grid-cols-2 text-xs">
-                    <span className="text-slate-500">Sell Alert</span>
-                    <span className="text-red-300 font-mono text-right">${position.stock.start_sell_price.toFixed(2)}</span>
+                    <span className="text-text-muted">Sell Alert</span>
+                    <span className="text-negative font-mono text-right">${position.stock.start_sell_price.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="grid grid-cols-2 text-xs">
-                  <span className="text-slate-500">Moon Target</span>
-                  <span className="text-green-400 font-mono font-bold text-right">${priceMoon.toFixed(2)}</span>
+                  <span className="text-text-muted">Moon Target</span>
+                  <span className="text-positive font-mono font-bold text-right">${priceMoon.toFixed(2)}</span>
                 </div>
-                <div className="grid grid-cols-2 text-xs pt-1 border-t border-slate-700">
-                  <span className="text-slate-500 font-bold">R/R Ratio</span>
+                <div className="grid grid-cols-2 text-xs pt-1 border-t border-border">
+                  <span className="text-text-muted font-bold">R/R Ratio</span>
                   <span className={`font-bold text-right ${
-                    ((position.stock?.upside_to_ceiling_pct || 0) / Math.abs(position.stock?.risk_to_floor_pct || 1)) >= 3 ? 'text-green-400' :
-                    ((position.stock?.upside_to_ceiling_pct || 0) / Math.abs(position.stock?.risk_to_floor_pct || 1)) >= 2 ? 'text-yellow-400' :
-                    'text-red-400'
+                    ((position.stock?.upside_to_ceiling_pct || 0) / Math.abs(position.stock?.risk_to_floor_pct || 1)) >= 3 ? 'text-positive' :
+                    ((position.stock?.upside_to_ceiling_pct || 0) / Math.abs(position.stock?.risk_to_floor_pct || 1)) >= 2 ? 'text-warning' :
+                    'text-negative'
                   }`}>
                     {position.stock?.upside_to_ceiling_pct && position.stock?.risk_to_floor_pct
                       ? `${(position.stock.upside_to_ceiling_pct / Math.abs(position.stock.risk_to_floor_pct)).toFixed(1)}:1`
@@ -578,85 +589,92 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
         </div>
 
         {/* ======================================================================
-            TRADING DECK LEGEND: Vysvětlivky
+            FOOTER: Historical P/L (De-emphasized) + Legend Icon
             ====================================================================== */}
-        <div className="px-3 py-2 bg-slate-900/50 border-t border-slate-800">
-          <div className="grid grid-cols-3 gap-4 text-[10px]">
-            {/* Downside Legend */}
-            <div className="space-y-1">
-              <div className="text-red-400 font-bold mb-1.5 flex items-center gap-1">
-                <ArrowDownCircle className="w-3 h-3" />
-                DOWNSIDE VYSVĚTLIVKY
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-green-400">Liquidation Floor:</strong> Minimální hodnota podle zůstatkové ceny aktiv
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-green-300">Tech. Support:</strong> Technická podpora z grafu (kde kupují velcí)
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-slate-300">Buy Limit:</strong> Tvůj maximální nákup (pokud klesne až sem)
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-red-400">Risk to Floor:</strong> Kolik můžeš ztratit při pádu na dno
-              </div>
-            </div>
-
-            {/* Current Legend */}
-            <div className="space-y-1">
-              <div className="text-blue-400 font-bold mb-1.5 flex items-center gap-1">
-                <Scale className="w-3 h-3" />
-                CURRENT VYSVĚTLIVKY
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-blue-400">Slider:</strong> Kde je cena vzhledem k Floor (červená) → Base (žlutá) → Moon (zelená)
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-green-400">BUY Zone:</strong> Cena je blízko dna → bezpečná koupě
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-red-400">SELL Zone:</strong> Cena je vysoko → riskantní držet
-              </div>
-            </div>
-
-            {/* Upside Legend */}
-            <div className="space-y-1">
-              <div className="text-green-400 font-bold mb-1.5 flex items-center gap-1">
-                <ArrowUpCircle className="w-3 h-3" />
-                UPSIDE VYSVĚTLIVKY
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-red-400">Tech. Resistance:</strong> Kde prodávají velcí (technický odpor)
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-red-300">Sell Alert:</strong> Kde začneš brát zisky (první výstup)
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-green-400">Moon Target:</strong> Maximální cíl podle fundamentů
-              </div>
-              <div className="text-slate-400 leading-tight">
-                <strong className="text-yellow-400">R/R Ratio:</strong> Risk/Reward poměr (3:1 = super, 1:1 = riskantní)
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ======================================================================
-            FOOTER: Historical P/L (De-emphasized)
-            ====================================================================== */}
-        <div className="px-3 pb-2 mt-auto">
-          <div className="bg-slate-800/30 rounded px-3 py-1.5 border border-slate-700/50 flex items-center justify-between">
-            <span className="text-[10px] text-slate-500">Historical P/L (reference only)</span>
+        <div className="px-3 pb-2 mt-auto relative">
+          <div className="bg-surface-hover rounded px-3 py-1.5 border border-border flex items-center justify-between">
+            <span className="text-[10px] text-text-muted">Historical P/L (reference only)</span>
             <div className="flex items-center gap-3 text-xs">
-              <span className={`font-mono ${position.unrealized_pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <span className={`font-mono ${position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'}`}>
                 {position.unrealized_pl >= 0 ? '+' : ''}{position.unrealized_pl.toFixed(2)} {position.currency || 'USD'}
               </span>
-              <span className={`font-bold ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <span className={`font-bold ${position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'}`}>
                 ({position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(1)}%)
               </span>
             </div>
           </div>
+          
+          {/* Legend Icon - Bottom Right */}
+          <button
+            onClick={() => setShowLegend(true)}
+            className="absolute bottom-4 right-5 w-7 h-7 bg-surface-overlay border border-border-strong rounded-full flex items-center justify-center hover:bg-surface-active hover:border-accent transition-all shadow-lg"
+            title="Vysvětlivky pojmů"
+          >
+            <HelpCircle className="w-4 h-4 text-text-muted" />
+          </button>
         </div>
+        
+        {/* Legend Popup Modal */}
+        {showLegend && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4" onClick={() => setShowLegend(false)}>
+            <div className="bg-surface-base border border-border-strong rounded-xl w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+                <h3 className="text-base font-bold text-text-primary flex items-center gap-2">
+                  <HelpCircle className="w-5 h-5 text-accent" />
+                  Vysvětlivky Trading Decku
+                </h3>
+                <button 
+                  onClick={() => setShowLegend(false)}
+                  className="p-1.5 hover:bg-surface-hover rounded transition-colors"
+                >
+                  <X className="w-5 h-5 text-text-muted" />
+                </button>
+              </div>
+              
+              {/* Body */}
+              <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Downside Column */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-negative border-b border-negative-border pb-1">⬇️ Downside</h4>
+                  <div className="space-y-2 text-xs text-text-secondary">
+                    <div><span className="font-medium text-text-primary">Liquidation Floor:</span> Minimální hodnota aktiv při nejhorším scénáři</div>
+                    <div><span className="font-medium text-text-primary">Tech. Support:</span> Technická úroveň podpory z grafu</div>
+                    <div><span className="font-medium text-text-primary">Buy Limit:</span> Maximální rozumná nákupní cena</div>
+                    <div><span className="font-medium text-text-primary">Risk to Floor:</span> Potenciální ztráta k nejnižší ceně</div>
+                  </div>
+                </div>
+                
+                {/* Current Column */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-text-primary border-b border-border pb-1">📍 Aktuální pozice</h4>
+                  <div className="space-y-2 text-xs text-text-secondary">
+                    <div><span className="font-medium text-text-primary">Slider:</span> Vizuální pozice ceny mezi Floor → Base → Moon</div>
+                    <div><span className="font-medium text-text-primary">BUY Zone:</span> Cena je blízko dna – výhodná k nákupu</div>
+                    <div><span className="font-medium text-text-primary">SELL Zone:</span> Cena je vysoko – zvážit prodej</div>
+                  </div>
+                </div>
+                
+                {/* Upside Column */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-positive border-b border-positive-border pb-1">⬆️ Upside</h4>
+                  <div className="space-y-2 text-xs text-text-secondary">
+                    <div><span className="font-medium text-text-primary">Tech. Resistance:</span> Technická úroveň odporu z grafu</div>
+                    <div><span className="font-medium text-text-primary">Moon Target:</span> Fundamentální cílová cena</div>
+                    <div><span className="font-medium text-text-primary">R/R Ratio:</span> Risk/Reward poměr (3:1+ je dobré)</div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Footer */}
+              <div className="px-5 py-3 border-t border-border bg-surface-hover rounded-b-xl">
+                <p className="text-[10px] text-text-muted text-center">
+                  Klikněte kamkoliv mimo okno nebo na × pro zavření
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
       
@@ -665,91 +683,91 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
           ====================================================================== */}
       {showTrimModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-slate-900 border-2 border-red-500 rounded-xl w-full max-w-md">
+          <div className="bg-surface-base border-2 border-negative rounded-xl w-full max-w-md">
             {/* Header */}
-            <div className="bg-gradient-to-r from-red-900/50 to-slate-800 border-b border-red-500/30 p-4 flex items-center justify-between">
+            <div className="bg-negative-bg border-b border-negative-border p-4 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
-                  <Scissors className="w-5 h-5 text-red-400" />
+                <h3 className="text-lg font-black text-text-primary flex items-center gap-2">
+                  <Scissors className="w-5 h-5 text-negative" />
                   Exekuce strategie: Ořezání pozice
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">{position.ticker}</p>
+                <p className="text-xs text-text-muted mt-1">{position.ticker}</p>
               </div>
               <button 
                 onClick={() => setShowTrimModal(false)}
-                className="p-1.5 hover:bg-slate-700 rounded transition-colors"
+                className="p-1.5 hover:bg-surface-hover rounded transition-colors"
               >
-                <X className="w-5 h-5 text-slate-400" />
+                <X className="w-5 h-5 text-text-muted" />
               </button>
             </div>
 
             {/* Body */}
             <div className="p-6 space-y-6">
               {/* Doporučení */}
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+              <div className="bg-negative-bg border border-negative-border rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  <AlertTriangle className="w-5 h-5 text-negative flex-shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-sm font-bold text-red-400 mb-1">Doporučení aplikace</div>
-                    <div className="text-sm text-white">
-                      Abyste se dostali na limit <span className="font-bold text-red-400">{maxAllocationPct}%</span>, 
-                      prodejte akcie v hodnotě <span className="font-bold text-red-400">{Math.abs(position.optimal_size).toLocaleString('cs-CZ')} Kč</span>.
+                    <div className="text-sm font-bold text-negative mb-1">Doporučení aplikace</div>
+                    <div className="text-sm text-text-primary">
+                      Abyste se dostali na limit <span className="font-bold text-negative">{maxAllocationPct}%</span>, 
+                      prodejte akcie v hodnotě <span className="font-bold text-negative">{Math.abs(position.optimal_size).toLocaleString('cs-CZ')} Kč</span>.
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Info: Current Holdings */}
-              <div className="bg-slate-800/50 rounded-lg p-3 text-xs">
+              <div className="bg-surface-hover rounded-lg p-3 text-xs">
                 <div className="flex justify-between mb-1">
-                  <span className="text-slate-400">Aktuální počet kusů:</span>
-                  <span className="text-white font-bold">{position.shares_count}</span>
+                  <span className="text-text-muted">Aktuální počet kusů:</span>
+                  <span className="text-text-primary font-bold">{position.shares_count}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Průměrná cena:</span>
-                  <span className="text-white font-bold">${position.avg_cost.toFixed(2)}</span>
+                  <span className="text-text-muted">Průměrná cena:</span>
+                  <span className="text-text-primary font-bold">${position.avg_cost.toFixed(2)}</span>
                 </div>
               </div>
 
               {/* Form */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2">Počet prodaných kusů</label>
+                  <label className="block text-xs text-text-muted mb-2">Počet prodaných kusů</label>
                   <input
                     type="number"
                     value={trimShares}
                     onChange={(e) => setTrimShares(e.target.value)}
                     placeholder="Zadejte počet kusů"
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:border-negative focus:outline-none focus:ring-2 focus:ring-negative/20"
                     min="1"
                     max={position.shares_count}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2">Prodejní cena (za kus)</label>
+                  <label className="block text-xs text-text-muted mb-2">Prodejní cena (za kus)</label>
                   <input
                     type="number"
                     value={trimPrice}
                     onChange={(e) => setTrimPrice(e.target.value)}
                     placeholder="Zadejte prodejní cenu"
                     step="0.01"
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:border-negative focus:outline-none focus:ring-2 focus:ring-negative/20"
                   />
                 </div>
 
                 {/* Preview Calculation */}
                 {trimShares && trimPrice && (
-                  <div className="bg-slate-800/50 border border-slate-600 rounded-lg p-3 text-xs space-y-1">
+                  <div className="bg-surface-hover border border-border rounded-lg p-3 text-xs space-y-1">
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Hodnota transakce:</span>
-                      <span className="text-white font-bold">
+                      <span className="text-text-muted">Hodnota transakce:</span>
+                      <span className="text-text-primary font-bold">
                         ${(parseFloat(trimShares) * parseFloat(trimPrice)).toFixed(2)}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Zbývající kusy:</span>
-                      <span className="text-white font-bold">
+                      <span className="text-text-muted">Zbývající kusy:</span>
+                      <span className="text-text-primary font-bold">
                         {position.shares_count - parseFloat(trimShares)}
                       </span>
                     </div>
@@ -761,7 +779,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowTrimModal(false)}
-                  className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition-colors"
+                  className="flex-1 py-3 bg-surface-hover hover:bg-surface-active text-text-primary font-bold rounded-lg transition-colors"
                 >
                   Zrušit
                 </button>
@@ -778,7 +796,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
                     setTrimPrice('');
                   }}
                   disabled={!trimShares || !trimPrice || parseFloat(trimShares) <= 0 || parseFloat(trimPrice) <= 0}
-                  className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-black rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 py-3 bg-negative hover:bg-negative-muted text-text-primary font-black rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Uložit transakci
                 </button>
@@ -793,36 +811,36 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
           ====================================================================== */}
       {showTranscriptModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-slate-900 border-2 border-indigo-500 rounded-xl w-full max-w-2xl">
+          <div className="bg-surface-base border border-border rounded-xl w-full max-w-2xl">
             {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-900/50 to-slate-800 border-b border-indigo-500/30 p-4 flex items-center justify-between">
+            <div className="bg-surface-hover border-b border-border p-4 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-lg font-black text-text-primary flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-text-secondary" />
                   Přidat analýzu z transkriptů
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">{position.ticker} - {stock?.company_name}</p>
+                <p className="text-xs text-text-muted mt-1">{position.ticker} - {stock?.company_name}</p>
               </div>
               <button 
                 onClick={() => setShowTranscriptModal(false)}
-                className="p-1.5 hover:bg-slate-700 rounded transition-colors"
+                className="p-1.5 hover:bg-surface-hover rounded transition-colors"
               >
-                <X className="w-5 h-5 text-slate-400" />
+                <X className="w-5 h-5 text-text-muted" />
               </button>
             </div>
 
             {/* Body */}
             <div className="p-6 space-y-6">
               {/* Info Box */}
-              <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4">
+              <div className="bg-surface-hover border border-border rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <Info className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-white">
-                    <div className="font-bold mb-2">Gomes Guardian Intelligence Unit</div>
-                    <div className="text-xs space-y-1">
+                  <Info className="w-5 h-5 text-text-secondary flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-text-primary">
+                    <div className="font-bold mb-2">Investment Intelligence Engine</div>
+                    <div className="text-xs space-y-1 text-text-secondary">
                       <div>• AI <strong>auto-detektuje typ zdroje</strong> (Official Filing, Chat, Analyst Report)</div>
                       <div>• <strong>Různá logika pro každý typ</strong>: 100% spolehlivost (filings) vs 30% (chat)</div>
-                      <div>• Chat: Extrahuje sentiment, rumory, key voices (Florian, Gomes)</div>
+                      <div>• Chat: Extrahuje sentiment, rumory, key voices (key analysts)</div>
                       <div>• Official: Tvrdá čísla, penalty za chybějící cash</div>
                     </div>
                   </div>
@@ -830,16 +848,16 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               </div>
 
               {/* Source Type Selector */}
-              <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+              <div className="bg-surface-hover border border-border rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <FileText className="w-4 h-4 text-slate-400" />
-                  <span className="text-sm font-bold text-white">Typ zdroje</span>
-                  <span className="text-xs text-slate-500 ml-auto">AI detekuje automaticky</span>
+                  <FileText className="w-4 h-4 text-text-muted" />
+                  <span className="text-sm font-bold text-text-primary">Typ zdroje</span>
+                  <span className="text-xs text-text-muted ml-auto">AI detekuje automaticky</span>
                 </div>
                 <select
                   value={sourceType}
                   onChange={(e) => setSourceType(e.target.value as 'youtube' | 'transcript' | 'manual')}
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                 >
                   <option value="youtube">📹 YouTube URL (Auto-transcript)</option>
                   <option value="transcript">📄 Transkript / Text (Official/Chat/Article)</option>
@@ -849,7 +867,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
 
               {/* Input Field */}
               <div>
-                <label className="block text-xs text-slate-400 mb-2">
+                <label className="block text-xs text-text-muted mb-2">
                   {sourceType === 'youtube' ? 'YouTube URL' : sourceType === 'transcript' ? 'Transkript / Text zdroje' : 'Poznámky / Analýza'}
                 </label>
                 <textarea
@@ -863,9 +881,9 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
                         : 'Vložte vlastní poznámky z výzkumu...'
                     }
                     rows={10}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono text-sm"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 font-mono text-sm"
                   ></textarea>
-                  <div className="mt-2 text-xs text-slate-500">
+                  <div className="mt-2 text-xs text-text-muted">
                     {sourceType === 'transcript' && (
                       <div>
                         💡 <strong>Tip:</strong> AI automaticky rozpozná, zda jde o official filing (100% spolehlivost), 
@@ -878,22 +896,22 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               {/* Quick Fields */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2">Investor / Zdroj</label>
+                  <label className="block text-xs text-text-muted mb-2">Investor / Zdroj</label>
                   <input
                     type="text"
-                    placeholder="Mark Gomes"
+                    placeholder="Investment Committee"
                     value={investorName}
                     onChange={(e) => setInvestorName(e.target.value)}
-                    className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                    className="w-full px-4 py-2 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2">Datum videa/analýzy</label>
+                  <label className="block text-xs text-text-muted mb-2">Datum videa/analýzy</label>
                   <input
                     type="date"
                     value={analysisDate}
                     onChange={(e) => setAnalysisDate(e.target.value)}
-                    className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full px-4 py-2 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
@@ -902,7 +920,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowTranscriptModal(false)}
-                  className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition-colors"
+                  className="flex-1 py-3 bg-surface-hover hover:bg-surface-active text-text-primary font-bold rounded-lg transition-colors"
                 >
                   Zrušit
                 </button>
@@ -944,7 +962,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
                         alertMsg += `✅ Analýza dokončena!\n\n`;
                       }
                       
-                      alertMsg += `\nGomes Score: ${result.gomes_score}/10`;
+                      alertMsg += `\nConviction Score: ${result.conviction_score}/10`;
                       alertMsg += `\nStage: ${result.inflection_status}`;
                       alertMsg += `\nDoporučení: ${result.recommendation}`;
                       
@@ -962,7 +980,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
                     }
                   }}
                   disabled={isAnalyzing || inputText.length < 50}
-                  className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-black rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-3 bg-surface-active hover:bg-surface-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text-primary font-black rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   {isAnalyzing ? (
                     <>
@@ -979,7 +997,7 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
               </div>
 
               {/* Helper Text */}
-              <div className="text-xs text-slate-500 text-center">
+              <div className="text-xs text-text-muted text-center">
                 AI extrahuje: thesis, catalyst, stage, insider activity, risk faktory
               </div>
             </div>
@@ -992,47 +1010,47 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
           ====================================================================== */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-slate-900 border-2 border-purple-500 rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+          <div className="bg-surface-base border border-border rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
             {/* Header */}
-            <div className="bg-gradient-to-r from-purple-900/50 to-slate-800 border-b border-purple-500/30 p-4 flex items-center justify-between flex-shrink-0">
+            <div className="bg-surface-hover border-b border-border p-4 flex items-center justify-between flex-shrink-0">
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-purple-400" />
+                <h3 className="text-lg font-black text-text-primary flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-text-secondary" />
                   Ruční úprava údajů – {position.ticker}
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">Uprav klíčové hodnoty pro stock analysis</p>
+                <p className="text-xs text-text-muted mt-1">Uprav klíčové hodnoty pro stock analysis</p>
               </div>
               <button 
                 onClick={handleCancelEdit}
-                className="p-1.5 hover:bg-slate-700 rounded transition-colors"
+                className="p-1.5 hover:bg-surface-hover rounded transition-colors"
               >
-                <X className="w-5 h-5 text-slate-400" />
+                <X className="w-5 h-5 text-text-muted" />
               </button>
             </div>
 
             {/* Body - Scrollable */}
             <div className="p-6 space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-2 gap-4">
-                {/* Gomes Score */}
+                {/* Conviction Score */}
                 <div>
-                  <label className="block text-sm text-slate-300 mb-2 font-semibold">Gomes Score (1-10)</label>
+                  <label className="block text-sm text-text-secondary mb-2 font-semibold">Conviction Score (1-10)</label>
                   <input
                     type="number"
                     min="1"
                     max="10"
-                    value={editedData.gomes_score}
-                    onChange={(e) => setEditedData({...editedData, gomes_score: parseInt(e.target.value) || 5})}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    value={editedData.conviction_score}
+                    onChange={(e) => setEditedData({...editedData, conviction_score: parseInt(e.target.value) || 5})}
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                   />
                 </div>
 
                 {/* Inflection Status */}
                 <div>
-                  <label className="block text-sm text-slate-300 mb-2 font-semibold">Inflection Stage</label>
+                  <label className="block text-sm text-text-secondary mb-2 font-semibold">Inflection Stage</label>
                   <select
                     value={editedData.inflection_status}
                     onChange={(e) => setEditedData({...editedData, inflection_status: e.target.value as 'WAIT_TIME' | 'UPCOMING' | 'ACTIVE_GOLD_MINE'})}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none"
                   >
                     <option value="WAIT_TIME">🔴 The Wait Time</option>
                     <option value="UPCOMING">🟡 Inflection Upcoming</option>
@@ -1042,114 +1060,114 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
 
                 {/* Max Allocation Cap */}
                 <div>
-                  <label className="block text-sm text-slate-300 mb-2 font-semibold">Max Allocation Cap (%)</label>
+                  <label className="block text-sm text-text-secondary mb-2 font-semibold">Max Allocation Cap (%)</label>
                   <input
                     type="number"
                     step="0.5"
                     value={editedData.max_allocation_cap}
                     onChange={(e) => setEditedData({...editedData, max_allocation_cap: parseFloat(e.target.value) || 10})}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
 
                 {/* Cash Runway Months */}
                 <div>
-                  <label className="block text-sm text-slate-300 mb-2 font-semibold">Cash Runway (měsíce)</label>
+                  <label className="block text-sm text-text-secondary mb-2 font-semibold">Cash Runway (měsíce)</label>
                   <input
                     type="number"
                     value={editedData.cash_runway_months ?? ''}
                     onChange={(e) => setEditedData({...editedData, cash_runway_months: e.target.value ? parseInt(e.target.value) : null})}
                     placeholder="prázdné = neznámé"
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-purple-500 focus:outline-none"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
                   />
                 </div>
 
                 {/* Price Floor */}
                 <div>
-                  <label className="block text-sm text-slate-300 mb-2 font-semibold">Price Floor (Liquidation)</label>
+                  <label className="block text-sm text-text-secondary mb-2 font-semibold">Price Floor (Liquidation)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={editedData.price_floor}
                     onChange={(e) => setEditedData({...editedData, price_floor: parseFloat(e.target.value) || 0})}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
 
                 {/* Price Base */}
                 <div>
-                  <label className="block text-sm text-slate-300 mb-2 font-semibold">Price Base (Fair Value)</label>
+                  <label className="block text-sm text-text-secondary mb-2 font-semibold">Price Base (Fair Value)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={editedData.price_base}
                     onChange={(e) => setEditedData({...editedData, price_base: parseFloat(e.target.value) || 0})}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
 
                 {/* Price Moon */}
                 <div>
-                  <label className="block text-sm text-slate-300 mb-2 font-semibold">Price Moon (Bull Case)</label>
+                  <label className="block text-sm text-text-secondary mb-2 font-semibold">Price Moon (Bull Case)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={editedData.price_moon}
                     onChange={(e) => setEditedData({...editedData, price_moon: parseFloat(e.target.value) || 0})}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
 
                 {/* Stop Loss */}
                 <div>
-                  <label className="block text-sm text-slate-300 mb-2 font-semibold">Stop Loss (Kill Switch)</label>
+                  <label className="block text-sm text-text-secondary mb-2 font-semibold">Stop Loss (Kill Switch)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={editedData.stop_loss_price}
                     onChange={(e) => setEditedData({...editedData, stop_loss_price: parseFloat(e.target.value) || 0})}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                    className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
 
               {/* Next Catalyst */}
               <div>
-                <label className="block text-sm text-slate-300 mb-2 font-semibold">Next Catalyst</label>
+                <label className="block text-sm text-text-secondary mb-2 font-semibold">Next Catalyst</label>
                 <input
                   type="text"
                   value={editedData.next_catalyst}
                   onChange={(e) => setEditedData({...editedData, next_catalyst: e.target.value})}
                   placeholder="např. Q1 2026 High-Grade Silver Sales Report"
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-purple-500 focus:outline-none"
+                  className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
                 />
               </div>
 
               {/* Thesis Narrative */}
               <div>
-                <label className="block text-sm text-slate-300 mb-2 font-semibold">Thesis (The Setup)</label>
+                <label className="block text-sm text-text-secondary mb-2 font-semibold">Thesis (The Setup)</label>
                 <textarea
                   value={editedData.thesis_narrative}
                   onChange={(e) => setEditedData({...editedData, thesis_narrative: e.target.value})}
                   rows={4}
                   placeholder="2-3 věty popisující investiční tezi..."
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-purple-500 focus:outline-none resize-none"
+                  className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:border-accent focus:outline-none resize-none"
                 />
               </div>
             </div>
 
             {/* Footer - Actions */}
-            <div className="border-t border-purple-500/30 p-4 flex gap-3 flex-shrink-0">
+            <div className="border-t border-border p-4 flex gap-3 flex-shrink-0">
               <button
                 onClick={handleCancelEdit}
-                className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition-colors"
+                className="flex-1 py-3 bg-surface-hover hover:bg-surface-active text-text-primary font-bold rounded-lg transition-colors"
               >
                 Zrušit
               </button>
               <button
                 onClick={handleSaveEdit}
                 disabled={isSaving}
-                className="flex-1 py-3 bg-purple-500 hover:bg-purple-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-black rounded-lg transition-colors flex items-center justify-center gap-2"
+                className="flex-1 py-3 bg-surface-active hover:bg-surface-hover disabled:bg-surface-hover disabled:cursor-not-allowed text-text-primary font-black rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 {isSaving ? (
                   <>
@@ -1171,4 +1189,6 @@ const StockDetailModalGomes: React.FC<Props> = ({ position, onClose }) => {
   );
 };
 
-export default StockDetailModalGomes;
+export default AssetDetailModal;
+
+

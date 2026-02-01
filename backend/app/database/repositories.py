@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ==============================================================================
 
-DEFAULT_GOMES_SCORE: int = 5
+DEFAULT_conviction_score: int = 5
 MAX_VERSIONS_TO_KEEP: int = 2
 DEFAULT_TIME_HORIZON: str = "Long-term"
 
@@ -201,11 +201,9 @@ class StockRepository:
             source_type=source_type,
             speaker=speaker,
             sentiment=stock_data.get("sentiment", "Neutral"),
-            gomes_score=stock_data.get("gomes_score") or DEFAULT_GOMES_SCORE,
             conviction_score=(
                 stock_data.get("conviction_score")
-                or stock_data.get("gomes_score")
-                or DEFAULT_GOMES_SCORE
+                or DEFAULT_conviction_score
             ),
             price_target=stock_data.get("price_target", ""),
             time_horizon=(
@@ -263,7 +261,7 @@ class StockRepository:
         
         if order_by_score:
             query = query.order_by(
-                desc(Stock.gomes_score),
+                desc(Stock.conviction_score),
                 desc(Stock.created_at),
             )
         else:
@@ -321,7 +319,7 @@ class StockRepository:
         return (
             self._session.query(Stock)
             .filter(Stock.sentiment == sentiment)
-            .order_by(desc(Stock.gomes_score))
+            .order_by(desc(Stock.conviction_score))
             .all()
         )
     
@@ -337,8 +335,8 @@ class StockRepository:
         """
         return (
             self._session.query(Stock)
-            .filter(Stock.gomes_score >= min_score)
-            .order_by(desc(Stock.gomes_score))
+            .filter(Stock.conviction_score >= min_score)
+            .order_by(desc(Stock.conviction_score))
             .all()
         )
 

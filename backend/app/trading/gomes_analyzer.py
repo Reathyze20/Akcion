@@ -406,11 +406,11 @@ class GomesAnalyzer:
                 rating = GomesRating.AVOID
             
             # ----------------------------------------------------------------
-            # 8. BUILD GOMES SCORE
+            # 8. BUILD Conviction Score
             # ----------------------------------------------------------------
             reasoning = "\n".join(reasoning_parts)
             
-            gomes_score = GomesScore(
+            conviction_score = GomesScore(
                 ticker=ticker,
                 total_score=total_score,
                 rating=rating,
@@ -432,7 +432,7 @@ class GomesAnalyzer:
                 f"{ticker} Analysis Complete: {total_score}/10 ({rating.value})"
             )
             
-            return gomes_score
+            return conviction_score
             
         except Exception as e:
             self.logger.error(f"Error analyzing {ticker}: {str(e)}")

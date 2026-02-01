@@ -33,16 +33,16 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
     <div className="mb-12">
       <div className="flex items-center gap-3 mb-6">
         {React.createElement(icon, { className: `w-6 h-6 ${iconColor}` })}
-        <h2 className="text-2xl font-bold text-white">{title}</h2>
-        <span className="px-3 py-1 bg-slate-800/50 rounded-full text-sm text-slate-400 font-mono">
+        <h2 className="text-2xl font-bold text-text-primary">{title}</h2>
+        <span className="px-3 py-1 bg-surface-raised/50 rounded-full text-sm text-text-secondary font-mono">
           {items.length}
         </span>
       </div>
       
       {items.length === 0 ? (
-        <div className="bg-slate-800/30 backdrop-blur border border-white/5 rounded-2xl p-12 text-center">
+        <div className="bg-surface-raised/30 backdrop-blur border border-white/5 rounded-2xl p-12 text-center">
           <AlertCircle className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-          <p className="text-slate-400">{emptyMessage}</p>
+          <p className="text-text-secondary">{emptyMessage}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -62,33 +62,33 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
     <div className="space-y-12 animate-in fade-in duration-500">
       {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">
+        <h1 className="text-3xl font-bold text-text-primary mb-2">
           Přehled investičních signálů
         </h1>
-        <p className="text-slate-400 text-sm">
+        <p className="text-text-secondary text-sm">
           Akcionovátelné investiční příležitosti podle metodologie Marka Gomese
         </p>
       </div>
 
       {/* Stats Bar */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
-          <div className="text-green-400 text-sm font-semibold mb-1">SILNÉ NÁKUPY</div>
-          <div className="text-3xl font-bold text-white font-mono">{topPicks.length}</div>
+        <div className="bg-positive/10 border border-positive/30 rounded-xl p-4">
+          <div className="text-positive text-sm font-semibold mb-1">SILNÉ NÁKUPY</div>
+          <div className="text-3xl font-bold text-text-primary font-mono">{topPicks.length}</div>
         </div>
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
-          <div className="text-yellow-400 text-sm font-semibold mb-1">SLEDOVANÉ</div>
-          <div className="text-3xl font-bold text-white font-mono">{watchList.length}</div>
+        <div className="bg-warning/10 border border-yellow-500/30 rounded-xl p-4">
+          <div className="text-warning text-sm font-semibold mb-1">SLEDOVANÉ</div>
+          <div className="text-3xl font-bold text-text-primary font-mono">{watchList.length}</div>
         </div>
-        <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-4">
-          <div className="text-indigo-400 text-sm font-semibold mb-1">CELKEM AKCIÍ</div>
-          <div className="text-3xl font-bold text-white font-mono">{stocks.length}</div>
+        <div className="bg-accent/10 border border-indigo-500/30 rounded-xl p-4">
+          <div className="text-accent text-sm font-semibold mb-1">CELKEM AKCIÍ</div>
+          <div className="text-3xl font-bold text-text-primary font-mono">{stocks.length}</div>
         </div>
-        <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
-          <div className="text-purple-400 text-sm font-semibold mb-1">PRůM. SKÓRE</div>
-          <div className="text-3xl font-bold text-white font-mono">
+        <div className="bg-accent/10 border border-purple-500/30 rounded-xl p-4">
+          <div className="text-accent text-sm font-semibold mb-1">PRůM. SKÓRE</div>
+          <div className="text-3xl font-bold text-text-primary font-mono">
             {stocks.length > 0 
-              ? (stocks.reduce((sum, s) => sum + (s.gomes_score || 0), 0) / stocks.length).toFixed(1)
+              ? (stocks.reduce((sum, s) => sum + (s.conviction_score || 0), 0) / stocks.length).toFixed(1)
               : '0.0'
             }
           </div>
@@ -100,7 +100,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
         'Nejlepší týpky tohoto týdne',
         topPicks,
         TrendingUp,
-        'text-green-400',
+        'text-positive',
         'Žádné silné nákupní signály. Zkontrolujte po další analýze.'
       )}
 
@@ -109,7 +109,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
         'Sledované',
         watchList,
         Eye,
-        'text-yellow-400',
+        'text-warning',
         'Žádné akcie na sledování. Přidejte analýzu se specifickými vstupními body.'
       )}
 
@@ -118,9 +118,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
         'Všechny ostatní akcie',
         otherStocks,
         Zap,
-        'text-slate-400',
+        'text-text-secondary',
         ''
       )}
     </div>
   );
 };
+
+

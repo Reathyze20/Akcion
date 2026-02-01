@@ -70,8 +70,8 @@ class PositionTier(str, Enum):
 
 class InvestmentVerdict(str, Enum):
     """Final investment decision"""
-    STRONG_BUY = "STRONG_BUY"  # Gomes score 9-10, all filters pass
-    BUY = "BUY"                # Gomes score 7-8
+    STRONG_BUY = "STRONG_BUY"  # Conviction Score 9-10, all filters pass
+    BUY = "BUY"                # Conviction Score 7-8
     ACCUMULATE = "ACCUMULATE"  # Buy on dips, add slowly
     HOLD = "HOLD"              # Keep position, don't add
     TRIM = "TRIM"              # Reduce position (3-point rule)
@@ -173,7 +173,7 @@ class GomesVerdict:
     blocked_reason: str | None = None
     
     # Scores
-    gomes_score: int = 0  # 0-10
+    conviction_score: int = 0  # 0-10
     ml_prediction_score: float | None = None  # 0-100%
     ml_direction: str | None = None  # UP/DOWN/NEUTRAL
     
@@ -653,7 +653,7 @@ class PositionSizingEngine:
     def determine_tier(
         cls,
         lifecycle_phase: LifecyclePhase,
-        gomes_score: int,
+        conviction_score: int,
         has_catalyst: bool = False
     ) -> PositionTier:
         """
@@ -662,13 +662,13 @@ class PositionSizingEngine:
         Ref: Minute 50:00 - How to size positions
         """
         # Gold Mine with high score = PRIMARY
-        if lifecycle_phase == LifecyclePhase.GOLD_MINE and gomes_score >= 8:
+        if lifecycle_phase == LifecyclePhase.GOLD_MINE and conviction_score >= 8:
             return PositionTier.PRIMARY
         
         # Great Find or decent Gold Mine = SECONDARY
         if lifecycle_phase == LifecyclePhase.GREAT_FIND:
             return PositionTier.SECONDARY
-        if lifecycle_phase == LifecyclePhase.GOLD_MINE and gomes_score >= 6:
+        if lifecycle_phase == LifecyclePhase.GOLD_MINE and conviction_score >= 6:
             return PositionTier.SECONDARY
         
         # Everything else = TERTIARY
@@ -728,7 +728,7 @@ class GomesGatekeeper:
     4. Position tier + alert level constraints
     5. Price line analysis
     6. ML prediction integration
-    7. Final Gomes score synthesis
+    7. Final Conviction Score synthesis
     """
     
     EARNINGS_DANGER_DAYS = 14  # Ref: Minute 45:00 - "14 days before earnings = EXIT"
@@ -744,7 +744,7 @@ class GomesGatekeeper:
     def evaluate(
         self,
         ticker: str,
-        gomes_score: int,
+        conviction_score: int,
         lifecycle_phase: LifecyclePhase | None = None,
         current_price: float | None = None,
         green_line: float | None = None,
@@ -761,7 +761,7 @@ class GomesGatekeeper:
         
         Args:
             ticker: Stock ticker
-            gomes_score: Base Gomes score (0-10)
+            conviction_score: Base Conviction Score (0-10)
             lifecycle_phase: Stock lifecycle phase (or auto-detect)
             current_price: Current market price
             green_line: Buy zone price
@@ -777,7 +777,7 @@ class GomesGatekeeper:
         risk_factors: list[str] = []
         blocked_reason: str | None = None
         passed_filter = True
-        adjusted_score = gomes_score
+        adjusted_score = conviction_score
         
         # =====================================================================
         # RULE 1: Lifecycle Phase Filter (WAIT_TIME = BLOCKED)
@@ -835,7 +835,7 @@ class GomesGatekeeper:
         
         position_tier = PositionSizingEngine.determine_tier(
             lifecycle_phase=lifecycle_phase,
-            gomes_score=adjusted_score,
+            conviction_score=adjusted_score,
             has_catalyst=bool(catalyst_info and catalyst_info.get("has_catalyst"))
         )
         
@@ -913,7 +913,7 @@ class GomesGatekeeper:
         
         # Build reasoning
         reasoning_parts = []
-        reasoning_parts.append(f"Gomes Score: {adjusted_score}/10 (original: {gomes_score})")
+        reasoning_parts.append(f"Conviction Score: {adjusted_score}/10 (original: {conviction_score})")
         reasoning_parts.append(f"Phase: {lifecycle_phase.value}")
         reasoning_parts.append(f"Market: {self.market_alert.value}")
         reasoning_parts.append(f"Tier: {position_tier.value} (max {position_limit.max_portfolio_pct}%)")
@@ -939,7 +939,7 @@ class GomesGatekeeper:
             verdict=verdict,
             passed_gomes_filter=passed_filter,
             blocked_reason=blocked_reason,
-            gomes_score=adjusted_score,
+            conviction_score=adjusted_score,
             ml_prediction_score=ml_confidence * 100 if ml_confidence else None,
             ml_direction=ml_direction,
             lifecycle_phase=lifecycle_phase,
@@ -965,7 +965,7 @@ class GomesGatekeeper:
 
 def quick_gomes_check(
     ticker: str,
-    gomes_score: int,
+    conviction_score: int,
     lifecycle_phase: str | None = None,
     market_alert: str = "GREEN",
     days_to_earnings: int | None = None
@@ -988,7 +988,7 @@ def quick_gomes_check(
     
     verdict = gatekeeper.evaluate(
         ticker=ticker,
-        gomes_score=gomes_score,
+        conviction_score=conviction_score,
         lifecycle_phase=phase,
         earnings_date=earnings_date
     )

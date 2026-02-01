@@ -27,8 +27,8 @@ import type {
   BrokerType,
   MarketStatus,
   // Gomes Analyzer types
-  GomesScoreResponse,
-  GomesAnalyzeRequest,
+  ConvictionScoreResponse,
+  AnalyzeRequest,
   WatchlistRankingResponse,
   BatchAnalyzeResponse,
   // Timeline types
@@ -37,7 +37,7 @@ import type {
   TranscriptImportResponse,
   TranscriptSummary,
   // ML Stocks types
-  GomesMLStocksResponse,
+  ScoredStocksResponse,
   // Price Lines History
   PriceLinesHistoryResponse,
   // Score History & Kelly
@@ -145,7 +145,7 @@ class ApiClient {
 
   async getStocks(filters?: {
     sentiment?: string;
-    min_gomes_score?: number;
+    min_conviction_score?: number;
     min_conviction?: number;
     speaker?: string;
   }): Promise<PortfolioResponse> {
@@ -398,8 +398,8 @@ class ApiClient {
   /**
    * Analyze ticker using Gomes Investment Committee methodology
    */
-  async gomesAnalyze(request: GomesAnalyzeRequest): Promise<GomesScoreResponse> {
-    const response = await this.client.post<GomesScoreResponse>(
+  async gomesAnalyze(request: AnalyzeRequest): Promise<ConvictionScoreResponse> {
+    const response = await this.client.post<ConvictionScoreResponse>(
       '/api/gomes/analyze',
       request
     );
@@ -409,8 +409,8 @@ class ApiClient {
   /**
    * Simple GET analyze for ticker (uses DB data)
    */
-  async gomesAnalyzeTicker(ticker: string, forceRefresh: boolean = false): Promise<GomesScoreResponse> {
-    const response = await this.client.get<GomesScoreResponse>(
+  async gomesAnalyzeTicker(ticker: string, forceRefresh: boolean = false): Promise<ConvictionScoreResponse> {
+    const response = await this.client.get<ConvictionScoreResponse>(
       `/api/gomes/analyze/${ticker}`,
       {
         params: { force_refresh: forceRefresh }
@@ -547,24 +547,14 @@ class ApiClient {
   /**
    * Get all Gomes stocks with price lines for ML prediction page
    */
-  async getGomesMLStocks(): Promise<GomesMLStocksResponse> {
-    const response = await this.client.get<GomesMLStocksResponse>(
+  async getGomesMLStocks(): Promise<ScoredStocksResponse> {
+    const response = await this.client.get<ScoredStocksResponse>(
       '/api/intelligence/ml-stocks'
     );
     return response.data;
   }
 
   // ==================== Score History & Thesis Drift ====================
-
-  /**
-   * Get score history for a ticker
-   */
-  async getScoreHistory(ticker: string): Promise<ScoreHistoryResponse> {
-    const response = await this.client.get<ScoreHistoryResponse>(
-      `/api/gomes/score-history/${ticker}`
-    );
-    return response.data;
-  }
 
   /**
    * Get unacknowledged thesis drift alerts
@@ -701,6 +691,193 @@ class ApiClient {
     const response = await this.client.get(`/api/currency/rate/${currency}`);
     return response.data;
   }
+
+  // ==================== Intelligence / Brain Logic ====================
+
+  /**
+   * Smart CSV upload with automatic reconciliation (Sync Logic)
+   * Detects sales, moves to watchlist, preserves data
+   */
+  async uploadCSVSmart(
+    portfolioId: number,
+    broker: BrokerType,
+    file: File
+  ): Promise<SmartUploadResponse> {
+    const formData = new FormData();
+    formData.append('portfolio_id', portfolioId.toString());
+    formData.append('broker', broker);
+    formData.append('file', file);
+    formData.append('detect_sales', 'true');
+
+    const response = await this.client.post<SmartUploadResponse>(
+      '/api/portfolio/upload-csv-smart',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  }
+
+  /**
+   * Synthesize new knowledge into stock (Brain Logic)
+   * Never overwrites - merges and refines data
+   */
+  async synthesizeKnowledge(request: {
+    ticker: string;
+    new_info: string;
+    source?: string;
+    force_score?: number;
+  }): Promise<KnowledgeSynthesisResponse> {
+    const response = await this.client.post<KnowledgeSynthesisResponse>(
+      '/api/intelligence/synthesize',
+      request
+    );
+    return response.data;
+  }
+
+  /**
+   * Add a quick note to a stock's knowledge base
+   */
+  async addQuickNote(
+    ticker: string,
+    note: string,
+    source: string = 'Quick Note'
+  ): Promise<{ success: boolean; ticker: string; action: string; new_score: number | null; conflicts_detected: boolean }> {
+    const response = await this.client.post(
+      `/api/intelligence/quick-note/${ticker}`,
+      null,
+      { params: { note, source } }
+    );
+    return response.data;
+  }
+
+  /**
+   * Get all notifications (thesis drift, score changes, reconciliation)
+   */
+  async getNotifications(
+    includeAcknowledged: boolean = false,
+    limit: number = 20
+  ): Promise<NotificationItem[]> {
+    const response = await this.client.get<NotificationItem[]>(
+      '/api/intelligence/notifications',
+      { params: { include_acknowledged: includeAcknowledged, limit } }
+    );
+    return response.data;
+  }
+
+  /**
+   * Get thesis drift alerts
+   */
+  async getThesisDriftAlerts(params?: {
+    ticker?: string;
+    severity?: string;
+    acknowledged?: boolean;
+    limit?: number;
+  }): Promise<ThesisDriftAlertItem[]> {
+    const response = await this.client.get<ThesisDriftAlertItem[]>(
+      '/api/intelligence/alerts',
+      { params }
+    );
+    return response.data;
+  }
+
+  /**
+   * Acknowledge a thesis drift alert
+   */
+  async acknowledgeAlert(alertId: number): Promise<{ success: boolean; alert_id: number }> {
+    const response = await this.client.post(`/api/intelligence/alerts/${alertId}/acknowledge`);
+    return response.data;
+  }
+
+  /**
+   * Acknowledge all unread alerts
+   */
+  async acknowledgeAllAlerts(ticker?: string): Promise<{ success: boolean; acknowledged_count: number }> {
+    const response = await this.client.post(
+      '/api/intelligence/alerts/acknowledge-all',
+      null,
+      { params: ticker ? { ticker } : {} }
+    );
+    return response.data;
+  }
+
+  /**
+   * Get score history for a ticker
+   */
+  async getScoreHistory(ticker: string, limit: number = 30): Promise<ScoreHistoryItem[]> {
+    const response = await this.client.get<ScoreHistoryItem[]>(
+      `/api/intelligence/score-history/${ticker}`,
+      { params: { limit } }
+    );
+    return response.data;
+  }
+}
+
+// ==================== New Types ====================
+
+export interface SmartUploadResponse {
+  success: boolean;
+  portfolio: string;
+  summary: string;
+  positions_before: number;
+  positions_after: number;
+  changes: {
+    added: number;
+    updated: number;
+    sold: number;
+  };
+  notifications: string[];
+  price_refresh: {
+    updated: number;
+    failed: number;
+  };
+}
+
+export interface KnowledgeSynthesisResponse {
+  success: boolean;
+  action: string;
+  ticker: string;
+  old_score: number | null;
+  new_score: number | null;
+  conflicts: string[];
+  merged_fields: string[];
+  alert_generated: boolean;
+  explanation: string;
+}
+
+export interface NotificationItem {
+  id: string;
+  type: 'THESIS_DRIFT' | 'SCORE_CHANGE' | 'RECONCILIATION';
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  ticker: string | null;
+  title: string;
+  message: string;
+  is_read: boolean;
+  timestamp: string | null;
+  data?: Record<string, unknown>;
+}
+
+export interface ThesisDriftAlertItem {
+  id: number;
+  ticker: string;
+  alert_type: string;
+  severity: string;
+  old_score: number | null;
+  new_score: number | null;
+  message: string;
+  is_acknowledged: boolean;
+  created_at: string | null;
+}
+
+export interface ScoreHistoryItem {
+  id: number;
+  score: number;
+  source: string | null;
+  note: string | null;
+  created_at: string | null;
 }
 
 // Export singleton instance

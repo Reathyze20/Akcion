@@ -178,8 +178,8 @@ class PriceLinesModel(Base):
     is_overvalued = Column(Boolean, nullable=True)
     
     # Score at lines
-    gomes_score_at_green = Column(Integer, nullable=True)
-    gomes_score_at_red = Column(Integer, nullable=True)
+    conviction_score_at_green = Column(Integer, nullable=True)
+    conviction_score_at_red = Column(Integer, nullable=True)
     
     # Source
     source = Column(String(100))
@@ -198,8 +198,8 @@ class PriceLinesModel(Base):
     transcript = relationship("AnalystTranscript", foreign_keys=[transcript_id])
     
     __table_args__ = (
-        CheckConstraint('gomes_score_at_green >= 0 AND gomes_score_at_green <= 10', name='check_score_green'),
-        CheckConstraint('gomes_score_at_red >= 0 AND gomes_score_at_red <= 10', name='check_score_red'),
+        CheckConstraint('conviction_score_at_green >= 0 AND conviction_score_at_green <= 10', name='check_score_green'),
+        CheckConstraint('conviction_score_at_red >= 0 AND conviction_score_at_red <= 10', name='check_score_red'),
         Index('idx_price_lines_ticker', 'ticker', 'effective_from'),
         Index('idx_price_lines_active', 'ticker', postgresql_where="valid_until IS NULL"),
         Index('idx_price_lines_undervalued', 'is_undervalued', 'ticker', postgresql_where="valid_until IS NULL"),
@@ -285,7 +285,7 @@ class InvestmentVerdictModel(Base):
     blocked_reason = Column(Text, nullable=True)
     
     # Scores
-    gomes_score = Column(Integer, nullable=True)
+    conviction_score = Column(Integer, nullable=True)
     ml_prediction_score = Column(Numeric(5, 2), nullable=True)
     ml_prediction_direction = Column(String(10), nullable=True)
     
@@ -337,7 +337,7 @@ class InvestmentVerdictModel(Base):
             "verdict IN ('STRONG_BUY', 'BUY', 'ACCUMULATE', 'HOLD', 'TRIM', 'SELL', 'AVOID', 'BLOCKED')",
             name='check_verdict'
         ),
-        CheckConstraint('gomes_score >= 0 AND gomes_score <= 10', name='check_verdict_score'),
+        CheckConstraint('conviction_score >= 0 AND conviction_score <= 10', name='check_conviction_score'),
         CheckConstraint("confidence IN ('HIGH', 'MEDIUM', 'LOW')", name='check_verdict_confidence'),
         Index('idx_verdicts_ticker', 'ticker', 'created_at'),
         Index('idx_verdicts_active', 'ticker', postgresql_where="valid_until IS NULL"),
@@ -346,7 +346,7 @@ class InvestmentVerdictModel(Base):
     )
     
     def __repr__(self):
-        return f"<Verdict {self.ticker}: {self.verdict} (score={self.gomes_score})>"
+        return f"<Verdict {self.ticker}: {self.verdict} (score={self.conviction_score})>"
 
 
 # ============================================================================
@@ -397,7 +397,7 @@ class ImageAnalysisLogModel(Base):
 
 class GomesRulesLogModel(Base):
     """Audit trail for Gomes rule applications"""
-    __tablename__ = "gomes_rules_log"
+    __tablename__ = "investment_rules_log"
     
     id = Column(Integer, primary_key=True)
     ticker = Column(String(10), nullable=False, index=True)

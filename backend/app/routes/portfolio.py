@@ -45,6 +45,7 @@ from ..schemas.portfolio import (
 from ..services.currency import CurrencyService
 from ..services.importer import BrokerCSVParser, validate_position_data
 from ..services.market_data import MarketDataService
+from ..services.portfolio_reconciliation import PortfolioReconciliationService
 
 
 logger = logging.getLogger(__name__)
@@ -329,7 +330,7 @@ def delete_position(
             ticker=ticker_upper,
             stock_id=stock.id if stock else None,
             action_verdict=stock.action_verdict if stock else "WATCH",
-            gomes_score=stock.gomes_score if stock else None,
+            conviction_score=stock.conviction_score if stock else None,
             investment_thesis=stock.edge if stock else None,
             risks=stock.risks if stock else None,
             is_active=True,
@@ -561,6 +562,119 @@ async def upload_csv(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/upload-csv-smart")
+async def upload_csv_with_reconciliation(
+    portfolio_id: int = Form(...),
+    broker: BrokerType = Form(...),
+    file: UploadFile = File(...),
+    detect_sales: bool = Form(default=True),
+):
+    """
+    Smart CSV upload with automatic reconciliation.
+    
+    This endpoint implements the "Sync Logic":
+    - Detects sold positions when they're missing in new import
+    - Automatically moves sold positions to Active Watchlist
+    - Preserves all thesis data and history
+    - Tracks changes in investment log
+    - Returns detailed notifications about changes
+    
+    Args:
+        portfolio_id: Target portfolio ID
+        broker: Broker type for CSV parsing
+        file: CSV file from broker
+        detect_sales: If True, missing positions are marked as sold
+    """
+    db = next(get_db())
+    
+    try:
+        # Check if portfolio exists
+        portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+        if not portfolio:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+        
+        # Read and decode CSV content
+        content = await file.read()
+        csv_content = None
+        for encoding in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2', 'latin-1']:
+            try:
+                csv_content = content.decode(encoding)
+                break
+            except:
+                continue
+        
+        if csv_content is None:
+            raise HTTPException(
+                status_code=400, 
+                detail="Could not decode CSV file with any supported encoding"
+            )
+        
+        # Parse CSV based on broker type
+        try:
+            positions_data = BrokerCSVParser.parse_broker_csv(csv_content, broker)
+            positions_data = validate_position_data(positions_data)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        if not positions_data:
+            raise HTTPException(
+                status_code=400, 
+                detail="No valid positions found in CSV file"
+            )
+        
+        logger.info(f"Smart upload: {len(positions_data)} positions for portfolio {portfolio_id}")
+        
+        # Use reconciliation service
+        reconciliation_service = PortfolioReconciliationService(db)
+        
+        # Preview what will happen
+        preview = reconciliation_service.preview_reconciliation(
+            portfolio_id=portfolio_id,
+            new_positions=positions_data
+        )
+        
+        # Execute reconciliation
+        result = reconciliation_service.reconcile_import(
+            portfolio_id=portfolio_id,
+            new_positions=positions_data,
+            broker_type=broker
+        )
+        
+        # Automatically refresh prices after successful upload
+        refresh_result = {"updated_count": 0, "failed_count": 0}
+        try:
+            refresh_result = MarketDataService.refresh_portfolio_prices(db, portfolio_id)
+            logger.info(f"Auto-refreshed prices: {refresh_result['updated_count']} updated")
+        except Exception as e:
+            logger.warning(f"Could not auto-refresh prices: {e}")
+        
+        return {
+            "success": True,
+            "portfolio": result.portfolio_name,
+            "summary": result.summary(),
+            "positions_before": result.total_positions_before,
+            "positions_after": result.total_positions_after,
+            "changes": {
+                "added": result.new_positions,
+                "updated": result.updated_positions,
+                "sold": result.sales_detected,
+            },
+            "notifications": result.notifications,
+            "price_refresh": {
+                "updated": refresh_result.get('updated_count', 0),
+                "failed": refresh_result.get('failed_count', 0)
+            }
+        }
+        
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Smart CSV upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/refresh", response_model=PriceRefreshResponse)
 def refresh_prices(
     request: PriceRefreshRequest,
@@ -788,7 +902,7 @@ def calculate_allocation(
                 {
                     "ticker": r.ticker,
                     "company_name": r.company_name,
-                    "gomes_score": r.gomes_score,
+                    "conviction_score": r.conviction_score,
                     "current_weight_pct": r.current_weight_pct,
                     "recommended_weight_pct": r.recommended_weight_pct,
                     "recommended_amount_eur": r.recommended_amount,
@@ -853,7 +967,7 @@ def family_audit(db: Session = Depends(get_db)):
                 {
                     "ticker": g.ticker,
                     "company_name": g.company_name,
-                    "gomes_score": g.gomes_score,
+                    "conviction_score": g.conviction_score,
                     "owner_with_position": g.owner_with_position,
                     "owner_weight_pct": g.owner_weight_pct,
                     "missing_owner": g.missing_owner,

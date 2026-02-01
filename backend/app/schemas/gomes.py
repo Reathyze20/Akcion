@@ -56,7 +56,7 @@ class AnalyzeTickerResponse(BaseModel):
     """Response from ticker analysis"""
     ticker: str
     warning_level: str = Field(..., pattern="^(CRITICAL|WARNING|WATCH|OK)$")
-    gomes_score: int = Field(..., ge=1, le=10)
+    conviction_score: int = Field(..., ge=1, le=10)
     inflection_status: str
     thesis_narrative: str
     next_catalyst: str
@@ -135,7 +135,7 @@ class GomesVerdictResponse(BaseModel):
     blocked_reason: Optional[str] = None
     
     # Scores
-    gomes_score: int = Field(..., ge=0, le=10)
+    conviction_score: int = Field(..., ge=0, le=10)
     ml_prediction_score: Optional[float] = Field(None, description="ML confidence 0-100%")
     ml_direction: Optional[str] = Field(None, description="UP, DOWN, NEUTRAL")
     
@@ -178,7 +178,7 @@ class GomesVerdictResponse(BaseModel):
 class GenerateVerdictRequest(BaseModel):
     """Request to generate investment verdict"""
     ticker: str = Field(..., min_length=1, max_length=10)
-    gomes_score: Optional[int] = Field(None, ge=0, le=10, description="Override base score")
+    conviction_score: Optional[int] = Field(None, ge=0, le=10, description="Override base score")
     current_price: Optional[float] = Field(None, gt=0)
     earnings_date: Optional[datetime] = None
     transcript_text: Optional[str] = None
@@ -230,7 +230,7 @@ class GomesDashboardResponse(BaseModel):
     # Statistics
     total_watchlist: int
     investable_count: int
-    avg_gomes_score: float
+    avg_conviction_score: float
     
     # Timestamps
     last_updated: datetime = Field(default_factory=datetime.now)
@@ -273,7 +273,7 @@ class GomesStockItem(BaseModel):
     """Single stock with Gomes data and ML prediction info"""
     ticker: str
     company_name: Optional[str] = None
-    gomes_score: Optional[int] = None
+    conviction_score: Optional[int] = None
     sentiment: Optional[str] = None
     action_verdict: Optional[str] = None
     lifecycle_phase: Optional[str] = None
@@ -327,7 +327,7 @@ class DeepDueDiligenceResult(BaseModel):
     """
     ticker: str
     company_name: Optional[str] = None
-    gomes_score: int = Field(..., ge=0, le=10)
+    conviction_score: int = Field(..., ge=0, le=10)
     
     # Thesis tracking
     thesis_status: str = Field(
@@ -417,7 +417,7 @@ class ThesisDriftResult(BaseModel):
         pattern="^(IMPROVED|STABLE|DETERIORATED|BROKEN)$"
     )
     score_change: int = Field(..., ge=-10, le=10)
-    new_gomes_score: int = Field(..., ge=0, le=10)
+    new_conviction_score: int = Field(..., ge=0, le=10)
     reasoning: str
     key_changes: list[str]
     action_update: str = Field(

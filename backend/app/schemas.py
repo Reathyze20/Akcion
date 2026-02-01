@@ -91,7 +91,7 @@ class StockAnalysisResult(BaseModel):
     ticker: str
     company_name: Optional[str] = None
     sentiment: str = "Neutral"
-    gomes_score: int = Field(ge=1, le=10)
+    conviction_score: int = Field(ge=1, le=10)
     price_target: Optional[str] = None
     edge: Optional[str] = None
     catalysts: Optional[str] = None
@@ -120,7 +120,7 @@ class StockResponse(BaseModel):
     source_type: Optional[str] = None
     speaker: Optional[str] = None
     sentiment: Optional[str] = None
-    gomes_score: Optional[int] = None
+    conviction_score: Optional[int] = None
     conviction_score: Optional[int] = None
     price_target: Optional[str] = None
     time_horizon: Optional[str] = None

@@ -126,7 +126,7 @@ OUTPUT FORMAT (PURE JSON, NO MARKDOWN):
       "ticker": "XYZ",
       "company_name": "Example Corp",
       "sentiment": "Bullish",
-      "gomes_score": 8,
+      "conviction_score": 8,
       "action_verdict": "BUY_NOW",
       "entry_zone": "Current levels up to $15",
       "price_target_short": "$22 (6 months)",
@@ -374,7 +374,7 @@ FORMÁT VÝSTUPU (Musí obsahovat obě části):
 {{
   "ticker": "STRING",
   "company_name": "STRING",
-  "gomes_score": NUMBER,
+  "conviction_score": NUMBER,
   "thesis_status": "IMPROVED | STABLE | DETERIORATED | BROKEN",
   "inflection_point_status": "UPCOMING | ACTIVE | COMPLETED | FAILED",
   "upside_potential": "STRING (e.g. 150%)",
@@ -415,7 +415,7 @@ ROLE: Jsi Mark Gomes. Porovnáváš NOVÉ informace s PŮVODNÍ investiční tez
 
 PŮVODNÍ TEZE (z databáze):
 - Ticker: {ticker}
-- Původní Gomes Score: {original_score}/10
+- Původní Conviction Score: {original_score}/10
 - Původní thesis status: {original_thesis_status}
 - Původní milníky: {original_milestones}
 - Původní červené vlajky: {original_red_flags}
@@ -440,7 +440,7 @@ Odpověz ve formátu JSON:
   "ticker": "{ticker}",
   "thesis_drift": "IMPROVED | STABLE | DETERIORATED | BROKEN",
   "score_change": NUMBER,
-  "new_gomes_score": NUMBER,
+  "new_conviction_score": NUMBER,
   "reasoning": "STRING - důvod změny",
   "key_changes": ["ARRAY - co se změnilo"],
   "action_update": "BUY | ACCUMULATE | HOLD | TRIM | SELL",
@@ -448,3 +448,21 @@ Odpověz ve formátu JSON:
 }}
 ```
 """
+
+
+# ==============================================================================
+# V2.0 Enhanced Prompts - Enterprise Edition
+# Import new enhanced prompts for use in latest analysis workflows
+# ==============================================================================
+
+from .prompts_enterprise_v2 import (
+    ENTERPRISE_ANALYST_PROMPT_V2,
+    QUICK_ANALYSIS_PROMPT,
+    DEEP_DD_PROMPT_V2,
+    THESIS_DRIFT_PROMPT_V2,
+    MARKET_CONTEXT_PROMPT,
+)
+
+# Backward compatibility aliases
+ENHANCED_ANALYST_PROMPT = ENTERPRISE_ANALYST_PROMPT_V2
+DEEP_DUE_DILIGENCE_PROMPT_V2 = DEEP_DD_PROMPT_V2

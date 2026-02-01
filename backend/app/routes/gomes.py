@@ -118,7 +118,7 @@ class WatchlistRankingResponse(BaseModel):
 # HELPER FUNCTIONS
 # ============================================================================
 
-def _gomes_score_to_response(score: GomesScore) -> GomesScoreResponse:
+def _conviction_score_to_response(score: GomesScore) -> GomesScoreResponse:
     """Convert GomesScore dataclass to Pydantic response"""
     return GomesScoreResponse(
         ticker=score.ticker,
@@ -194,7 +194,7 @@ def analyze_ticker_gomes(
             force_refresh=request.force_refresh
         )
         
-        return _gomes_score_to_response(score)
+        return _conviction_score_to_response(score)
         
     except Exception as e:
         raise HTTPException(
@@ -212,7 +212,7 @@ def analyze_ticker_simple(
     """
     Analyzovat ticker (simplified GET endpoint).
     
-    Primárně používá data z tabulky Stock, kde je uložený gomes_score.
+    Primárně používá data z tabulky Stock, kde je uložený conviction_score.
     Fallback na real-time analýzu pouze pokud není v DB.
     """
     try:
@@ -226,7 +226,7 @@ def analyze_ticker_simple(
             .first()
         )
         
-        if stock and stock.gomes_score is not None:
+        if stock and stock.conviction_score is not None:
             # Use stored data from Stock table
             # Determine rating from action_verdict and score
             rating = "HOLD"
@@ -238,16 +238,16 @@ def analyze_ticker_simple(
                 rating = "HOLD"
             elif stock.action_verdict in ["TRIM", "SELL", "AVOID"]:
                 rating = "AVOID"
-            elif stock.gomes_score >= 9:
+            elif stock.conviction_score >= 9:
                 rating = "STRONG_BUY"
-            elif stock.gomes_score >= 7:
+            elif stock.conviction_score >= 7:
                 rating = "BUY"
-            elif stock.gomes_score >= 5:
+            elif stock.conviction_score >= 5:
                 rating = "HOLD"
             else:
                 rating = "AVOID"
             
-            confidence = "HIGH" if (stock.gomes_score or 0) >= 8 else "MEDIUM" if (stock.gomes_score or 0) >= 6 else "LOW"
+            confidence = "HIGH" if (stock.conviction_score or 0) >= 8 else "MEDIUM" if (stock.conviction_score or 0) >= 6 else "LOW"
             
             # Build reasoning from available fields
             reasoning = stock.trade_rationale or stock.edge or "From transcript analysis"
@@ -259,7 +259,7 @@ def analyze_ticker_simple(
             
             return GomesScoreResponse(
                 ticker=stock.ticker,
-                total_score=stock.gomes_score or 0,
+                total_score=stock.conviction_score or 0,
                 rating=rating,
                 story_score=2 if stock.edge else 0,  # Has story/edge
                 breakout_score=0,  # Would need OHLCV check
@@ -289,7 +289,7 @@ def analyze_ticker_simple(
             force_refresh=force_refresh
         )
         
-        return _gomes_score_to_response(score)
+        return _conviction_score_to_response(score)
         
     except Exception as e:
         raise HTTPException(
@@ -309,7 +309,7 @@ def scan_watchlist_gomes(
     Scanovat celý watchlist a rank podle Gomes skóre.
     
     Analyzuje všechny akcie z tabulky stocks a vrací je
-    seřazené podle gomes_score (highest first).
+    seřazené podle conviction_score (highest first).
     
     **Use case**: Daily scan pro identifikaci top setups.
     """
@@ -318,8 +318,8 @@ def scan_watchlist_gomes(
         stocks_list = (
             db.query(Stock)
             .filter(Stock.is_latest == True)
-            .filter(Stock.gomes_score >= min_score)
-            .order_by(desc(Stock.gomes_score))
+            .filter(Stock.conviction_score >= min_score)
+            .order_by(desc(Stock.conviction_score))
             .limit(limit)
             .all()
         )
@@ -336,7 +336,7 @@ def scan_watchlist_gomes(
         rankings = []
         
         for stock in stocks_list:
-            # Determine rating based on action_verdict and gomes_score
+            # Determine rating based on action_verdict and conviction_score
             rating = "HOLD"
             if stock.action_verdict == "BUY_NOW":
                 rating = "STRONG_BUY"
@@ -349,9 +349,9 @@ def scan_watchlist_gomes(
             
             rankings.append(WatchlistRanking(
                 ticker=stock.ticker,
-                score=stock.gomes_score or 0,
+                score=stock.conviction_score or 0,
                 rating=rating,
-                confidence="HIGH" if (stock.gomes_score or 0) >= 8 else "MEDIUM" if (stock.gomes_score or 0) >= 6 else "LOW",
+                confidence="HIGH" if (stock.conviction_score or 0) >= 8 else "MEDIUM" if (stock.conviction_score or 0) >= 6 else "LOW",
                 reasoning=stock.trade_rationale or stock.edge or "From transcript analysis",
                 last_analyzed=stock.created_at
             ))
@@ -499,7 +499,7 @@ def analyze_batch_gomes(
                     ticker=ticker.upper(),
                     force_refresh=request.force_refresh
                 )
-                results.append(_gomes_score_to_response(score))
+                results.append(_conviction_score_to_response(score))
                 
             except Exception as e:
                 errors.append({
@@ -1073,7 +1073,7 @@ async def run_deep_due_diligence(
             "analysis_text": "ZÁKLADNÍ FILTR: Gatekeeper...",
             "data": {
                 "ticker": "GKPRF",
-                "gomes_score": 8,
+                "conviction_score": 8,
                 "thesis_status": "IMPROVED",
                 "action_signal": "ACCUMULATE",
                 "kelly_criterion_hint": 10,
@@ -1173,7 +1173,7 @@ async def run_deep_due_diligence_batch(
             
             results.append({
                 "ticker": result.data.ticker,
-                "gomes_score": result.data.gomes_score,
+                "conviction_score": result.data.conviction_score,
                 "action_signal": result.data.action_signal,
                 "thesis_status": result.data.thesis_status,
                 "success": True,
@@ -1277,8 +1277,8 @@ async def update_stock_analysis(
         return {
             "success": True,
             "ticker": ticker.upper(),
-            "previous_score": result.score_change + result.data.gomes_score if result.score_change else None,
-            "new_score": result.data.gomes_score,
+            "previous_score": result.score_change + result.data.conviction_score if result.score_change else None,
+            "new_score": result.data.conviction_score,
             "score_change": result.score_change,
             "thesis_drift": result.thesis_drift,
             "action_signal": result.data.action_signal,
@@ -1322,7 +1322,7 @@ async def update_stock_with_ai_analyst(
             "success": true,
             "ticker": "KUYA.V",
             "analysis": {
-                "gomes_score": 9,
+                "conviction_score": 9,
                 "score_delta": +2,
                 "cash_runway_months": 12,
                 "inflection_status": "ACTIVE_GOLD_MINE",
@@ -1353,7 +1353,7 @@ async def update_stock_with_ai_analyst(
             ticker=ticker.upper(),
             document_text=request_body.transcript,
             source_type=request_body.source_type,
-            current_score=stock.gomes_score,
+            current_score=stock.conviction_score,
             previous_thesis=stock.thesis_narrative
         )
         
@@ -1362,11 +1362,11 @@ async def update_stock_with_ai_analyst(
         
         # Track score history if score changed
         if analysis.score_delta != 0:
-            from app.models.score_history import GomesScoreHistory
+            from app.models.score_history import ConvictionScoreHistory
             
-            history_record = GomesScoreHistory(
+            history_record = ConvictionScoreHistory(
                 ticker=ticker.upper(),
-                gomes_score=stock.gomes_score,
+                conviction_score=stock.conviction_score,
                 thesis_status=stock.inflection_status,
                 action_signal=None,  # Could derive from GomesLogicEngine
                 price_at_analysis=stock.current_price,
@@ -1382,7 +1382,7 @@ async def update_stock_with_ai_analyst(
             "success": True,
             "ticker": ticker.upper(),
             "analysis": {
-                "gomes_score": stock.gomes_score,
+                "conviction_score": stock.conviction_score,
                 "score_delta": analysis.score_delta,
                 "score_reasoning": analysis.score_reasoning,
                 "cash_runway_months": stock.cash_runway_months,
@@ -1397,7 +1397,7 @@ async def update_stock_with_ai_analyst(
                 "green_flags": analysis.green_flags,
             },
             "updated_fields": [
-                "gomes_score", "cash_runway_months", "total_cash", 
+                "conviction_score", "cash_runway_months", "total_cash", 
                 "quarterly_burn_rate", "inflection_status", "primary_catalyst",
                 "catalyst_date", "thesis_narrative", "insider_activity"
             ]
@@ -1437,11 +1437,11 @@ def get_score_history(
     
     try:
         # Try to get from score_history table first
-        from app.models.score_history import GomesScoreHistory
+        from app.models.score_history import ConvictionScoreHistory
         
-        history = db.query(GomesScoreHistory).filter(
-            GomesScoreHistory.ticker == ticker.upper()
-        ).order_by(desc(GomesScoreHistory.recorded_at)).limit(limit).all()
+        history = db.query(ConvictionScoreHistory).filter(
+            ConvictionScoreHistory.ticker == ticker.upper()
+        ).order_by(desc(ConvictionScoreHistory.recorded_at)).limit(limit).all()
         
         if history:
             return {
@@ -1450,7 +1450,7 @@ def get_score_history(
                 "history": [
                     {
                         "date": h.recorded_at.isoformat() if h.recorded_at else None,
-                        "gomes_score": h.gomes_score,
+                        "conviction_score": h.conviction_score,
                         "thesis_status": h.thesis_status,
                         "action_signal": h.action_signal,
                         "price_at_analysis": float(h.price_at_analysis) if h.price_at_analysis else None,
@@ -1475,7 +1475,7 @@ def get_score_history(
         "history": [
             {
                 "date": s.created_at.isoformat() if s.created_at else None,
-                "gomes_score": s.gomes_score,
+                "conviction_score": s.conviction_score,
                 "thesis_status": None,  # Not tracked in stocks table
                 "action_signal": s.action_verdict,
                 "price_at_analysis": None,
@@ -1786,7 +1786,7 @@ async def analyze_position_with_gomes_logic(
     metrics = StockMetrics(
         ticker=ticker,
         asset_class=asset_class,
-        gomes_score=stock.gomes_score,
+        conviction_score=stock.conviction_score,
         cash_runway_months=stock.cash_runway_months,
         inflection_status=stock.inflection_status,
         current_price=stock.current_price or position.current_price or 0,
@@ -1805,7 +1805,7 @@ async def analyze_position_with_gomes_logic(
     # Build decision log
     log_lines = [
         f"Asset Class: {asset_class.value}",
-        f"Gomes Score: {stock.gomes_score}/10",
+        f"Gomes Score: {stock.conviction_score}/10",
         f"Cash Runway: {stock.cash_runway_months} months" if stock.cash_runway_months else "Cash Runway: Unknown",
         f"Inflection: {stock.inflection_status}" if stock.inflection_status else "Inflection: Unknown",
         f"Current Weight: {current_weight_pct:.2f}%",
@@ -1821,7 +1821,7 @@ async def analyze_position_with_gomes_logic(
         warnings=decision.warnings,
         metrics={
             "asset_class": asset_class.value,
-            "gomes_score": stock.gomes_score,
+            "conviction_score": stock.conviction_score,
             "cash_runway_months": stock.cash_runway_months,
             "inflection_status": stock.inflection_status,
             "current_price": metrics.current_price,

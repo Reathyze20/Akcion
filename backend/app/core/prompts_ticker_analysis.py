@@ -37,7 +37,7 @@ If the input text does not contain specific data points, apply these FALLBACK AC
 
 #### 1. MISSING CASH RUNWAY / FINANCIALS:
 - Output: `"UNKNOWN - DATA GAP"`
-- **FORCE Action**: Set `gomes_score` to MAX 5 (Unknown financials = high risk)
+- **FORCE Action**: Set `conviction_score` to MAX 5 (Unknown financials = high risk)
 - **FORCE Recommendation**: `"REVIEW (Missing Financials)"`
 - **Reasoning**: If management doesn't discuss cash in a public appearance, 
   it's either irrelevant (good) or they're hiding something (bad). 
@@ -65,7 +65,7 @@ If the input text does not contain specific data points, apply these FALLBACK AC
 #### 5. CONTRADICTORY SIGNALS:
 - If text is bullish BUT fundamentals deteriorated:
   - Add WARNING to `thesis_narrative`: `"⚠️ CONFLICT: Bullish tone but deteriorating metrics"`
-  - **FORCE** `gomes_score` to MAX 6
+  - **FORCE** `conviction_score` to MAX 6
 
 ---
 
@@ -79,7 +79,7 @@ Return ONLY valid JSON. All fields REQUIRED (use fallback strings if data missin
   "source": "Mark Gomes YouTube Update",
   "source_url": "https://youtube.com/...",
   
-  "gomes_score": 7,  // 1-10, with penalties applied for missing data
+  "conviction_score": 7,  // 1-10, with penalties applied for missing data
   
   "inflection_status": "UPCOMING",  // WAIT_TIME | UPCOMING | ACTIVE_GOLD_MINE
   
@@ -141,7 +141,7 @@ Output:
 ```json
 {
   "ticker": "KUYA",
-  "gomes_score": 8,
+  "conviction_score": 8,
   "inflection_status": "UPCOMING",
   "thesis_narrative": "High-grade silver producer entering commercial production",
   "next_catalyst": "Q1 2026 Production Report (Feb 15)",
@@ -159,7 +159,7 @@ Output:
 ```json
 {
   "ticker": "KUYA",
-  "gomes_score": 5,  // ← CAPPED AT 5 due to missing financials
+  "conviction_score": 5,  // ← CAPPED AT 5 due to missing financials
   "inflection_status": "WAIT_TIME",  // ← Forced to WAIT_TIME (no catalyst date)
   "thesis_narrative": "Production narrative mentioned but NO FINANCIAL DETAILS PROVIDED. (No valuation provided - thesis unclear)",
   "next_catalyst": "NO CATALYST DETECTED",  // ← Explicit warning
@@ -178,7 +178,7 @@ Output:
 ```json
 {
   "ticker": "KUYA",
-  "gomes_score": 4,  // Base 6, -1 (no target), -1 (vague thesis) = 4
+  "conviction_score": 4,  // Base 6, -1 (no target), -1 (vague thesis) = 4
   "inflection_status": "WAIT_TIME",
   "thesis_narrative": "⚠️ VAGUE BULLISHNESS: No specific catalysts, targets, or financial metrics provided. Generic praise.",
   "next_catalyst": "NO CATALYST DETECTED",
@@ -237,15 +237,154 @@ RETURN ONLY JSON. NO EXPLANATIONS OUTSIDE JSON.
 
 
 # ==============================================================================
+# V2 ENHANCED TICKER ANALYSIS PROMPT
+# ==============================================================================
+
+TICKER_ANALYSIS_PROMPT_V2: Final[str] = """
+### SYSTEM ROLE: Fiduciary Risk Officer
+
+Jsi RISK MANAGEMENT AI pro rodinné portfolio.
+Analyzuješ nové informace o tickeru, který je již v portfoliu.
+
+**KLÍČOVÁ FILOZOFIE:**
+- "Missing data = Risk signal, not neutral"
+- "When in doubt, downgrade"
+- "Protect the principal first"
+
+---
+
+### MASTER SIGNAL INTEGRATION
+
+Tvá analýza musí určit:
+
+1. **LIFECYCLE PHASE:**
+   - `WAIT_TIME`: Čekáme na potvrzení, NE pro držení
+   - `APPROACHING`: Catalyst blízko, připravit
+   - `GOLD_MINE`: Thesis potvrzena, přidat
+   - `MATURE`: Plný potenciál, držet
+   - `DECLINING`: Odejít
+
+2. **THESIS DRIFT:**
+   - `IMPROVED`: Pozitivní vývoj
+   - `STABLE`: Beze změn
+   - `DETERIORATED`: Zhoršení
+   - `BROKEN`: Fundamentální problém
+
+3. **PRICE ZONE STATUS:**
+   - `DEEP_VALUE`: Pod green line (agresivně kupovat)
+   - `BUY_ZONE`: Nad green, pod fair value
+   - `FAIR_VALUE`: Neutrální zóna
+   - `OVERVALUED`: Nad red line (trimovat)
+   - `EXTREME_PREMIUM`: Nebezpečná zóna
+
+---
+
+### EXTRACTION RULES
+
+**POVINNÁ POLE (penalizace pokud chybí):**
+
+| Pole | Penalizace | Max Score |
+|------|------------|-----------|
+| Cash runway nezmíněn (pre-revenue) | -3 | Max 5 |
+| Žádný konkrétní catalyst | -2 | - |
+| Žádná cenová úroveň | -1 | - |
+| Protichůdné signály | -2 | Max 6 |
+
+**PRICE LINE EXTRACTION:**
+- GREEN LINE: "At $X buy zone", "screaming buy at", "undervalued at"
+- RED LINE: "Fully valued at $X", "would sell at", "take profits at"
+- GREY LINE: "Thesis broken below $X", "danger zone under"
+
+---
+
+### OUTPUT FORMAT (JSON)
+
+```json
+{{
+  "ticker": "{ticker}",
+  "analysis_date": "{analysis_date}",
+  
+  "master_signal": {{
+    "conviction_score": NUMBER,
+    "lifecycle_phase": "WAIT_TIME | APPROACHING | GOLD_MINE | MATURE | DECLINING",
+    "thesis_drift": "IMPROVED | STABLE | DETERIORATED | BROKEN",
+    "price_zone": "DEEP_VALUE | BUY_ZONE | FAIR_VALUE | OVERVALUED | EXTREME_PREMIUM"
+  }},
+  
+  "action_signals": {{
+    "action_verdict": "BUY_NOW | ACCUMULATE | HOLD | TRIM | SELL | AVOID",
+    "position_change": "ADD | HOLD | REDUCE | EXIT",
+    "urgency": "IMMEDIATE | SOON | NORMAL | LOW"
+  }},
+  
+  "price_lines": {{
+    "green_line": NUMBER | null,
+    "red_line": NUMBER | null,
+    "grey_line": NUMBER | null,
+    "stop_loss": NUMBER | null,
+    "current_zone": "GREEN | NEUTRAL | RED | DANGER"
+  }},
+  
+  "catalysts": {{
+    "next_catalyst": "STRING or NO_CATALYST_DETECTED",
+    "catalyst_date": "YYYY-MM-DD or null",
+    "catalyst_type": "EARNINGS | FDA | CONTRACT | PRODUCT | MACRO | NONE"
+  }},
+  
+  "risk_assessment": {{
+    "cash_runway_months": NUMBER | null,
+    "cash_status": "SAFE | WATCH | CRITICAL | UNKNOWN",
+    "insider_activity": "BUYING | SELLING | NEUTRAL | UNKNOWN",
+    "primary_risk": "STRING",
+    "risk_level": "LOW | MEDIUM | HIGH | EXTREME"
+  }},
+  
+  "thesis_update": {{
+    "edge_still_valid": BOOLEAN,
+    "new_milestones": ["ARRAY"],
+    "new_red_flags": ["ARRAY"],
+    "thesis_narrative": "STRING",
+    "key_quote": "STRING - exact quote from source"
+  }},
+  
+  "warnings": ["ARRAY of warning strings"],
+  "data_gaps": ["ARRAY of missing data points"],
+  "extraction_confidence": "HIGH | MEDIUM | LOW"
+}}
+```
+
+---
+
+### CURRENT POSITION CONTEXT
+
+- Ticker: {ticker}
+- Current Price: {current_price}
+- Shares Held: {shares_count}
+- Current Allocation: {current_weight}%
+- Last Known Score: {last_score}
+
+---
+
+INPUT TEXT TO ANALYZE:
+{input_text}
+
+RETURN ONLY VALID JSON. ŽÁDNÝ TEXT MIMO JSON.
+"""
+
+
+# ==============================================================================
 # UI WARNING MESSAGES (Frontend Display Logic)
 # ==============================================================================
 
 WARNING_MESSAGES: Final[dict[str, str]] = {
     "UNKNOWN_CASH": "⚠️ Chybí informace o hotovosti - zkontrolujte manuálně!",
     "NO_CATALYST": "⚠️ Nebyl identifikován žádný catalyst - pozice pod dohledem",
-    "LOW_SCORE": "⚠️ Gomes Score poklesl - zvažte TRIM",
+    "LOW_SCORE": "⚠️ Conviction Score poklesl - zvažte TRIM",
     "MISSING_DATA": "⚠️ Neúplná data - analýza může být nepřesná",
     "CONTRADICTORY": "⚠️ KONFLIKT: Pozitivní tón vs negativní metriky",
+    "PHASE_4": "🚨 Weinstein Phase 4 - NEPŘIDÁVAT POZICE!",
+    "THESIS_BROKEN": "🚨 Thesis zlomená - EXIT signál",
+    "CASH_CRITICAL": "🚨 Cash runway < 6 měsíců - vysoké riziko ředění",
 }
 
 
@@ -258,3 +397,21 @@ def get_warning_level(score: int, has_catalyst: bool, has_cash_data: bool) -> st
     if score <= 6:
         return "WATCH"
     return "OK"
+
+
+def get_lifecycle_recommendation(phase: str, thesis_drift: str) -> str:
+    """Generate position recommendation based on lifecycle and drift."""
+    recommendations = {
+        ("WAIT_TIME", "IMPROVED"): "Sledovat, nepřidávat zatím",
+        ("WAIT_TIME", "STABLE"): "Čekat na catalyst",
+        ("WAIT_TIME", "DETERIORATED"): "Zvážit EXIT",
+        ("APPROACHING", "IMPROVED"): "Připravit pozici, čekat na entry",
+        ("APPROACHING", "STABLE"): "Být připraven",
+        ("GOLD_MINE", "IMPROVED"): "PŘIDAT agresivně",
+        ("GOLD_MINE", "STABLE"): "Držet, případně přidat",
+        ("MATURE", "STABLE"): "Držet, netlačit",
+        ("MATURE", "DETERIORATED"): "TRIM část pozice",
+        ("DECLINING", "DETERIORATED"): "EXIT priorita",
+        ("DECLINING", "BROKEN"): "OKAMŽITĚ EXIT",
+    }
+    return recommendations.get((phase, thesis_drift), "Manuální review potřeba")

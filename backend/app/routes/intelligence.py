@@ -1,11 +1,14 @@
 """
 API Routes for Analysis Intelligence Module
-Handles analyst transcripts, SWOT analysis, and enhanced watchlist
+Handles analyst transcripts, SWOT analysis, enhanced watchlist,
+knowledge synthesis (Brain Logic), and portfolio reconciliation (Sync Logic).
 """
+import logging
 from datetime import datetime
 from datetime import date as date_type
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 
@@ -26,8 +29,10 @@ from ..schemas.analysis import (
     TopGomesPick
 )
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/intelligence", tags=["Intelligence"])
+
 
 
 # ==========================================
@@ -230,18 +235,18 @@ async def update_watchlist_analysis(
 
 @router.get("/watchlist", response_model=List[WatchlistAnalysisResponse])
 async def list_watchlist_with_analysis(
-    min_gomes_score: Optional[float] = Query(None, ge=0, le=10),
+    min_conviction_score: Optional[float] = Query(None, ge=0, le=10),
     db: Session = Depends(get_db)
 ):
     """Get watchlist with analysis (uses v_watchlist_analysis view)"""
     query = "SELECT * FROM v_watchlist_analysis"
     params = {}
     
-    if min_gomes_score is not None:
-        query += " WHERE gomes_score >= :min_score"
-        params["min_score"] = min_gomes_score
+    if min_conviction_score is not None:
+        query += " WHERE conviction_score >= :min_score"
+        params["min_score"] = min_conviction_score
     
-    query += " ORDER BY gomes_score DESC NULLS LAST"
+    query += " ORDER BY conviction_score DESC NULLS LAST"
     result = db.execute(text(query), params)
     
     items = []
@@ -252,7 +257,7 @@ async def list_watchlist_with_analysis(
             company_name=row.company_name,
             action_verdict=row.action_verdict,
             confidence_score=row.confidence_score,
-            gomes_score=row.gomes_score,
+            conviction_score=row.conviction_score,
             investment_thesis=row.investment_thesis,
             risks=row.risks,
             last_updated=row.last_updated,
@@ -280,7 +285,7 @@ async def get_watchlist_with_analysis(ticker: str, db: Session = Depends(get_db)
         company_name=result.company_name,
         action_verdict=result.action_verdict,
         confidence_score=result.confidence_score,
-        gomes_score=result.gomes_score,
+        conviction_score=result.conviction_score,
         investment_thesis=result.investment_thesis,
         risks=result.risks,
         last_updated=result.last_updated,
@@ -302,7 +307,7 @@ async def get_top_gomes_picks(limit: int = 10, db: Session = Depends(get_db)):
     for row in result:
         picks.append(TopGomesPick(
             ticker=row.ticker,
-            gomes_score=float(row.gomes_score),
+            conviction_score=float(row.conviction_score),
             company_name=row.company_name,
             action_verdict=row.action_verdict,
             investment_thesis=row.investment_thesis
@@ -326,11 +331,11 @@ async def get_analysis_stats(db: Session = Depends(get_db)):
     active_swots = db.query(SWOTAnalysis).filter(SWOTAnalysis.is_active == True).count()
     
     gomes_count = db.query(ActiveWatchlist).filter(
-        ActiveWatchlist.gomes_score.isnot(None)
+        ActiveWatchlist.conviction_score.isnot(None)
     ).count()
     
-    avg_gomes = db.query(func.avg(ActiveWatchlist.gomes_score)).filter(
-        ActiveWatchlist.gomes_score.isnot(None)
+    avg_gomes = db.query(func.avg(ActiveWatchlist.conviction_score)).filter(
+        ActiveWatchlist.conviction_score.isnot(None)
     ).scalar()
     
     top_sources_query = db.query(
@@ -348,7 +353,406 @@ async def get_analysis_stats(db: Session = Depends(get_db)):
         processed_transcripts=processed_transcripts,
         total_swots=total_swots,
         active_swots=active_swots,
-        tickers_with_gomes_score=gomes_count,
-        avg_gomes_score=float(avg_gomes) if avg_gomes else None,
+        tickers_with_conviction_score=gomes_count,
+        avg_conviction_score=float(avg_gomes) if avg_gomes else None,
         top_sources=top_sources
     )
+
+
+# ==========================================
+# KNOWLEDGE SYNTHESIS (Brain Logic)
+# ==========================================
+
+from ..services.knowledge_synthesis import (
+    KnowledgeSynthesisService,
+    MergeAction,
+)
+from ..services.portfolio_reconciliation import (
+    PortfolioReconciliationService,
+)
+from ..models.score_history import ThesisDriftAlert, ConvictionScoreHistory
+from pydantic import Field
+
+
+class KnowledgeSynthesisRequest(BaseModel):
+    """Request for knowledge synthesis."""
+    ticker: str = Field(..., description="Stock ticker symbol")
+    new_info: str = Field(..., min_length=10, description="New information to synthesize")
+    source: str = Field(default="Manual", description="Source of information")
+    force_score: Optional[int] = Field(None, ge=1, le=10, description="Override score")
+
+
+class KnowledgeSynthesisResponse(BaseModel):
+    """Response from knowledge synthesis."""
+    success: bool
+    action: str
+    ticker: str
+    old_score: Optional[int] = None
+    new_score: Optional[int] = None
+    conflicts: List[str] = []
+    merged_fields: List[str] = []
+    alert_generated: bool = False
+    explanation: str
+
+
+@router.post("/synthesize", response_model=KnowledgeSynthesisResponse)
+async def synthesize_knowledge(
+    request: KnowledgeSynthesisRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Synthesize new knowledge into existing stock data.
+    
+    This endpoint implements the "Brain Logic":
+    - Never overwrites existing data
+    - Merges and refines information
+    - Detects conflicts and adjusts scores
+    - Correlates price mentions with price lines
+    - Generates alerts for significant changes
+    
+    Use cases:
+    - Pasting chat comments about a stock
+    - Adding news/PR updates
+    - Recording earnings call notes
+    - Manual thesis updates
+    """
+    try:
+        service = KnowledgeSynthesisService(db)
+        result = await service.synthesize_knowledge(
+            ticker=request.ticker,
+            new_info=request.new_info,
+            source=request.source,
+            force_score=request.force_score
+        )
+        
+        return KnowledgeSynthesisResponse(
+            success=True,
+            action=result.action.value,
+            ticker=result.ticker,
+            old_score=result.old_score,
+            new_score=result.new_score,
+            conflicts=result.conflicts,
+            merged_fields=result.merged_fields,
+            alert_generated=result.alert_generated,
+            explanation=result.explanation
+        )
+        
+    except Exception as e:
+        logger.error(f"Knowledge synthesis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/quick-note/{ticker}")
+async def add_quick_note(
+    ticker: str,
+    note: str = Query(..., min_length=5, description="Quick note to add"),
+    source: str = Query(default="Quick Note"),
+    db: Session = Depends(get_db)
+):
+    """
+    Add a quick note to a stock's knowledge base.
+    Simplified version of synthesize for fast updates.
+    """
+    try:
+        service = KnowledgeSynthesisService(db)
+        result = await service.synthesize_knowledge(
+            ticker=ticker.upper(),
+            new_info=note,
+            source=source
+        )
+        
+        return {
+            "success": True,
+            "ticker": result.ticker,
+            "action": result.action.value,
+            "new_score": result.new_score,
+            "conflicts_detected": len(result.conflicts) > 0
+        }
+        
+    except Exception as e:
+        logger.error(f"Quick note failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# THESIS DRIFT ALERTS
+# ==========================================
+
+class ThesisDriftAlertResponse(BaseModel):
+    """Thesis drift alert response."""
+    id: int
+    ticker: str
+    alert_type: str
+    severity: str
+    old_score: Optional[int] = None
+    new_score: Optional[int] = None
+    message: str
+    is_acknowledged: bool = False
+    created_at: Optional[str] = None
+
+
+@router.get("/alerts", response_model=List[ThesisDriftAlertResponse])
+async def get_thesis_drift_alerts(
+    ticker: Optional[str] = None,
+    severity: Optional[str] = None,
+    acknowledged: Optional[bool] = None,
+    limit: int = Query(default=50, le=200),
+    db: Session = Depends(get_db)
+):
+    """
+    Get thesis drift alerts.
+    
+    Filters:
+    - ticker: Filter by specific stock
+    - severity: INFO, WARNING, CRITICAL
+    - acknowledged: True/False
+    """
+    query = db.query(ThesisDriftAlert)
+    
+    if ticker:
+        query = query.filter(ThesisDriftAlert.ticker == ticker.upper())
+    if severity:
+        query = query.filter(ThesisDriftAlert.severity == severity.upper())
+    if acknowledged is not None:
+        query = query.filter(ThesisDriftAlert.is_acknowledged == acknowledged)
+    
+    alerts = query.order_by(ThesisDriftAlert.id.desc()).limit(limit).all()
+    
+    return [
+        ThesisDriftAlertResponse(
+            id=a.id,
+            ticker=a.ticker,
+            alert_type=a.alert_type,
+            severity=a.severity,
+            old_score=a.old_score,
+            new_score=a.new_score,
+            message=a.message,
+            is_acknowledged=a.is_acknowledged,
+            created_at=a.created_at.isoformat() if a.created_at else None
+        )
+        for a in alerts
+    ]
+
+
+@router.post("/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(
+    alert_id: int,
+    db: Session = Depends(get_db)
+):
+    """Mark an alert as acknowledged."""
+    alert = db.query(ThesisDriftAlert).filter(
+        ThesisDriftAlert.id == alert_id
+    ).first()
+    
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    alert.is_acknowledged = True
+    alert.acknowledged_at = datetime.utcnow()
+    db.commit()
+    
+    return {"success": True, "alert_id": alert_id}
+
+
+@router.post("/alerts/acknowledge-all")
+async def acknowledge_all_alerts(
+    ticker: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Acknowledge all unacknowledged alerts."""
+    query = db.query(ThesisDriftAlert).filter(
+        ThesisDriftAlert.is_acknowledged == False
+    )
+    
+    if ticker:
+        query = query.filter(ThesisDriftAlert.ticker == ticker.upper())
+    
+    count = query.update({
+        "is_acknowledged": True,
+        "acknowledged_at": datetime.utcnow()
+    })
+    db.commit()
+    
+    return {"success": True, "acknowledged_count": count}
+
+
+# ==========================================
+# SCORE HISTORY
+# ==========================================
+
+@router.get("/score-history/{ticker}")
+async def get_score_history(
+    ticker: str,
+    limit: int = Query(default=30, le=100),
+    db: Session = Depends(get_db)
+):
+    """Get score history for a ticker."""
+    history = db.query(ConvictionScoreHistory).filter(
+        ConvictionScoreHistory.ticker == ticker.upper()
+    ).order_by(ConvictionScoreHistory.id.desc()).limit(limit).all()
+    
+    return [
+        {
+            "id": h.id,
+            "score": h.conviction_score,
+            "source": h.analysis_source,
+            "thesis_status": h.thesis_status,
+            "action_signal": h.action_signal,
+            "recorded_at": h.recorded_at.isoformat() if h.recorded_at else None
+        }
+        for h in history
+    ]
+
+
+# ==========================================
+# PORTFOLIO RECONCILIATION (Sync Logic)
+# ==========================================
+
+class ReconciliationPreviewRequest(BaseModel):
+    """Request to preview reconciliation."""
+    portfolio_id: int
+    positions: List[dict]
+
+
+@router.post("/reconcile/preview")
+async def preview_reconciliation(
+    request: ReconciliationPreviewRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Preview what a reconciliation would do before committing.
+    
+    Shows which positions would be:
+    - Added (new in import)
+    - Removed (sold - will be moved to watchlist)
+    - Updated (quantity/price changes)
+    """
+    try:
+        service = PortfolioReconciliationService(db)
+        preview = service.preview_reconciliation(
+            portfolio_id=request.portfolio_id,
+            new_positions=request.positions
+        )
+        
+        return preview
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Reconciliation preview failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reconcile/{portfolio_id}")
+async def reconcile_portfolio(
+    portfolio_id: int,
+    positions: List[dict],
+    db: Session = Depends(get_db)
+):
+    """
+    Reconcile portfolio with new position data.
+    
+    This endpoint implements the "Sync Logic":
+    - Detects sales when positions are missing
+    - Automatically moves sold positions to Watchlist
+    - Tracks all changes in investment log
+    - Generates notifications for user awareness
+    """
+    try:
+        service = PortfolioReconciliationService(db)
+        result = service.reconcile_import(
+            portfolio_id=portfolio_id,
+            new_positions=positions
+        )
+        
+        return {
+            "success": True,
+            "portfolio": result.portfolio_name,
+            "summary": result.summary(),
+            "positions_before": result.total_positions_before,
+            "positions_after": result.total_positions_after,
+            "sales_detected": result.sales_detected,
+            "new_positions": result.new_positions,
+            "updated_positions": result.updated_positions,
+            "notifications": result.notifications,
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Reconciliation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# UNIFIED NOTIFICATIONS
+# ==========================================
+
+@router.get("/notifications")
+async def get_all_notifications(
+    include_acknowledged: bool = Query(default=False),
+    limit: int = Query(default=20, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all notifications from various sources.
+    
+    Aggregates:
+    - Thesis drift alerts
+    - Score change notifications
+    - Reconciliation alerts
+    """
+    notifications = []
+    
+    # Get thesis drift alerts
+    alerts_query = db.query(ThesisDriftAlert)
+    if not include_acknowledged:
+        alerts_query = alerts_query.filter(ThesisDriftAlert.is_acknowledged == False)
+    
+    alerts = alerts_query.order_by(ThesisDriftAlert.id.desc()).limit(limit).all()
+    
+    for alert in alerts:
+        notifications.append({
+            "id": f"alert-{alert.id}",
+            "type": "THESIS_DRIFT",
+            "severity": alert.severity,
+            "ticker": alert.ticker,
+            "title": f"{alert.alert_type} Alert for {alert.ticker}",
+            "message": alert.message,
+            "is_read": alert.is_acknowledged,
+            "timestamp": alert.created_at.isoformat() if alert.created_at else None,
+            "data": {
+                "old_score": alert.old_score,
+                "new_score": alert.new_score
+            }
+        })
+    
+    # Get recent significant score changes
+    recent_history = db.query(ConvictionScoreHistory).order_by(
+        ConvictionScoreHistory.id.desc()
+    ).limit(limit).all()
+    
+    for h in recent_history:
+        if h.source and "conflict" in h.source.lower():
+            notifications.append({
+                "id": f"score-{h.id}",
+                "type": "SCORE_CHANGE",
+                "severity": "INFO",
+                "ticker": h.ticker,
+                "title": f"Score Updated for {h.ticker}",
+                "message": h.note or f"New score: {h.score}",
+                "is_read": True,  # Score changes are informational
+                "timestamp": h.created_at.isoformat() if h.created_at else None,
+                "data": {
+                    "new_score": h.score,
+                    "source": h.source
+                }
+            })
+    
+    # Sort by timestamp descending
+    notifications.sort(
+        key=lambda x: x.get("timestamp") or "",
+        reverse=True
+    )
+    
+    return notifications[:limit]

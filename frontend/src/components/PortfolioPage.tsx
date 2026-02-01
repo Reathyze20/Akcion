@@ -368,16 +368,16 @@ export default function PortfolioPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-white">Správa portfolia</h1>
+        <h1 className="text-3xl font-bold text-text-primary">Správa portfolia</h1>
         <div className="flex items-center gap-4">
           {/* Owner Filter */}
           {owners.length > 0 && (
             <div className="flex items-center gap-2">
-              <label className="text-sm font-semibold text-slate-300">Owner:</label>
+              <label className="text-sm font-semibold text-text-secondary">Owner:</label>
               <select
                 value={selectedOwner || ''}
                 onChange={(e) => setSelectedOwner(e.target.value || null)}
-                className="px-4 py-2 bg-slate-800 border border-white/10 rounded-lg text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                className="px-4 py-2 bg-surface-raised border border-white/10 rounded-lg text-text-primary focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
               >
                 <option value="">All</option>
                 {owners.map((owner) => (
@@ -416,7 +416,7 @@ export default function PortfolioPage() {
               <button
                 onClick={handleDeleteAllPositions}
                 disabled={loading || !portfolioSummary?.positions?.length}
-                className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn bg-red-600 hover:bg-red-700 text-text-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Trash2 size={20} />
                 Smazat vše
@@ -434,8 +434,8 @@ export default function PortfolioPage() {
             onClick={() => setSelectedPortfolio(portfolio.id)}
             className={`px-6 py-3 rounded-lg font-semibold transition-all ${
               selectedPortfolio === portfolio.id
-                ? 'bg-indigo-600 text-white ring-2 ring-indigo-400'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                ? 'bg-indigo-600 text-text-primary ring-2 ring-indigo-400'
+                : 'bg-surface-raised text-text-secondary hover:bg-surface-hover'
             }`}
           >
             <div className="flex flex-col items-start">
@@ -475,7 +475,7 @@ export default function PortfolioPage() {
           <div className="card p-6">
             <div className="text-sm text-text-secondary mb-1">P/L (CZK)</div>
             <div className={`text-2xl font-bold flex items-center gap-2 ${
-              portfolioSummary.total_unrealized_pl >= 0 ? 'text-green-500' : 'text-red-500'
+              portfolioSummary.total_unrealized_pl >= 0 ? 'text-positive' : 'text-negative'
             }`}>
               {portfolioSummary.total_unrealized_pl >= 0 ? (
                 <TrendingUp size={24} />
@@ -488,7 +488,7 @@ export default function PortfolioPage() {
           <div className="card p-6">
             <div className="text-sm text-text-secondary mb-1">P/L %</div>
             <div className={`text-2xl font-bold ${
-              portfolioSummary.total_unrealized_pl_percent >= 0 ? 'text-green-500' : 'text-red-500'
+              portfolioSummary.total_unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'
             }`}>
               {formatPercent(portfolioSummary.total_unrealized_pl_percent)}
             </div>
@@ -523,11 +523,11 @@ export default function PortfolioPage() {
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-accent-blue">{position.ticker}</span>
-                          <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded">{currency}</span>
+                          <span className="font-bold text-accent">{position.ticker}</span>
+                          <span className="text-xs text-text-muted bg-surface-raised px-2 py-0.5 rounded">{currency}</span>
                         </div>
                         {companyName && (
-                          <span className="text-sm text-slate-400 truncate max-w-xs">{companyName}</span>
+                          <span className="text-sm text-text-secondary truncate max-w-xs">{companyName}</span>
                         )}
                       </div>
                     </td>
@@ -542,12 +542,12 @@ export default function PortfolioPage() {
                       {formatCurrency(position.market_value, currency)}
                     </td>
                     <td className={`px-6 py-4 text-right font-semibold ${
-                      position.unrealized_pl >= 0 ? 'text-green-500' : 'text-red-500'
+                      position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'
                     }`}>
                       {formatCurrency(position.unrealized_pl, currency)}
                     </td>
                     <td className={`px-6 py-4 text-right font-semibold ${
-                      position.unrealized_pl_percent >= 0 ? 'text-green-500' : 'text-red-500'
+                      position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'
                     }`}>
                       {formatPercent(position.unrealized_pl_percent)}
                     </td>
@@ -555,14 +555,14 @@ export default function PortfolioPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => handleEditPosition(position)}
-                          className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                          className="text-accent hover:text-indigo-300 transition-colors"
                           title="Edit position"
                         >
                           <Edit2 size={18} />
                         </button>
                         <button
                           onClick={() => handleDeletePosition(position.id)}
-                          className="text-red-500 hover:text-red-400 transition-colors"
+                          className="text-negative hover:text-negative transition-colors"
                           title="Delete position"
                         >
                           <Trash2 size={18} />
@@ -592,11 +592,11 @@ export default function PortfolioPage() {
       {/* Create Portfolio Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
-            <h2 className="text-2xl font-bold text-white mb-6">Vytvořit portfolio</h2>
+          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
+            <h2 className="text-2xl font-bold text-text-primary mb-6">Vytvořit portfolio</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-text-secondary mb-2">
                   Vlastník
                 </label>
                 <input
@@ -604,11 +604,11 @@ export default function PortfolioPage() {
                   value={newPortfolioOwner}
                   onChange={(e) => setNewPortfolioOwner(e.target.value)}
                   placeholder="e.g., Já, Přítelkyně"
-                  className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-lg text-white placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-text-secondary mb-2">
                   Název portfolia
                 </label>
                 <input
@@ -616,17 +616,17 @@ export default function PortfolioPage() {
                   value={newPortfolioName}
                   onChange={(e) => setNewPortfolioName(e.target.value)}
                   placeholder="e.g., Growth Portfolio, Dividend Portfolio"
-                  className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-lg text-white placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-text-secondary mb-2">
                   Broker
                 </label>
                 <select
                   value={newPortfolioBroker}
                   onChange={(e) => setNewPortfolioBroker(e.target.value as BrokerType)}
-                  className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-lg text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 >
                   <option value="T212">Trading 212</option>
                   <option value="DEGIRO">Degiro</option>
@@ -641,14 +641,14 @@ export default function PortfolioPage() {
                   setNewPortfolioName('');
                   setNewPortfolioOwner('');
                 }}
-                className="flex-1 px-6 py-3 bg-slate-800 text-white rounded-lg font-semibold hover:bg-slate-700 transition-colors"
+                className="flex-1 px-6 py-3 bg-surface-raised text-text-primary rounded-lg font-semibold hover:bg-surface-hover transition-colors"
               >
                 Zrušit
               </button>
               <button
                 onClick={handleCreatePortfolio}
                 disabled={!newPortfolioName.trim() || !newPortfolioOwner.trim()}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-indigo-600 text-text-primary rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Vytvořit
               </button>
@@ -660,17 +660,17 @@ export default function PortfolioPage() {
       {/* CSV Upload Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
-            <h2 className="text-2xl font-bold text-white mb-6">Nahrát CSV</h2>
+          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
+            <h2 className="text-2xl font-bold text-text-primary mb-6">Nahrát CSV</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-text-secondary mb-2">
                   Formát brokera
                 </label>
                 <select
                   value={uploadBroker}
                   onChange={(e) => setUploadBroker(e.target.value as BrokerType)}
-                  className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-lg text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 >
                   <option value="T212">Trading 212</option>
                   <option value="DEGIRO">Degiro</option>
@@ -678,17 +678,17 @@ export default function PortfolioPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-text-secondary mb-2">
                   CSV soubor
                 </label>
                 <input
                   type="file"
                   accept=".csv"
                   onChange={handleFileSelect}
-                  className="w-full text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:cursor-pointer file:font-semibold hover:file:bg-indigo-700 file:transition-colors"
+                  className="w-full text-text-primary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-text-primary file:cursor-pointer file:font-semibold hover:file:bg-indigo-700 file:transition-colors"
                 />
                 {selectedFile && (
-                  <p className="text-sm text-slate-400 mt-2">
+                  <p className="text-sm text-text-secondary mt-2">
                     Vybráno: {selectedFile.name}
                   </p>
                 )}
@@ -700,14 +700,14 @@ export default function PortfolioPage() {
                   setShowUploadModal(false);
                   setSelectedFile(null);
                 }}
-                className="flex-1 px-6 py-3 bg-slate-800 text-white rounded-lg font-semibold hover:bg-slate-700 transition-colors"
+                className="flex-1 px-6 py-3 bg-surface-raised text-text-primary rounded-lg font-semibold hover:bg-surface-hover transition-colors"
               >
                 Zrušit
               </button>
               <button
                 onClick={handleUploadCSV}
                 disabled={!selectedFile || loading}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-indigo-600 text-text-primary rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Nahrávání...' : 'Nahrát'}
               </button>
@@ -719,17 +719,17 @@ export default function PortfolioPage() {
       {/* Edit Position Modal */}
       {showEditModal && editingPosition && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
-            <h2 className="text-2xl font-bold text-white mb-6">Upravit pozici</h2>
-            <div className="mb-4 p-4 bg-slate-800 rounded-lg">
-              <div className="text-2xl font-bold text-indigo-400">{editingPosition.ticker}</div>
-              <div className="text-sm text-slate-400 mt-1">
+          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
+            <h2 className="text-2xl font-bold text-text-primary mb-6">Upravit pozici</h2>
+            <div className="mb-4 p-4 bg-surface-raised rounded-lg">
+              <div className="text-2xl font-bold text-accent">{editingPosition.ticker}</div>
+              <div className="text-sm text-text-secondary mt-1">
                 Aktuálně: {editingPosition.shares_count} akcií @ ${editingPosition.avg_cost.toFixed(2)}
               </div>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-text-secondary mb-2">
                   Počet akcií
                 </label>
                 <input
@@ -738,11 +738,11 @@ export default function PortfolioPage() {
                   value={editShares}
                   onChange={(e) => setEditShares(e.target.value)}
                   placeholder="e.g., 100"
-                  className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-lg text-white placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-text-secondary mb-2">
                   Průměrná cena (za akcii)
                 </label>
                 <input
@@ -751,21 +751,21 @@ export default function PortfolioPage() {
                   value={editAvgCost}
                   onChange={(e) => setEditAvgCost(e.target.value)}
                   placeholder="e.g., 150.50"
-                  className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-lg text-white placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 />
               </div>
-              <div className="p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-lg">
-                <div className="text-sm text-slate-300">
+              <div className="p-4 bg-accent/10 border border-indigo-500/30 rounded-lg">
+                <div className="text-sm text-text-secondary">
                   <div className="flex justify-between mb-1">
                     <span>Nová nákladová cena:</span>
-                    <span className="font-semibold text-white">
+                    <span className="font-semibold text-text-primary">
                       ${(parseFloat(editShares || '0') * parseFloat(editAvgCost || '0')).toFixed(2)}
                     </span>
                   </div>
                   {editingPosition.current_price && (
                     <div className="flex justify-between">
                       <span>Nová tržní hodnota:</span>
-                      <span className="font-semibold text-white">
+                      <span className="font-semibold text-text-primary">
                         ${(parseFloat(editShares || '0') * editingPosition.current_price).toFixed(2)}
                       </span>
                     </div>
@@ -779,14 +779,14 @@ export default function PortfolioPage() {
                   setShowEditModal(false);
                   setEditingPosition(null);
                 }}
-                className="flex-1 px-6 py-3 bg-slate-800 text-white rounded-lg font-semibold hover:bg-slate-700 transition-colors"
+                className="flex-1 px-6 py-3 bg-surface-raised text-text-primary rounded-lg font-semibold hover:bg-surface-hover transition-colors"
               >
                 Zrušit
               </button>
               <button
                 onClick={handleUpdatePosition}
                 disabled={loading || !editShares || !editAvgCost}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-indigo-600 text-text-primary rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Ukládám...' : 'Uložit změny'}
               </button>
@@ -798,17 +798,17 @@ export default function PortfolioPage() {
       {/* Edit Cash Balance Modal */}
       {showCashModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
-            <h2 className="text-2xl font-bold text-white mb-6">Upravit hotovost</h2>
-            <div className="mb-4 p-4 bg-slate-800 rounded-lg">
-              <div className="text-lg font-bold text-indigo-400">Dostupná hotovost pro investice</div>
-              <div className="text-sm text-slate-400 mt-1">
+          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
+            <h2 className="text-2xl font-bold text-text-primary mb-6">Upravit hotovost</h2>
+            <div className="mb-4 p-4 bg-surface-raised rounded-lg">
+              <div className="text-lg font-bold text-accent">Dostupná hotovost pro investice</div>
+              <div className="text-sm text-text-secondary mt-1">
                 Aktuálně: {formatCurrencySummary(portfolioSummary?.cash_balance || 0)}
               </div>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-text-secondary mb-2">
                   Hotovost (CZK)
                 </label>
                 <input
@@ -817,14 +817,14 @@ export default function PortfolioPage() {
                   value={editCashBalance}
                   onChange={(e) => setEditCashBalance(e.target.value)}
                   placeholder="e.g., 50000"
-                  className="w-full px-4 py-3 bg-slate-800 border border-white/10 rounded-lg text-white placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 />
               </div>
-              <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-                <div className="text-sm text-slate-300">
+              <div className="p-4 bg-positive/10 border border-positive/30 rounded-lg">
+                <div className="text-sm text-text-secondary">
                   <div className="flex justify-between">
                     <span>Nová hotovost:</span>
-                    <span className="font-semibold text-white">
+                    <span className="font-semibold text-text-primary">
                       {formatCurrencySummary(parseFloat(editCashBalance || '0'))}
                     </span>
                   </div>
@@ -837,14 +837,14 @@ export default function PortfolioPage() {
                   setShowCashModal(false);
                   setEditCashBalance('');
                 }}
-                className="flex-1 px-6 py-3 bg-slate-800 text-white rounded-lg font-semibold hover:bg-slate-700 transition-colors"
+                className="flex-1 px-6 py-3 bg-surface-raised text-text-primary rounded-lg font-semibold hover:bg-surface-hover transition-colors"
               >
                 Zrušit
               </button>
               <button
                 onClick={handleEditCashBalance}
                 disabled={loading || !editCashBalance}
-                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-green-600 text-text-primary rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Ukládám...' : 'Uložit hotovost'}
               </button>
@@ -864,3 +864,5 @@ export default function PortfolioPage() {
     </div>
   );
 }
+
+

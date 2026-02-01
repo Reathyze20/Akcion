@@ -246,14 +246,14 @@ class SWOTAnalysis(Base):
 
 # NOTE: Active Watchlist enhancements are added via ALTER TABLE in migration
 # The following attributes are added to the existing ActiveWatchlist model:
-# - gomes_score: Numeric(4, 2) - Mark Gomes score (0-10)
+# - conviction_score: Numeric(4, 2) - Conviction score (0-10)
 # - investment_thesis: Text - Detailed investment thesis
 # - risks: Text - Identified risks and concerns
 
 # Add this to backend/app/models/trading.py in the ActiveWatchlist class:
 """
 # Enhanced analysis fields (added via migration)
-gomes_score = Column(Numeric(4, 2))
+conviction_score = Column(Numeric(4, 2))
 investment_thesis = Column(Text)
 risks = Column(Text)
 

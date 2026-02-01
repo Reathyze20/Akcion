@@ -42,7 +42,7 @@ from .gomes import (
 
 # Score History models
 from .score_history import (
-    GomesScoreHistory,
+    ConvictionScoreHistory,
     ThesisDriftAlert,
     AlertType,
 )
@@ -82,7 +82,7 @@ __all__ = [
     "ImageAnalysisLogModel",
     "GomesRulesLogModel",
     # Score History
-    "GomesScoreHistory",
+    "ConvictionScoreHistory",
     "ThesisDriftAlert",
     "AlertType",
 ]

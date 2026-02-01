@@ -31,8 +31,8 @@ interface AppState {
   // Filters
   sentimentFilter: string | null;
   setSentimentFilter: (sentiment: string | null) => void;
-  minGomesScore: number | null;
-  setMinGomesScore: (score: number | null) => void;
+  minConvictionScore: number | null;
+  setminConvictionScore: (score: number | null) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -45,7 +45,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentimentFilter, setSentimentFilter] = useState<string | null>(null);
-  const [minGomesScore, setMinGomesScore] = useState<number | null>(null);
+  const [minConvictionScore, setminConvictionScore] = useState<number | null>(null);
 
   const value: AppState = {
     currentView,
@@ -62,8 +62,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setError,
     sentimentFilter,
     setSentimentFilter,
-    minGomesScore,
-    setMinGomesScore,
+    minConvictionScore,
+    setminConvictionScore,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

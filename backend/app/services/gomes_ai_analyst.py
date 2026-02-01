@@ -7,7 +7,7 @@ AI Integration Layer for analyzing financial reports and updating stock metrics.
 This service:
 1. Parses quarterly reports, news, earnings calls
 2. Extracts hard metrics (cash, burn rate, revenue)
-3. Generates soft metrics (Gomes Score, thesis narrative)
+3. Generates soft metrics (Conviction Score, thesis narrative)
 4. Detects inflection points and catalysts
 
 The AI follows strict prompts to maintain consistency with Gomes philosophy.
@@ -50,7 +50,7 @@ class GomesAnalystOutput(BaseModel):
     inflection_reasoning: Optional[str] = Field(None, description="Why this stage was chosen")
     
     # Scoring (0-10)
-    gomes_score: Optional[int] = Field(None, ge=0, le=10, description="Conviction score")
+    conviction_score: Optional[int] = Field(None, ge=0, le=10, description="Conviction score")
     score_reasoning: str = Field(..., description="Detailed scoring rationale")
     
     # Score deltas (what changed)
@@ -126,7 +126,7 @@ Output Requirements:
 
 ANALYSIS_USER_PROMPT_TEMPLATE = """
 Ticker: {ticker}
-Current Gomes Score: {current_score}/10
+Current Conviction Score: {current_score}/10
 Previous Thesis: {previous_thesis}
 
 New Information (Source: {source_type}):
@@ -198,7 +198,7 @@ class GomesAIAnalyst:
             ticker: Stock ticker symbol
             document_text: Full text of earnings report, news, etc.
             source_type: Type of document (quarterly_report, news, earnings_call)
-            current_score: Existing Gomes score to update from
+            current_score: Existing Conviction Score to update from
             previous_thesis: Previous investment thesis
         
         Returns:
@@ -242,7 +242,7 @@ class GomesAIAnalyst:
             cash_runway_months=12,
             inflection_status=InflectionStatus.UPCOMING if has_revenue_growth else InflectionStatus.WAIT_TIME,
             inflection_reasoning="Revenue growing, approaching commercial production" if has_revenue_growth else "Pre-revenue development stage",
-            gomes_score=score,
+            conviction_score=score,
             score_reasoning=f"Mock analysis: {'Strong fundamentals' if has_revenue_growth else 'Neutral position'}",
             score_deltas={"revenue_growth": 2} if has_revenue_growth else {},
             primary_catalyst="Q2 2026 Production Ramp",
@@ -280,8 +280,8 @@ class GomesAIAnalyst:
             stock.inflection_status = analysis.inflection_status.value
         
         # Update score
-        if analysis.gomes_score is not None:
-            stock.gomes_score = analysis.gomes_score
+        if analysis.conviction_score is not None:
+            stock.conviction_score = analysis.conviction_score
         
         # Update thesis
         if analysis.thesis_narrative:
@@ -294,9 +294,11 @@ class GomesAIAnalyst:
         if analysis.catalyst_date:
             stock.catalyst_date = analysis.catalyst_date
         
-        # Update insider activity
+        # Update insider activity - validate against DB constraint
         if analysis.insider_activity:
-            stock.insider_activity = analysis.insider_activity
+            valid_insider_values = {"BUYING", "HOLDING", "SELLING"}
+            insider_val = analysis.insider_activity.upper() if isinstance(analysis.insider_activity, str) else "HOLDING"
+            stock.insider_activity = insider_val if insider_val in valid_insider_values else "HOLDING"
         
         # Log significant changes
         if analysis.thesis_changed:

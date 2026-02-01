@@ -61,7 +61,7 @@ class InvestmentDecision:
     price_vs_target: Optional[str]  # "50% to target", "At target"
     
     # Gomes context
-    gomes_score: Optional[int]
+    conviction_score: Optional[int]
     gomes_sentiment: Optional[str]
     edge: Optional[str]
     catalysts: Optional[str]
@@ -206,16 +206,16 @@ class InvestmentDecisionEngine:
         # =================================================================
         # 1. GOMES ANALYSIS SCORING
         # =================================================================
-        gomes_score = stock.gomes_score if stock else None
+        conviction_score = stock.conviction_score if stock else None
         gomes_sentiment = stock.sentiment if stock else None
         gomes_action = stock.action_verdict if stock else None
         
         thesis_points = 0
         max_thesis_points = 10
         
-        if gomes_score:
-            thesis_points += min(gomes_score, 10) / 2  # Max 5 points from Gomes score
-            reasoning.append(f"Gomes score: {gomes_score}/10")
+        if conviction_score:
+            thesis_points += min(conviction_score, 10) / 2  # Max 5 points from Conviction Score
+            reasoning.append(f"Conviction Score: {conviction_score}/10")
         
         if gomes_sentiment == 'Bullish':
             thesis_points += 1
@@ -340,7 +340,7 @@ class InvestmentDecisionEngine:
             entry_zone=entry_zone,
             in_entry_zone=in_entry_zone,
             price_vs_target=price_vs_target,
-            gomes_score=gomes_score,
+            conviction_score=conviction_score,
             gomes_sentiment=gomes_sentiment,
             edge=stock.edge if stock else None,
             catalysts=stock.catalysts if stock else None,
@@ -453,7 +453,7 @@ class InvestmentDecisionEngine:
             'entry_zone': decision.entry_zone,
             'in_entry_zone': decision.in_entry_zone,
             'price_vs_target': decision.price_vs_target,
-            'gomes_score': decision.gomes_score,
+            'conviction_score': decision.conviction_score,
             'gomes_sentiment': decision.gomes_sentiment,
             'edge': decision.edge,
             'catalysts': decision.catalysts,

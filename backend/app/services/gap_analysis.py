@@ -207,7 +207,7 @@ class GapAnalysisService:
                 "price_target_long": stock.price_target_long,
                 "stop_loss_risk": stock.stop_loss_risk,
                 "moat_rating": stock.moat_rating,
-                "gomes_score": stock.gomes_score,
+                "conviction_score": stock.conviction_score,
                 "sentiment": stock.sentiment,
                 "edge": stock.edge,
                 "risks": stock.risks,

@@ -200,13 +200,12 @@ async def analyze_text(
                 ticker=stock.ticker,
                 company_name=stock.company_name,
                 sentiment=stock.sentiment or "Neutral",
-                gomes_score=stock.gomes_score or 5,
+                conviction_score=stock.conviction_score or 5,
                 price_target=stock.price_target,
                 edge=stock.edge,
                 catalysts=stock.catalysts,
                 risks=stock.risks,
                 time_horizon=stock.time_horizon,
-                conviction_score=stock.conviction_score,
                 action_verdict=stock.action_verdict
             )
             for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks
@@ -342,13 +341,12 @@ async def analyze_youtube(
                 ticker=stock.ticker,
                 company_name=stock.company_name,
                 sentiment=stock.sentiment or "Neutral",
-                gomes_score=stock.gomes_score or 5,
+                conviction_score=stock.conviction_score or 5,
                 price_target=stock.price_target,
                 edge=stock.edge,
                 catalysts=stock.catalysts,
                 risks=stock.risks,
                 time_horizon=stock.time_horizon,
-                conviction_score=stock.conviction_score,
                 action_verdict=stock.action_verdict
             )
             for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks
@@ -481,13 +479,12 @@ async def analyze_google_docs(
                 ticker=stock.ticker,
                 company_name=stock.company_name,
                 sentiment=stock.sentiment or "Neutral",
-                gomes_score=stock.gomes_score or 5,
+                conviction_score=stock.conviction_score or 5,
                 price_target=stock.price_target,
                 edge=stock.edge,
                 catalysts=stock.catalysts,
                 risks=stock.risks,
                 time_horizon=stock.time_horizon,
-                conviction_score=stock.conviction_score,
                 action_verdict=stock.action_verdict
             )
             for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks

@@ -161,7 +161,7 @@ class GomesIntegratedSignalGenerator:
         # Build comprehensive notes
         notes_parts = [
             f"ML: {prediction.prediction_type} ({float(prediction.confidence)*100:.0f}%)",
-            f"Gomes: {verdict.verdict.value} (score {verdict.gomes_score}/10)",
+            f"Gomes: {verdict.verdict.value} (score {verdict.conviction_score}/10)",
             f"Phase: {verdict.lifecycle_phase.value if verdict.lifecycle_phase else 'N/A'}",
             f"Tier: {verdict.position_tier.value if verdict.position_tier else 'N/A'}",
             f"Kelly: {kelly_size:.1%}",
@@ -177,7 +177,7 @@ class GomesIntegratedSignalGenerator:
             signal_type='BUY',
             ml_prediction_id=prediction.id,
             analyst_source_id=analyst_source_id,
-            confidence=Decimal(str(float(prediction.confidence) * verdict.gomes_score / 10)),  # Weighted
+            confidence=Decimal(str(float(prediction.confidence) * verdict.conviction_score / 10)),  # Weighted
             kelly_size=Decimal(str(kelly_size)),
             entry_price=Decimal(str(entry_price)),
             target_price=Decimal(str(target_price)) if target_price else None,
@@ -264,7 +264,7 @@ class GomesIntegratedSignalGenerator:
             # Enrich with Gomes data
             signal['gomes_context'] = {
                 'verdict': verdict.verdict if verdict else None,
-                'gomes_score': verdict.gomes_score if verdict else None,
+                'conviction_score': verdict.conviction_score if verdict else None,
                 'passed_filter': verdict.passed_gomes_filter if verdict else True,
                 'lifecycle_phase': verdict.lifecycle_phase if verdict else None,
                 'position_tier': verdict.position_tier if verdict else None,

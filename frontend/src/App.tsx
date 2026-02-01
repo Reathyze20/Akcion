@@ -1,19 +1,19 @@
 
-import GomesGuardianDashboard from './components/GomesGuardianDashboard';
+import InvestmentTerminal from './components/InvestmentTerminal';
 import { ToastProvider } from './context/ToastContext';
 import { ToastContainer } from './components/Toast';
 
 /**
- * Akcion - Gomes Guardian
+ * Akcion Investment Terminal
  * 
  * Single Page Application for family portfolio management
- * using Mark Gomes' investment methodology.
+ * using proprietary fiduciary investment methodology.
  */
 export default function App() {
   return (
     <ToastProvider>
       <div className="min-h-screen bg-slate-950">
-        <GomesGuardianDashboard />
+        <InvestmentTerminal />
         <ToastContainer />
       </div>
     </ToastProvider>

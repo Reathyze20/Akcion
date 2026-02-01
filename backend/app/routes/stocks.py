@@ -137,7 +137,7 @@ def enrich_stock_with_price_data(stock_response: StockResponse, prices_cache: di
 )
 async def get_stocks(
     sentiment: Optional[str] = Query(None, description="Filter by sentiment (BULLISH, BEARISH, NEUTRAL)"),
-    min_gomes_score: Optional[int] = Query(None, ge=1, le=10, description="Minimum Gomes Score (1-10)"),
+    min_conviction_score: Optional[int] = Query(None, ge=1, le=10, description="Minimum Conviction Score (1-10)"),
     min_conviction: Optional[int] = Query(None, ge=1, le=10, description="Minimum Conviction Score (1-10)"),
     speaker: Optional[str] = Query(None, description="Filter by speaker name"),
     db: Session = Depends(get_db),
@@ -157,8 +157,8 @@ async def get_stocks(
             stocks = repository.get_all_stocks()
         
         # Apply additional filters
-        if min_gomes_score is not None:
-            stocks = [s for s in stocks if s.gomes_score and s.gomes_score >= min_gomes_score]
+        if min_conviction_score is not None:
+            stocks = [s for s in stocks if s.conviction_score and s.conviction_score >= min_conviction_score]
         
         if min_conviction is not None:
             stocks = [s for s in stocks if s.conviction_score and s.conviction_score >= min_conviction]
@@ -172,8 +172,8 @@ async def get_stocks(
         filters_applied = {}
         if sentiment:
             filters_applied["sentiment"] = sentiment
-        if min_gomes_score:
-            filters_applied["min_gomes_score"] = min_gomes_score
+        if min_conviction_score:
+            filters_applied["min_conviction_score"] = min_conviction_score
         if min_conviction:
             filters_applied["min_conviction"] = min_conviction
         if speaker:
@@ -243,12 +243,12 @@ async def get_enriched_stocks(
     "/high-conviction",
     response_model=StockPortfolioResponse,
     summary="Get high conviction stocks",
-    description="Retrieve stocks with Gomes Score >= 7 and Conviction Score >= 7",
+    description="Retrieve stocks with Conviction Score >= 7 and Conviction Score >= 7",
 )
 async def get_high_conviction_stocks(
     db: Session = Depends(get_db),
 ) -> StockPortfolioResponse:
-    """Get high-conviction stock picks (Gomes Score >= 7, Conviction >= 7)."""
+    """Get high-conviction stock picks (Conviction Score >= 7, Conviction >= 7)."""
     try:
         repository = StockRepository(db)
         stocks = repository.get_high_conviction_stocks()
@@ -259,7 +259,7 @@ async def get_high_conviction_stocks(
             total_stocks=len(stock_responses),
             stocks=stock_responses,
             filters_applied={
-                "min_gomes_score": 7,
+                "min_conviction_score": 7,
                 "min_conviction_score": 7,
             },
         )
@@ -354,7 +354,7 @@ async def get_portfolio_stats(
         
         high_conviction = len(repository.get_high_conviction_stocks())
         
-        avg_gomes = sum(s.gomes_score for s in all_stocks if s.gomes_score) / len([s for s in all_stocks if s.gomes_score]) if any(s.gomes_score for s in all_stocks) else 0
+        avg_conviction = sum(s.conviction_score for s in all_stocks if s.conviction_score) / len([s for s in all_stocks if s.conviction_score]) if any(s.conviction_score for s in all_stocks) else 0
         avg_conviction = sum(s.conviction_score for s in all_stocks if s.conviction_score) / len([s for s in all_stocks if s.conviction_score]) if any(s.conviction_score for s in all_stocks) else 0
         
         unique_tickers = len(set(s.ticker for s in all_stocks))
@@ -368,7 +368,7 @@ async def get_portfolio_stats(
                 "neutral": neutral,
             },
             "high_conviction_count": high_conviction,
-            "average_gomes_score": round(avg_gomes, 2),
+            "average_conviction_score": round(avg_conviction, 2),
             "average_conviction_score": round(avg_conviction, 2),
         }
         
@@ -465,12 +465,12 @@ async def update_stock_price(
 
 
 # ==============================================================================
-# Manual Gomes Score Update Endpoint
+# Manual Conviction Score Update Endpoint
 # ==============================================================================
 
 class ScoreUpdateRequest(BaseModel):
     """Request model for manual score update."""
-    gomes_score: int = Field(..., ge=0, le=10, description="Gomes score (0-10)")
+    conviction_score: int = Field(..., ge=0, le=10, description="Conviction Score (0-10)")
     edge: Optional[str] = Field(None, description="Investment thesis/edge summary")
     action_verdict: Optional[str] = Field(None, description="BUY, HOLD, SELL, WAIT")
     company_name: Optional[str] = Field(None, description="Company name")
@@ -478,8 +478,8 @@ class ScoreUpdateRequest(BaseModel):
 
 @router.put(
     "/{ticker}/score",
-    summary="Update stock Gomes score manually",
-    description="Manually update the Gomes score and related data for a stock",
+    summary="Update stock Conviction Score manually",
+    description="Manually update the Conviction Score and related data for a stock",
 )
 async def update_stock_score(
     ticker: str,
@@ -487,7 +487,7 @@ async def update_stock_score(
     db: Session = Depends(get_db),
 ):
     """
-    Manually update stock Gomes score.
+    Manually update stock Conviction Score.
     
     Use this for quick score updates without running full Deep DD.
     """
@@ -500,22 +500,22 @@ async def update_stock_score(
             stock = Stock(
                 ticker=ticker.upper(),
                 company_name=score_data.company_name or ticker.upper(),
-                gomes_score=score_data.gomes_score,
+                conviction_score=score_data.conviction_score,
                 edge=score_data.edge,
-                action_verdict=score_data.action_verdict or ("BUY" if score_data.gomes_score >= 7 else "HOLD" if score_data.gomes_score >= 5 else "SELL"),
+                action_verdict=score_data.action_verdict or ("BUY" if score_data.conviction_score >= 7 else "HOLD" if score_data.conviction_score >= 5 else "SELL"),
             )
             db.add(stock)
-            logger.info(f"Created new stock {ticker} with score {score_data.gomes_score}")
+            logger.info(f"Created new stock {ticker} with score {score_data.conviction_score}")
         else:
             # Update existing
-            stock.gomes_score = score_data.gomes_score
+            stock.conviction_score = score_data.conviction_score
             if score_data.edge:
                 stock.edge = score_data.edge
             if score_data.action_verdict:
                 stock.action_verdict = score_data.action_verdict
             if score_data.company_name:
                 stock.company_name = score_data.company_name
-            logger.info(f"Updated score for {ticker}: {score_data.gomes_score}/10")
+            logger.info(f"Updated score for {ticker}: {score_data.conviction_score}/10")
         
         db.commit()
         db.refresh(stock)
@@ -523,7 +523,7 @@ async def update_stock_score(
         return {
             "success": True,
             "ticker": ticker.upper(),
-            "gomes_score": stock.gomes_score,
+            "conviction_score": stock.conviction_score,
             "action_verdict": stock.action_verdict,
             "message": f"Score updated successfully for {ticker}",
         }
@@ -545,7 +545,7 @@ class StockUpdateRequest(BaseModel):
     """Request model for manual stock data update"""
     next_catalyst: Optional[str] = None
     thesis_narrative: Optional[str] = None
-    gomes_score: Optional[int] = Field(None, ge=1, le=10)
+    conviction_score: Optional[int] = Field(None, ge=1, le=10)
     inflection_status: Optional[str] = None
     price_floor: Optional[float] = None
     price_base: Optional[float] = None
@@ -581,8 +581,8 @@ def update_stock_manual(
             stock.next_catalyst = update_data.next_catalyst
         if update_data.thesis_narrative is not None:
             stock.thesis_narrative = update_data.thesis_narrative
-        if update_data.gomes_score is not None:
-            stock.gomes_score = update_data.gomes_score
+        if update_data.conviction_score is not None:
+            stock.conviction_score = update_data.conviction_score
         if update_data.inflection_status is not None:
             stock.inflection_status = update_data.inflection_status
         if update_data.price_floor is not None:

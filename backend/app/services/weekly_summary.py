@@ -17,7 +17,7 @@ from sqlalchemy import desc, and_
 
 from app.models.analysis import AnalystTranscript, TickerMention
 from app.models.stock import Stock
-from app.models.score_history import GomesScoreHistory, ThesisDriftAlert
+from app.models.score_history import ConvictionScoreHistory, ThesisDriftAlert
 from app.models.gomes import InvestmentVerdictModel
 from app.models.trading import ActiveWatchlist
 
@@ -89,13 +89,13 @@ class WeeklySummary:
         start_date: datetime,
         end_date: datetime
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """Get stocks where Gomes score changed significantly"""
+        """Get stocks where Conviction Score changed significantly"""
         
         # Get all score records in period
-        recent_scores = self.db.query(GomesScoreHistory).filter(
+        recent_scores = self.db.query(ConvictionScoreHistory).filter(
             and_(
-                GomesScoreHistory.recorded_at >= start_date,
-                GomesScoreHistory.recorded_at <= end_date
+                ConvictionScoreHistory.recorded_at >= start_date,
+                ConvictionScoreHistory.recorded_at <= end_date
             )
         ).all()
         
@@ -116,8 +116,8 @@ class WeeklySummary:
             
             # Sort by date
             scores.sort(key=lambda x: x.recorded_at)
-            old_score = scores[0].gomes_score
-            new_score = scores[-1].gomes_score
+            old_score = scores[0].conviction_score
+            new_score = scores[-1].conviction_score
             change = new_score - old_score
             
             if abs(change) >= 2:
@@ -158,13 +158,13 @@ class WeeklySummary:
                 InvestmentVerdictModel.verdict.in_(['STRONG_BUY', 'BUY', 'ACCUMULATE']),
                 InvestmentVerdictModel.passed_gomes_filter == True
             )
-        ).order_by(desc(InvestmentVerdictModel.gomes_score)).all()
+        ).order_by(desc(InvestmentVerdictModel.conviction_score)).all()
         
         return [
             {
                 "ticker": v.ticker,
                 "verdict": v.verdict,
-                "gomes_score": v.gomes_score,
+                "conviction_score": v.conviction_score,
                 "confidence": v.confidence,
                 "lifecycle_phase": v.lifecycle_phase,
                 "green_line": float(v.green_line) if v.green_line else None,
@@ -221,16 +221,16 @@ class WeeklySummary:
         }
     
     def _get_top_picks(self) -> List[Dict[str, Any]]:
-        """Get top 5 stocks by Gomes score"""
+        """Get top 5 stocks by Conviction Score"""
         watchlist = self.db.query(ActiveWatchlist).filter(
             ActiveWatchlist.is_active == True,
-            ActiveWatchlist.gomes_score != None
-        ).order_by(desc(ActiveWatchlist.gomes_score)).limit(5).all()
+            ActiveWatchlist.conviction_score != None
+        ).order_by(desc(ActiveWatchlist.conviction_score)).limit(5).all()
         
         return [
             {
                 "ticker": item.ticker,
-                "gomes_score": float(item.gomes_score) if item.gomes_score else None,
+                "conviction_score": float(item.conviction_score) if item.conviction_score else None,
                 "action_verdict": item.action_verdict,
                 "investment_thesis": item.investment_thesis[:200] if item.investment_thesis else None
             }
@@ -338,12 +338,12 @@ class WeeklySummary:
         # Top picks
         if top_picks:
             html += "<h2>⭐ Top 5 High Conviction Stocks</h2>"
-            html += "<table><tr><th>Ticker</th><th>Gomes Score</th><th>Verdict</th><th>Thesis</th></tr>"
+            html += "<table><tr><th>Ticker</th><th>Conviction Score</th><th>Verdict</th><th>Thesis</th></tr>"
             for stock in top_picks:
                 html += f"""
                 <tr>
                     <td class="ticker">{stock['ticker']}</td>
-                    <td><strong>{stock['gomes_score']}/10</strong></td>
+                    <td><strong>{stock['conviction_score']}/10</strong></td>
                     <td class="verdict-buy">{stock['action_verdict'] or 'N/A'}</td>
                     <td>{stock['investment_thesis'] or 'N/A'}</td>
                 </tr>

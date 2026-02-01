@@ -82,7 +82,7 @@ def _verdict_to_response(verdict) -> GomesVerdictResponse:
         verdict=verdict.verdict.value if hasattr(verdict.verdict, 'value') else verdict.verdict,
         passed_gomes_filter=verdict.passed_gomes_filter,
         blocked_reason=verdict.blocked_reason,
-        gomes_score=verdict.gomes_score,
+        conviction_score=verdict.conviction_score,
         ml_prediction_score=verdict.ml_prediction_score,
         ml_direction=verdict.ml_direction,
         lifecycle_phase=verdict.lifecycle_phase.value if hasattr(verdict.lifecycle_phase, 'value') else verdict.lifecycle_phase,
@@ -415,7 +415,7 @@ def generate_verdict(
         service = GomesIntelligenceService(db)
         verdict = service.generate_verdict(
             ticker=request.ticker,
-            gomes_score=request.gomes_score,
+            conviction_score=request.conviction_score,
             current_price=request.current_price,
             earnings_date=request.earnings_date,
             transcript_text=request.transcript_text,
@@ -576,12 +576,12 @@ def calculate_position_size(
             .filter(Stock.is_latest == True)
             .first()
         )
-        gomes_score = stock.gomes_score if stock else 5
+        conviction_score = stock.conviction_score if stock else 5
         
         # Calculate tier and limits
         tier = PositionSizingEngine.determine_tier(
             lifecycle_phase=lifecycle_phase or LifecyclePhase.UNKNOWN,
-            gomes_score=gomes_score
+            conviction_score=conviction_score
         )
         
         limit = PositionSizingEngine.get_position_limit(tier, request.ticker)
@@ -632,7 +632,7 @@ def get_ml_stocks_list(db: Session = Depends(get_db)):
             GomesStockItem(
                 ticker=s["ticker"],
                 company_name=s.get("company_name"),
-                gomes_score=s.get("gomes_score"),
+                conviction_score=s.get("conviction_score"),
                 sentiment=s.get("sentiment"),
                 action_verdict=s.get("action_verdict"),
                 lifecycle_phase=s.get("lifecycle_phase"),
@@ -695,7 +695,7 @@ def get_dashboard(db: Session = Depends(get_db)):
         from sqlalchemy import func
         
         total = service.db.query(func.count(ActiveWatchlist.id)).filter(ActiveWatchlist.is_active == True).scalar() or 0
-        avg_score = service.db.query(func.avg(ActiveWatchlist.gomes_score)).filter(ActiveWatchlist.is_active == True).scalar() or 0
+        avg_score = service.db.query(func.avg(ActiveWatchlist.conviction_score)).filter(ActiveWatchlist.is_active == True).scalar() or 0
         
         return GomesDashboardResponse(
             market_alert=MarketAlertResponse(
@@ -717,7 +717,7 @@ def get_dashboard(db: Session = Depends(get_db)):
             blocked_stocks=blocked,
             total_watchlist=total,
             investable_count=total - len(blocked),
-            avg_gomes_score=float(avg_score),
+            avg_conviction_score=float(avg_score),
             last_updated=datetime.now()
         )
         
@@ -776,13 +776,23 @@ async def analyze_ticker_from_transcript(
         
         settings = Settings()
         
-        # 1. Get existing stock data from database
-        stock = db.query(Stock).filter(Stock.ticker == request.ticker).first()
+        # 1. Get existing stock data from database OR create new
+        stock = db.query(Stock).filter(Stock.ticker == request.ticker.upper()).first()
         if not stock:
-            logger.error(f"Stock {request.ticker} not found in database")
-            raise HTTPException(status_code=404, detail=f"Stock {request.ticker} not found in portfolio")
-        
-        logger.info(f"Stock found: {stock.ticker}, current score: {stock.gomes_score}")
+            # Create new stock record for watchlist/new tickers
+            logger.info(f"Stock {request.ticker} not found - creating new record")
+            stock = Stock(
+                ticker=request.ticker.upper(),
+                company_name=request.ticker.upper(),  # Will be updated by AI
+                conviction_score=5,  # Default neutral score
+                sentiment="NEUTRAL",
+                source_type=request.source_type,
+            )
+            db.add(stock)
+            db.flush()  # Get ID without committing
+            logger.info(f"Created new stock record for {request.ticker}")
+        else:
+            logger.info(f"Stock found: {stock.ticker}, current score: {stock.conviction_score}")
         
         # Get portfolio position for shares count and weight (if exists)
         position = db.query(Position).filter(Position.ticker == request.ticker).first()
@@ -801,7 +811,7 @@ async def analyze_ticker_from_transcript(
             if total_portfolio_value > 0:
                 current_weight = (position.market_value / total_portfolio_value) * 100
         
-        last_score = stock.gomes_score or 0
+        last_score = stock.conviction_score or 0
         
         # 3. Format prompt with actual data
         prompt = prompt_template.format(
@@ -816,7 +826,7 @@ async def analyze_ticker_from_transcript(
         # 4. Call Gemini API
         logger.info("Calling Gemini API...")
         genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         response = model.generate_content(prompt)
         response_text = response.text.strip()
@@ -852,7 +862,7 @@ async def analyze_ticker_from_transcript(
             financial = data["financial_updates"]
             score_data = data["score_impact_recommendation"]
             
-            gomes_score = score_data["gomes_score"]
+            conviction_score = score_data["conviction_score"]
             inflection_status = data.get("inflection_status", "WAIT_TIME")
             thesis_narrative = data.get("thesis_narrative", stock.thesis_narrative or "")
             next_catalyst = inflection.get("potential_catalyst", "NO CATALYST DETECTED")
@@ -879,9 +889,9 @@ async def analyze_ticker_from_transcript(
                 warning_msgs.append(f"📉 Sentiment shift: {sentiment}")
             
             # LOGICAL VALIDATION: High Score requires Catalyst
-            if gomes_score >= 9 and ("NO CATALYST" in next_catalyst.upper() or not next_catalyst.strip()):
+            if conviction_score >= 9 and ("NO CATALYST" in next_catalyst.upper() or not next_catalyst.strip()):
                 warning_msgs.append("⚠️ LOGICAL ERROR: High Score (9+) but No Catalyst. Score není obhajitelné bez konkrétního katalyzátoru. Doplň ručně (např. 'Q1 High-Grade Sales').")
-                logger.warning(f"Logical error detected for {request.ticker}: Score {gomes_score} but catalyst: {next_catalyst}")
+                logger.warning(f"Logical error detected for {request.ticker}: Score {conviction_score} but catalyst: {next_catalyst}")
             
             # Store meta info in stock raw_notes field
             meta_notes = f"Source: {source_type} ({reliability})\n" + "\n".join(inflection.get("key_takeaways_bullets", []))
@@ -890,14 +900,14 @@ async def analyze_ticker_from_transcript(
         else:
             # Legacy mode - original flat structure
             required_fields = [
-                "ticker", "gomes_score", "inflection_status", "thesis_narrative",
+                "ticker", "conviction_score", "inflection_status", "thesis_narrative",
                 "next_catalyst", "cash_runway_status", "recommendation"
             ]
             for field in required_fields:
                 if field not in data:
                     raise HTTPException(status_code=500, detail=f"AI response missing required field: {field}")
             
-            gomes_score = data["gomes_score"]
+            conviction_score = data["conviction_score"]
             inflection_status = data["inflection_status"]
             thesis_narrative = data["thesis_narrative"]
             next_catalyst = data["next_catalyst"]
@@ -911,22 +921,28 @@ async def analyze_ticker_from_transcript(
                 warning_msgs.append(WARNING_MESSAGES["UNKNOWN_CASH"])
             if "NO CATALYST DETECTED" in next_catalyst:
                 warning_msgs.append(WARNING_MESSAGES["NO_CATALYST"])
-            if gomes_score <= 4:
+            if conviction_score <= 4:
                 warning_msgs.append(WARNING_MESSAGES["LOW_SCORE"])
             
             # LOGICAL VALIDATION: High Score requires Catalyst
-            if gomes_score >= 9 and ("NO CATALYST" in next_catalyst.upper() or not next_catalyst.strip()):
+            if conviction_score >= 9 and ("NO CATALYST" in next_catalyst.upper() or not next_catalyst.strip()):
                 warning_msgs.append("⚠️ LOGICAL ERROR: High Score (9+) but No Catalyst. Score není obhajitelné bez konkrétního katalyzátoru. Doplň ručně (např. 'Q1 High-Grade Sales').")
-                logger.warning(f"Logical error detected for {request.ticker}: Score {gomes_score} but catalyst: {next_catalyst}")
+                logger.warning(f"Logical error detected for {request.ticker}: Score {conviction_score} but catalyst: {next_catalyst}")
         
         # 7. Update stock record in database (common for both modes)
-        stock.gomes_score = gomes_score
+        stock.conviction_score = conviction_score
         stock.inflection_status = inflection_status
         stock.thesis_narrative = thesis_narrative
         stock.next_catalyst = next_catalyst
         stock.cash_runway_months = data.get("financial_updates", data).get("cash_runway_months") if use_universal_prompt else data.get("cash_runway_months")
         stock.cash_runway_status = cash_runway_status
-        stock.insider_activity = data.get("financial_updates", data).get("insider_activity", "UNKNOWN") if use_universal_prompt else data.get("insider_activity", "UNKNOWN")
+        
+        # Validate insider_activity - DB constraint allows only BUYING, HOLDING, SELLING
+        raw_insider = data.get("financial_updates", data).get("insider_activity", "HOLDING") if use_universal_prompt else data.get("insider_activity", "HOLDING")
+        valid_insider_values = {"BUYING", "HOLDING", "SELLING"}
+        # Map NEUTRAL/UNKNOWN to HOLDING
+        insider_mapping = {"NEUTRAL": "HOLDING", "UNKNOWN": "HOLDING", "N/A": "HOLDING", "": "HOLDING", None: "HOLDING"}
+        stock.insider_activity = raw_insider if raw_insider in valid_insider_values else insider_mapping.get(raw_insider, "HOLDING")
         
         # Update price lines if provided
         price_targets = data.get("price_targets", {}) if use_universal_prompt else data
@@ -959,7 +975,7 @@ async def analyze_ticker_from_transcript(
         return AnalyzeTickerResponse(
             ticker=stock.ticker,
             warning_level=warning_level,
-            gomes_score=stock.gomes_score,
+            conviction_score=stock.conviction_score,
             inflection_status=stock.inflection_status,
             thesis_narrative=stock.thesis_narrative,
             next_catalyst=stock.next_catalyst,

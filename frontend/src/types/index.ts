@@ -12,7 +12,7 @@ export interface Stock {
   source_type: string;
   speaker: string;
   sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | null;
-  gomes_score: number | null;
+  conviction_score: number | null;
   conviction_score: number | null;
   price_target: string | null;
   time_horizon: string | null;
@@ -32,7 +32,7 @@ export interface Stock {
   trade_rationale: string | null;
   chart_setup: string | null;
   
-  // Price Lines data (from Gomes Intelligence)
+  // Price Lines data (from Investment Intelligence)
   current_price: number | null;
   green_line: number | null;
   red_line: number | null;
@@ -40,7 +40,7 @@ export interface Stock {
   price_position_pct: number | null; // 0-100%, where 0=at green, 100=at red
   price_zone: 'DEEP_VALUE' | 'BUY_ZONE' | 'ACCUMULATE' | 'FAIR_VALUE' | 'SELL_ZONE' | 'OVERVALUED' | null;
   
-  // Gomes Master Table (2026-01-25)
+  // Master Conviction Table (2026-01-25)
   asset_class?: string | null;
   cash_runway_months?: number | null;
   insider_ownership_pct?: number | null;
@@ -75,7 +75,7 @@ export interface StockAnalysisResult {
   ticker: string;
   company_name: string | null;
   sentiment: string;
-  gomes_score: number;
+  conviction_score: number;
   price_target: string | null;
   edge: string | null;
   catalysts: string | null;
@@ -125,7 +125,7 @@ export interface PortfolioStats {
     neutral: number;
   };
   high_conviction_count: number;
-  average_gomes_score: number;
+  average_conviction_score: number;
   average_conviction_score: number;
 }
 
@@ -237,16 +237,16 @@ export interface MarketStatusData {
   note: string | null;
 }
 
-// Gomes Analyzer Types
+// Conviction Analyzer Types
 
-export type GomesRating = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'AVOID' | 'HIGH_RISK';
+export type ConvictionRating = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'AVOID' | 'HIGH_RISK';
 export type LifecyclePhase = 'GREAT_FIND' | 'WAIT_TIME' | 'GOLD_MINE' | 'UNKNOWN';
 export type MarketAlert = 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED';
 
-export interface GomesScoreResponse {
+export interface ConvictionScoreResponse {
   ticker: string;
   total_score: number;
-  rating: GomesRating;
+  rating: ConvictionRating;
   
   // Score components
   story_score: number;
@@ -268,7 +268,7 @@ export interface GomesScoreResponse {
   has_ml_prediction: boolean;
   earnings_date: string | null;
   
-  // Extended Gomes fields (from AI analysis)
+  // Extended analysis fields (from AI analysis)
   lifecycle_phase?: LifecyclePhase;
   green_line?: number | null;
   red_line?: number | null;
@@ -283,7 +283,7 @@ export interface GomesScoreResponse {
 export interface WatchlistRanking {
   ticker: string;
   score: number;
-  rating: GomesRating;
+  rating: ConvictionRating;
   confidence: string;
   reasoning: string;
   last_analyzed: string;
@@ -296,7 +296,7 @@ export interface WatchlistRankingResponse {
   timestamp: string;
 }
 
-export interface GomesAnalyzeRequest {
+export interface AnalyzeRequest {
   ticker: string;
   transcript_text?: string;
   market_data?: {
@@ -310,7 +310,7 @@ export interface BatchAnalyzeResponse {
   total_requested: number;
   successful: number;
   failed: number;
-  results: GomesScoreResponse[];
+  results: ConvictionScoreResponse[];
   errors: Array<{ ticker: string; error: string }>;
 }
 
@@ -372,15 +372,15 @@ export interface TranscriptSummary {
 
 // ==================== Gomes ML Stocks Types ====================
 
-export interface GomesStockItem {
+export interface ScoredStockItem {
   ticker: string;
   company_name: string | null;
-  gomes_score: number | null;
+  conviction_score: number | null;
   sentiment: string | null;
   action_verdict: string | null;
   lifecycle_phase: string | null;
   
-  // Price lines from Gomes
+  // Price lines from analysis
   green_line: number | null;
   red_line: number | null;
   current_price: number | null;
@@ -397,8 +397,8 @@ export interface GomesStockItem {
   notes: string | null;
 }
 
-export interface GomesMLStocksResponse {
-  stocks: GomesStockItem[];
+export interface ScoredStocksResponse {
+  stocks: ScoredStockItem[];
   total_count: number;
   stocks_with_lines: number;
   stocks_with_ml: number;
@@ -435,7 +435,7 @@ export type DriftAlertType = 'HYPE_AHEAD_OF_FUNDAMENTALS' | 'THESIS_BREAKING' | 
 export interface ScoreHistoryPoint {
   id: number;
   ticker: string;
-  gomes_score: number;
+  conviction_score: number;
   thesis_status: ThesisStatus | null;
   action_signal: string | null;
   price_at_analysis: number | null;
@@ -474,7 +474,7 @@ export interface DriftAlertsResponse {
 
 export interface AllocationRecommendation {
   ticker: string;
-  gomes_score: number;
+  conviction_score: number;
   kelly_weight_pct: number;
   recommended_amount: number;
   currency: string;
@@ -486,7 +486,7 @@ export interface FamilyGap {
   ticker: string;
   holder: string;
   missing_from: string;
-  gomes_score: number;
+  conviction_score: number;
   action: string;
 }
 
@@ -514,7 +514,7 @@ export interface FamilyAuditResponse {
 export interface DeepDDData {
   ticker: string;
   company_name: string | null;
-  gomes_score: number;
+  conviction_score: number;
   thesis_status: 'IMPROVED' | 'STABLE' | 'DETERIORATED' | 'UNKNOWN';
   action_signal: 'BUY_NOW' | 'ACCUMULATE' | 'HOLD' | 'SELL' | 'AVOID';
   kelly_criterion_hint: number;

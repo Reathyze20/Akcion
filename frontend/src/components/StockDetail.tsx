@@ -16,9 +16,9 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
   const getSentimentColor = (sentiment: string | null) => {
     switch (sentiment?.toUpperCase()) {
       case 'BULLISH':
-        return 'text-accent-green';
+        return 'text-positive';
       case 'BEARISH':
-        return 'text-accent-red';
+        return 'text-negative';
       case 'NEUTRAL':
         return 'text-text-secondary';
       default:
@@ -42,7 +42,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
         {/* Header */}
         <div className="sticky top-0 bg-primary-surface border-b border-border p-6 flex items-start justify-between">
           <div>
-            <h2 className="text-3xl font-bold text-accent-blue mb-2">
+            <h2 className="text-3xl font-bold text-accent mb-2">
               {stock.ticker}
             </h2>
             {stock.company_name && (
@@ -69,24 +69,24 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
             </div>
             <div className="card p-4">
               <p className="text-xs text-text-muted mb-1">Gomes skóre</p>
-              <p className="text-lg font-bold text-accent-blue">
-                {stock.gomes_score !== null ? `${stock.gomes_score}/10` : 'N/A'}
+              <p className="text-lg font-bold text-accent">
+                {stock.conviction_score !== null ? `${stock.conviction_score}/10` : 'N/A'}
               </p>
             </div>
             <div className="card p-4">
               <p className="text-xs text-text-muted mb-1">Přesvědčení</p>
-              <p className="text-lg font-bold text-accent-purple">
+              <p className="text-lg font-bold text-accent-muted">
                 {stock.conviction_score !== null ? `${stock.conviction_score}/10` : 'N/A'}
               </p>
             </div>
             <div className="card p-4">
               <p className="text-xs text-text-muted mb-1">Akce</p>
               <p className={`text-sm font-bold ${
-                stock.action_verdict === 'BUY_NOW' ? 'text-green-400' :
-                stock.action_verdict === 'ACCUMULATE' ? 'text-emerald-400' :
-                stock.action_verdict === 'WATCH_LIST' ? 'text-yellow-400' :
-                stock.action_verdict === 'TRIM' ? 'text-orange-400' :
-                stock.action_verdict === 'SELL' ? 'text-red-400' :
+                stock.action_verdict === 'BUY_NOW' ? 'text-positive' :
+                stock.action_verdict === 'ACCUMULATE' ? 'text-positive' :
+                stock.action_verdict === 'WATCH_LIST' ? 'text-warning' :
+                stock.action_verdict === 'TRIM' ? 'text-warning' :
+                stock.action_verdict === 'SELL' ? 'text-negative' :
                 stock.action_verdict === 'AVOID' ? 'text-gray-400' :
                 'text-text-secondary'
               }`}>
@@ -99,15 +99,15 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {(stock.entry_zone || stock.stop_loss_risk) && (
             <div className="grid grid-cols-2 gap-4">
               {stock.entry_zone && (
-                <div className="card p-4 border-l-4 border-accent-blue">
+                <div className="card p-4 border-l-4 border-accent">
                   <p className="text-xs text-text-muted mb-1">Vstupní zóna</p>
-                  <p className="text-lg font-bold text-accent-blue">{stock.entry_zone}</p>
+                  <p className="text-lg font-bold text-accent">{stock.entry_zone}</p>
                 </div>
               )}
               {stock.stop_loss_risk && (
-                <div className="card p-4 border-l-4 border-accent-red">
+                <div className="card p-4 border-l-4 border-negative">
                   <p className="text-xs text-text-muted mb-1">Stop Loss / Riziko</p>
-                  <p className="text-sm font-medium text-accent-red">{stock.stop_loss_risk}</p>
+                  <p className="text-sm font-medium text-negative">{stock.stop_loss_risk}</p>
                 </div>
               )}
             </div>
@@ -116,29 +116,29 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {/* Price Targets Section */}
           {(stock.price_target || stock.price_target_short || stock.price_target_long) && (
             <div className="card p-4">
-              <h3 className="text-sm font-semibold text-accent-blue mb-3">
+              <h3 className="text-sm font-semibold text-accent mb-3">
                 Cenové cíle
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {stock.price_target && (
-                  <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-blue/30">
+                  <div className="bg-primary-card/50 rounded-lg p-3 border border-accent/30">
                     <p className="text-xs text-text-muted mb-1">Obecný cíl</p>
-                    <p className="text-lg font-bold text-accent-blue">{stock.price_target}</p>
+                    <p className="text-lg font-bold text-accent">{stock.price_target}</p>
                     {stock.time_horizon && (
                       <p className="text-xs text-text-secondary mt-1">{stock.time_horizon}</p>
                     )}
                   </div>
                 )}
                 {stock.price_target_short && (
-                  <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-green/30">
+                  <div className="bg-primary-card/50 rounded-lg p-3 border border-positive/30">
                     <p className="text-xs text-text-muted mb-1">Krátkodobý cíl</p>
-                    <p className="text-lg font-bold text-accent-green">{stock.price_target_short}</p>
+                    <p className="text-lg font-bold text-positive">{stock.price_target_short}</p>
                   </div>
                 )}
                 {stock.price_target_long && (
-                  <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-purple/30">
+                  <div className="bg-primary-card/50 rounded-lg p-3 border border-accent-muted/30">
                     <p className="text-xs text-text-muted mb-1">Dlouhodobý cíl</p>
-                    <p className="text-lg font-bold text-accent-purple">{stock.price_target_long}</p>
+                    <p className="text-lg font-bold text-accent-muted">{stock.price_target_long}</p>
                   </div>
                 )}
               </div>
@@ -148,7 +148,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {/* Information Arbitrage / Edge */}
           {stock.edge && (
             <div className="card p-4">
-              <h3 className="text-sm font-semibold text-accent-blue mb-2">
+              <h3 className="text-sm font-semibold text-accent mb-2">
                 Informační výhoda (Edge)
               </h3>
               <p className="text-text-primary whitespace-pre-wrap">{stock.edge}</p>
@@ -158,7 +158,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {/* Catalysts */}
           {stock.catalysts && (
             <div className="card p-4">
-              <h3 className="text-sm font-semibold text-accent-green mb-2">
+              <h3 className="text-sm font-semibold text-positive mb-2">
                 Katalyzátory
               </h3>
               <p className="text-text-primary whitespace-pre-wrap">{stock.catalysts}</p>
@@ -168,7 +168,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
           {/* Risks */}
           {stock.risks && (
             <div className="card p-4">
-              <h3 className="text-sm font-semibold text-accent-red mb-2">
+              <h3 className="text-sm font-semibold text-negative mb-2">
                 Rizika
               </h3>
               <p className="text-text-primary whitespace-pre-wrap">{stock.risks}</p>
@@ -222,3 +222,5 @@ export const StockDetail: React.FC<StockDetailProps> = ({ stock, onClose }) => {
     </div>
   );
 };
+
+

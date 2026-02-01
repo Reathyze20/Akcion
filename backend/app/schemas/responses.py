@@ -22,7 +22,7 @@ class StockAnalysisResult(BaseModel):
     ticker: str
     company_name: str | None = None
     sentiment: str = "Neutral"
-    gomes_score: int = Field(ge=1, le=10)
+    conviction_score: int = Field(ge=1, le=10)
     price_target: str | None = None
     edge: str | None = None
     catalysts: str | None = None
@@ -52,7 +52,7 @@ class StockResponse(BaseModel):
     source_type: str | None = None
     speaker: str | None = None
     sentiment: str | None = None
-    gomes_score: int | None = None
+    conviction_score: int | None = None
     conviction_score: int | None = None
     price_target: str | None = None
     time_horizon: str | None = None
@@ -150,7 +150,7 @@ class StockPortfolioResponse(BaseModel):
             "example": {
                 "total_stocks": 10,
                 "stocks": [],
-                "filters_applied": {"sentiment": "BULLISH", "min_gomes_score": 7},
+                "filters_applied": {"sentiment": "BULLISH", "min_conviction_score": 7},
             }
         }
     }

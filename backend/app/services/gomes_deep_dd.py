@@ -21,9 +21,15 @@ from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.config.settings import Settings
-from app.core.prompts import GOMES_DEEP_DUE_DILIGENCE_PROMPT, THESIS_DRIFT_PROMPT
+from app.core.prompts import (
+    GOMES_DEEP_DUE_DILIGENCE_PROMPT, 
+    THESIS_DRIFT_PROMPT,
+    # V2.0 Enhanced Prompts
+    DEEP_DD_PROMPT_V2,
+    THESIS_DRIFT_PROMPT_V2,
+)
 from app.models.stock import Stock
-from app.models.score_history import GomesScoreHistory, ThesisDriftAlert, AlertType
+from app.models.score_history import ConvictionScoreHistory, ThesisDriftAlert, AlertType
 from app.schemas.gomes import (
     DeepDueDiligenceRequest,
     DeepDueDiligenceResponse,
@@ -51,7 +57,7 @@ class GomesDeepDueDiligenceService:
         result = await service.analyze(transcript="...")
         
         print(result.analysis_text)  # Czech analysis
-        print(result.data.gomes_score)  # Structured data
+        print(result.data.conviction_score)  # Structured data
     """
     
     def __init__(self, db: Session):
@@ -64,7 +70,7 @@ class GomesDeepDueDiligenceService:
         try:
             import google.generativeai as genai
             genai.configure(api_key=self.settings.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-2.5-pro')
+            self.model = genai.GenerativeModel('gemini-2.0-flash')
             self.gemini_available = True
             logger.info("Gemini 2.5 Pro initialized for Deep Due Diligence")
         except Exception as e:
@@ -75,12 +81,14 @@ class GomesDeepDueDiligenceService:
     async def analyze(
         self,
         request: DeepDueDiligenceRequest,
+        use_v2_prompts: bool = True,  # Use enhanced V2 prompts by default
     ) -> DeepDueDiligenceResponse:
         """
         Run deep due diligence analysis on transcript.
         
         Args:
             request: Analysis request with transcript text
+            use_v2_prompts: Use enhanced V2 prompts (default: True)
             
         Returns:
             DeepDueDiligenceResponse with analysis and structured data
@@ -93,11 +101,26 @@ class GomesDeepDueDiligenceService:
         if request.include_existing_data and request.ticker:
             existing_data = self._get_existing_stock_data(request.ticker)
         
-        # Build prompt
-        prompt = GOMES_DEEP_DUE_DILIGENCE_PROMPT.format(
-            existing_stock_data=existing_data or "Žádná stávající data.",
-            transcript=request.transcript[:50000]  # Limit transcript length
-        )
+        # Fetch current price from Yahoo Finance
+        current_price = self._get_current_price(request.ticker) if request.ticker else None
+        current_price_str = f"{current_price:.2f}" if current_price else "N/A (nelze načíst)"
+        
+        # Build prompt - choose V2 or legacy
+        if use_v2_prompts:
+            # V2 Enhanced Prompt with better extraction
+            prompt = DEEP_DD_PROMPT_V2.format(
+                ticker=request.ticker or "UNKNOWN",
+                current_price=current_price_str,
+                existing_data=existing_data or "Žádná stávající data.",
+                transcript=request.transcript[:50000]
+            )
+            logger.info(f"Using V2 Enhanced DD Prompt for {request.ticker} (price: ${current_price_str})")
+        else:
+            # Legacy prompt for backward compatibility
+            prompt = GOMES_DEEP_DUE_DILIGENCE_PROMPT.format(
+                existing_stock_data=existing_data or "Žádná stávající data.",
+                transcript=request.transcript[:50000]
+            )
         
         # Call Gemini
         try:
@@ -134,6 +157,37 @@ class GomesDeepDueDiligenceService:
             source_length=len(request.transcript),
         )
     
+    def _get_current_price(self, ticker: str) -> Optional[float]:
+        """
+        Fetch current stock price from Yahoo Finance.
+        
+        Args:
+            ticker: Stock ticker symbol
+            
+        Returns:
+            Current price or None if unavailable
+        """
+        if not ticker:
+            return None
+            
+        try:
+            from app.services.yahoo_cache import YahooFinanceCache
+            
+            yahoo_cache = YahooFinanceCache(self.db)
+            data = yahoo_cache.get_stock_data(ticker.upper(), data_types=["market"])
+            
+            if data and data.get("current_price"):
+                price = data["current_price"]
+                logger.info(f"Fetched current price for {ticker}: ${price:.2f}")
+                return float(price)
+            else:
+                logger.warning(f"No price data available for {ticker}")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"Failed to fetch price for {ticker}: {e}")
+            return None
+    
     def _get_existing_stock_data(self, ticker: str) -> str:
         """Get existing stock data from database for comparison"""
         stock = self.db.query(Stock).filter(
@@ -146,7 +200,7 @@ class GomesDeepDueDiligenceService:
         return f"""
 Ticker: {stock.ticker}
 Company: {stock.company_name or 'N/A'}
-Gomes Score: {stock.gomes_score or 'N/A'}/10
+Conviction Score: {stock.conviction_score or 'N/A'}/10
 Sentiment: {stock.sentiment or 'N/A'}
 Action Verdict: {stock.action_verdict or 'N/A'}
 Edge: {stock.edge or 'N/A'}
@@ -238,17 +292,46 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             logger.error(f"JSON string (first 500 chars): {repr(json_str[:500])}")
             raise ValueError(f"Invalid JSON in AI response: {e}")
         
+        # Extract current_price from AI response or use provided
+        current_price = data_dict.get("current_price")
+        
+        # Get price lines with fallback calculations
+        green_line = data_dict.get("green_line")
+        red_line = data_dict.get("red_line")
+        grey_line = data_dict.get("grey_line")
+        
+        # Fallback: Calculate price lines if not provided by AI
+        price_lines_estimated = data_dict.get("price_lines_estimated", False)
+        if current_price and current_price > 0:
+            if not green_line:
+                # Default: 20% below current price (buy zone)
+                green_line = round(current_price * 0.80, 2)
+                price_lines_estimated = True
+                logger.info(f"Estimated green_line: ${green_line} (20% below ${current_price})")
+            
+            if not red_line:
+                # Default: 50% above current price (sell zone for growth stocks)
+                red_line = round(current_price * 1.50, 2)
+                price_lines_estimated = True
+                logger.info(f"Estimated red_line: ${red_line} (50% above ${current_price})")
+            
+            if not grey_line:
+                # Default: 35% below current price (danger zone)
+                grey_line = round(current_price * 0.65, 2)
+                price_lines_estimated = True
+                logger.info(f"Estimated grey_line: ${grey_line} (35% below ${current_price})")
+        
         # Convert to Pydantic model
         price_targets = PriceTargetsSchema(
-            pessimistic=data_dict.get("price_targets", {}).get("pessimistic"),
-            realistic=data_dict.get("price_targets", {}).get("realistic"),
-            optimistic=data_dict.get("price_targets", {}).get("optimistic"),
+            pessimistic=data_dict.get("price_targets", {}).get("pessimistic") or data_dict.get("price_targets", {}).get("bear"),
+            realistic=data_dict.get("price_targets", {}).get("realistic") or data_dict.get("price_targets", {}).get("base"),
+            optimistic=data_dict.get("price_targets", {}).get("optimistic") or data_dict.get("price_targets", {}).get("bull"),
         )
         
         data = DeepDueDiligenceResult(
             ticker=data_dict.get("ticker", "UNKNOWN"),
             company_name=data_dict.get("company_name"),
-            gomes_score=int(data_dict.get("gomes_score", 5)),
+            conviction_score=int(data_dict.get("conviction_score", 5)),
             thesis_status=data_dict.get("thesis_status", "STABLE"),
             inflection_point_status=data_dict.get("inflection_point_status", "UPCOMING"),
             upside_potential=str(data_dict.get("upside_potential", "N/A")),
@@ -257,14 +340,18 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             action_signal=data_dict.get("action_signal", "HOLD"),
             kelly_criterion_hint=float(data_dict.get("kelly_criterion_hint", 5)),
             price_targets=price_targets,
-            green_line=data_dict.get("green_line"),
-            red_line=data_dict.get("red_line"),
+            green_line=green_line,  # Use calculated/fallback value
+            red_line=red_line,      # Use calculated/fallback value
             key_milestones=data_dict.get("key_milestones", []),
             red_flags=data_dict.get("red_flags", []),
             edge=data_dict.get("edge"),
             catalysts=data_dict.get("catalysts"),
             risks=data_dict.get("risks"),
         )
+        
+        # Log if price lines were estimated
+        if price_lines_estimated:
+            logger.info(f"Price lines for {data.ticker} were estimated (not from transcript)")
         
         # Extract analysis text (everything before JSON)
         if json_match:
@@ -296,12 +383,12 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             Stock.ticker == ticker.upper()
         ).order_by(Stock.created_at.desc()).first()
         
-        if not stock or not stock.gomes_score:
+        if not stock or not stock.conviction_score:
             return None
         
         # Simple drift calculation
-        old_score = stock.gomes_score
-        new_score = new_data.gomes_score
+        old_score = stock.conviction_score
+        new_score = new_data.conviction_score
         score_change = new_score - old_score
         
         # Determine drift status
@@ -331,7 +418,7 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             ticker=ticker,
             thesis_drift=thesis_drift,
             score_change=score_change,
-            new_gomes_score=new_score,
+            new_conviction_score=new_score,
             reasoning=f"Score changed from {old_score} to {new_score}",
             key_changes=key_changes,
             action_update=new_data.action_signal,
@@ -361,7 +448,7 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             Stock.ticker == data.ticker.upper()
         ).first()
         
-        old_score = stock.gomes_score if stock else None
+        old_score = stock.conviction_score if stock else None
         
         if not stock:
             stock = Stock(ticker=data.ticker.upper())
@@ -369,12 +456,40 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         
         # Update fields
         stock.company_name = data.company_name or stock.company_name
-        stock.gomes_score = data.gomes_score
+        stock.conviction_score = data.conviction_score
         stock.action_verdict = data.action_signal
         stock.edge = data.edge
         stock.catalysts = data.catalysts
         stock.risks = data.risks
         stock.entry_zone = f"Green: ${data.green_line}" if data.green_line else None
+        
+        # Update price lines (green, red, grey)
+        if data.green_line:
+            stock.green_line = data.green_line
+        if data.red_line:
+            stock.red_line = data.red_line
+        
+        # Calculate price zone based on current price and lines
+        if hasattr(data, 'current_price') and data.current_price and data.green_line and data.red_line:
+            stock.current_price = data.current_price
+            price_range = data.red_line - data.green_line
+            if price_range > 0:
+                position_pct = ((data.current_price - data.green_line) / price_range) * 100
+                stock.price_position_pct = round(position_pct, 1)
+                
+                # Determine price zone
+                if position_pct <= 10:
+                    stock.price_zone = "DEEP_VALUE"
+                elif position_pct <= 30:
+                    stock.price_zone = "BUY_ZONE"
+                elif position_pct <= 50:
+                    stock.price_zone = "ACCUMULATE"
+                elif position_pct <= 70:
+                    stock.price_zone = "FAIR_VALUE"
+                elif position_pct <= 90:
+                    stock.price_zone = "SELL_ZONE"
+                else:
+                    stock.price_zone = "OVERVALUED"
         
         # Map action to sentiment
         sentiment_map = {
@@ -394,10 +509,10 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         self.db.refresh(stock)
         
         # === SAVE TO SCORE HISTORY ===
-        score_history = GomesScoreHistory(
+        score_history = ConvictionScoreHistory(
             ticker=data.ticker.upper(),
             stock_id=stock.id,
-            gomes_score=data.gomes_score,
+            conviction_score=data.conviction_score,
             thesis_status=result.thesis_drift or "STABLE",
             action_signal=data.action_signal,
             price_at_analysis=data.current_price,
@@ -407,7 +522,7 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         
         # === CREATE DRIFT ALERT IF NEEDED ===
         if old_score is not None and result.thesis_drift:
-            score_change = data.gomes_score - old_score
+            score_change = data.conviction_score - old_score
             
             if result.thesis_drift == "BROKEN" or score_change <= -3:
                 alert = ThesisDriftAlert(
@@ -415,8 +530,8 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
                     alert_type=AlertType.THESIS_BREAKING,
                     severity="CRITICAL",
                     old_score=old_score,
-                    new_score=data.gomes_score,
-                    message=f"THESIS BREAKING: {data.ticker} spadl z {old_score} na {data.gomes_score}/10. Zvazte prodej!",
+                    new_score=data.conviction_score,
+                    message=f"THESIS BREAKING: {data.ticker} spadl z {old_score} na {data.conviction_score}/10. Zvazte prodej!",
                 )
                 self.db.add(alert)
             elif result.thesis_drift == "DETERIORATED":
@@ -425,8 +540,8 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
                     alert_type=AlertType.THESIS_DETERIORATING,
                     severity="WARNING",
                     old_score=old_score,
-                    new_score=data.gomes_score,
-                    message=f"Thesis deteriorating: {data.ticker} klesl z {old_score} na {data.gomes_score}/10.",
+                    new_score=data.conviction_score,
+                    message=f"Thesis deteriorating: {data.ticker} klesl z {old_score} na {data.conviction_score}/10.",
                 )
                 self.db.add(alert)
             elif result.thesis_drift == "IMPROVED" and score_change >= 2:
@@ -435,8 +550,8 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
                     alert_type=AlertType.THESIS_IMPROVING,
                     severity="INFO",
                     old_score=old_score,
-                    new_score=data.gomes_score,
-                    message=f"Thesis improving: {data.ticker} vzrostl z {old_score} na {data.gomes_score}/10!",
+                    new_score=data.conviction_score,
+                    message=f"Thesis improving: {data.ticker} vzrostl z {old_score} na {data.conviction_score}/10!",
                 )
                 self.db.add(alert)
         

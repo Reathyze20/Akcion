@@ -5,7 +5,7 @@ Calculates optimal position sizing using Kelly Criterion methodology
 adapted for Mark Gomes' investment approach.
 
 The service provides:
-- Allocation recommendations based on Gomes score and portfolio weight
+- Allocation recommendations based on Conviction Score and portfolio weight
 - Family portfolio gap detection
 - Rebalancing suggestions
 """
@@ -30,7 +30,7 @@ class AllocationRecommendation:
     """Single allocation recommendation"""
     ticker: str
     company_name: Optional[str]
-    gomes_score: int
+    conviction_score: int
     current_weight_pct: float
     recommended_weight_pct: float
     recommended_amount: float
@@ -44,7 +44,7 @@ class FamilyGap:
     """Gap detected between family portfolios"""
     ticker: str
     company_name: Optional[str]
-    gomes_score: Optional[int]
+    conviction_score: Optional[int]
     owner_with_position: str
     owner_weight_pct: float
     missing_owner: str
@@ -67,7 +67,7 @@ class KellyAllocatorService:
     Gomes Gap Analysis Allocation Service.
     
     Calculates optimal position sizing based on:
-    1. Target weight from Gomes score (conviction mapping)
+    1. Target weight from Conviction Score (conviction mapping)
     2. Gap analysis (target value - current value)
     3. Priority-based distribution of monthly contribution
     
@@ -76,7 +76,7 @@ class KellyAllocatorService:
     - MIN_INVESTMENT: 1000 CZK (to avoid fee overhead)
     """
     
-    # Target weights by Gomes score (% of total portfolio)
+    # Target weights by Conviction Score (% of total portfolio)
     TARGET_WEIGHTS = {
         10: 0.15,  # CORE - highest conviction (12-15%)
         9: 0.15,   # CORE - high conviction
@@ -142,14 +142,14 @@ class KellyAllocatorService:
             for p in positions
         )
         
-        # Get stocks with Gomes scores
+        # Get stocks with Conviction Scores
         tickers = [p.ticker for p in positions]
         stocks = self.db.query(Stock).filter(
             Stock.ticker.in_(tickers),
             Stock.is_latest == True
         ).all()
         
-        stock_scores = {s.ticker: s.gomes_score for s in stocks}
+        stock_scores = {s.ticker: s.conviction_score for s in stocks}
         stock_names = {s.ticker: s.company_name for s in stocks}
         
         # ========================================================
@@ -227,7 +227,7 @@ class KellyAllocatorService:
             recommendations.append(AllocationRecommendation(
                 ticker=item['ticker'],
                 company_name=item['company_name'],
-                gomes_score=int(item['score']),
+                conviction_score=int(item['score']),
                 current_weight_pct=round(item['current_weight'] * 100, 1),
                 recommended_weight_pct=round(item['target_weight'] * 100, 1),
                 recommended_amount=round(allocation / self.CZK_EUR_RATE, 2),  # EUR
@@ -290,13 +290,13 @@ class KellyAllocatorService:
         for positions in owner_positions.values():
             all_tickers.update(positions.keys())
         
-        # Get Gomes scores for all tickers
+        # Get Conviction Scores for all tickers
         stocks = self.db.query(Stock).filter(
             Stock.ticker.in_(list(all_tickers)),
             Stock.is_latest == True
         ).all()
         
-        stock_info = {s.ticker: (s.gomes_score, s.company_name) for s in stocks}
+        stock_info = {s.ticker: (s.conviction_score, s.company_name) for s in stocks}
         
         for ticker in all_tickers:
             score, company = stock_info.get(ticker, (None, None))
@@ -325,16 +325,16 @@ class KellyAllocatorService:
                             gaps.append(FamilyGap(
                                 ticker=ticker,
                                 company_name=company,
-                                gomes_score=score,
+                                conviction_score=score,
                                 owner_with_position=owner,
                                 owner_weight_pct=round(weight * 100, 1),
                                 missing_owner=other_owner,
                                 priority=priority,
-                                message=f"Family Gap: {owner} vlastní {ticker} ({weight*100:.1f}%), ale {other_owner} ne. Gomes Score: {score}/10"
+                                message=f"Family Gap: {owner} vlastní {ticker} ({weight*100:.1f}%), ale {other_owner} ne. Conviction Score: {score}/10"
                             ))
         
         # Sort by priority and score
-        gaps.sort(key=lambda x: (0 if x.priority == "HIGH" else 1, -(x.gomes_score or 0)))
+        gaps.sort(key=lambda x: (0 if x.priority == "HIGH" else 1, -(x.conviction_score or 0)))
         
         return gaps
     

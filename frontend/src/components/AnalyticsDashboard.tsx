@@ -56,7 +56,7 @@ const GomesDashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6">
+    <div className="min-h-screen bg-gray-950 text-text-primary p-6">
       {/* Header */}
       <div className="max-w-7xl mx-auto mb-8">
         <div className="flex items-center justify-between">
@@ -75,7 +75,7 @@ const GomesDashboard: React.FC = () => {
               onClick={() => setViewMode('import')}
               className={`px-4 py-2 rounded-lg transition-colors ${
                 viewMode === 'import'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-blue-600 text-text-primary'
                   : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
               }`}
             >
@@ -124,14 +124,14 @@ const GomesDashboard: React.FC = () => {
                 </div>
               </div>
             ) : error ? (
-              <div className="bg-gray-900 rounded-lg p-6 border border-red-500/30">
-                <h3 className="text-xl font-bold text-white mb-4">
+              <div className="bg-gray-900 rounded-lg p-6 border border-negative/30">
+                <h3 className="text-xl font-bold text-text-primary mb-4">
                   Chyba analýzy
                 </h3>
-                <p className="text-red-400 mb-4">{error}</p>
+                <p className="text-negative mb-4">{error}</p>
                 <button
                   onClick={() => selectedTicker && handleTickerClick(selectedTicker)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-text-primary rounded transition-colors"
                 >
                   Zkusit znovu
                 </button>
@@ -148,7 +148,7 @@ const GomesDashboard: React.FC = () => {
                     setSelectedTicker(tickerScore.ticker);
                     setViewMode('timeline');
                   }}
-                  className="mt-4 w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="mt-4 w-full py-3 bg-purple-600 hover:bg-purple-700 text-text-primary rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   Zobrazit historii {tickerScore.ticker}
                 </button>
@@ -184,7 +184,7 @@ const GomesDashboard: React.FC = () => {
           </h4>
           <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-300">
             <div>
-              <h5 className="font-semibold text-white mb-2">Bodovací systém (0-10):</h5>
+              <h5 className="font-semibold text-text-primary mb-2">Bodovací systém (0-10):</h5>
               <ul className="space-y-1 text-gray-400">
                 <li>• Příběh/Katalyzátor: +2</li>
                 <li>• Breakout pattern: +2</li>
@@ -195,7 +195,7 @@ const GomesDashboard: React.FC = () => {
               </ul>
             </div>
             <div>
-              <h5 className="font-semibold text-white mb-2">Fáze životního cyklu:</h5>
+              <h5 className="font-semibold text-text-primary mb-2">Fáze životního cyklu:</h5>
               <ul className="space-y-1 text-gray-400">
                 <li>• <strong>Skvělý nález</strong>: Časné momentum, NÁKUP</li>
                 <li>• <strong>Čekací doba</strong>: Mrtvé peníze, VYHNOUT SE</li>
@@ -210,3 +210,5 @@ const GomesDashboard: React.FC = () => {
 };
 
 export default GomesDashboard;
+
+

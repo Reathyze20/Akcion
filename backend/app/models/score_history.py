@@ -1,7 +1,7 @@
 """
-Gomes Score History Model
+Conviction Score History Model
 
-Tracks historical evolution of Gomes scores for thesis drift detection.
+Tracks historical evolution of Conviction Scores for thesis drift detection.
 Enables visualization of score trends over time.
 """
 
@@ -28,23 +28,23 @@ from sqlalchemy.orm import relationship
 from .base import Base
 
 
-class GomesScoreHistory(Base):
+class ConvictionScoreHistory(Base):
     """
-    Historical record of Gomes score for a ticker.
+    Historical record of Conviction Score for a ticker.
     
     Used for:
     - Thesis Drift visualization (score trend vs price trend)
     - Alert generation when fundamentals diverge from price
     - Long-term performance analysis
     """
-    __tablename__ = "gomes_score_history"
+    __tablename__ = "conviction_score_history"
     
     id = Column(Integer, primary_key=True)
     ticker = Column(String(20), nullable=False, index=True)
     stock_id = Column(Integer, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=True)
     
     # Score data
-    gomes_score = Column(Integer, nullable=False)
+    conviction_score = Column(Integer, nullable=False)
     thesis_status = Column(String(20), nullable=True)  # IMPROVED, STABLE, DETERIORATED, BROKEN
     action_signal = Column(String(20), nullable=True)  # BUY, ACCUMULATE, HOLD, TRIM, SELL
     
@@ -68,7 +68,7 @@ class GomesScoreHistory(Base):
     )
     
     def __repr__(self) -> str:
-        return f"<ScoreHistory {self.ticker}: {self.gomes_score}/10 @ {self.recorded_at}>"
+        return f"<ScoreHistory {self.ticker}: {self.conviction_score}/10 @ {self.recorded_at}>"
 
 
 class ThesisDriftAlert(Base):

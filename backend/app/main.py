@@ -429,7 +429,7 @@ async def get_all_stocks(
         
         # Apply filters
         if min_score is not None:
-            stocks = [s for s in stocks if s.gomes_score and s.gomes_score >= min_score]
+            stocks = [s for s in stocks if s.conviction_score and s.conviction_score >= min_score]
         
         if sentiment:
             stocks = [s for s in stocks if s.sentiment == sentiment]

@@ -1,9 +1,9 @@
 /**
  * Akcion Investment Terminal
  * 
- * Professional portfolio management dashboard:
+ * Enterprise-grade portfolio management dashboard:
  * - Multi-Account Portfolio Consolidation
- * - Proprietary Scoring & Risk Assessment
+ * - Conviction Scoring & Risk Assessment
  * - Position Sizing (Kelly Criterion)
  * - Thesis Drift Monitoring & Alerts
  */
@@ -20,7 +20,8 @@ import type {
   PortfolioSummary, Position, Stock,
   FamilyAuditResponse, BrokerType
 } from '../types';
-import StockDetailModalGomes from './StockDetailModalGomes';
+import AssetDetailModal from './AssetDetailModal';
+import NotificationBell from './NotificationBell';
 
 // ============================================================================
 // TYPES
@@ -28,7 +29,7 @@ import StockDetailModalGomes from './StockDetailModalGomes';
 
 interface EnrichedPosition extends Position {
   stock?: Stock;
-  gomes_score: number | null;
+  conviction_score: number | null;
   // Gomes Gap Analysis
   max_allocation_cap: number;    // Maximum allocation % (from Gomes Logic)
   target_weight_pct: number;     // Ideální váha podle skóre (deprecated - use max_allocation_cap)
@@ -168,31 +169,31 @@ const getActionCommand = (
 ): { text: string; color: string; bgColor?: string } => {
   // Priority 1: Free Ride at 150%+
   if (unrealizedProfitPct >= 150) {
-    return { text: 'FREE RIDE', color: 'text-amber-400', bgColor: 'bg-amber-500/10' };
+    return { text: 'FREE RIDE', color: 'text-warning', bgColor: 'bg-warning/10' };
   }
   
   // Priority 2: Hard Exit for score < 4
   if (score !== null && score < 4) {
-    return { text: 'HARD EXIT', color: 'text-red-400', bgColor: 'bg-red-500/20' };
+    return { text: 'HARD EXIT', color: 'text-negative', bgColor: 'bg-negative/20' };
   }
   
   // Priority 3: Strong Buy for score >= 8 and underweight
   if (score !== null && score >= 8 && currentWeight < targetWeight) {
-    return { text: 'STRONG BUY', color: 'text-green-400 font-bold' };
+    return { text: 'STRONG BUY', color: 'text-positive font-bold' };
   }
   
   // Priority 4: Hold if at or above target weight
   if (score !== null && score >= 5 && currentWeight >= targetWeight) {
-    return { text: 'HOLD', color: 'text-slate-500' };
+    return { text: 'HOLD', color: 'text-text-muted' };
   }
   
   // Default: BUY signal for underweight positions with score 5-7
   if (score !== null && score >= 5 && currentWeight < targetWeight) {
-    return { text: 'BUY', color: 'text-emerald-400' };
+    return { text: 'BUY', color: 'text-positive' };
   }
   
   // No score or edge case
-  return { text: 'ANALYZE', color: 'text-slate-600' };
+  return { text: 'ANALYZE', color: 'text-text-muted' };
 };
 
 const getTrendStatus = (stock: Stock | undefined): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
@@ -226,21 +227,21 @@ const RiskMeter: React.FC<{
   const isOverexposed = analyzedTotal > 0 && riskScore > 60;
   const isDangerous = analyzedTotal > 0 && riskScore > 70;
   const hasUnanalyzed = unanalyzedCount > 0;
-  const riskColor = isDangerous ? 'text-red-400' : isOverexposed ? 'text-amber-400' : 'text-green-400';
-  const riskBg = isDangerous ? 'bg-red-500' : isOverexposed ? 'bg-amber-500' : 'bg-green-500';
-  const borderColor = isDangerous ? 'border-red-500/50' : isOverexposed ? 'border-amber-500/50' : hasUnanalyzed ? 'border-slate-600' : 'border-slate-700';
+  const riskColor = isDangerous ? 'text-negative' : isOverexposed ? 'text-warning' : 'text-positive';
+  const riskBg = isDangerous ? 'bg-negative' : isOverexposed ? 'bg-warning' : 'bg-positive';
+  const borderColor = isDangerous ? 'border-negative/50' : isOverexposed ? 'border-warning/50' : hasUnanalyzed ? 'border-border' : 'border-border-subtle';
   
   return (
-    <div className={`bg-slate-800/50 rounded-xl p-4 border ${borderColor} ${isDangerous ? 'animate-pulse' : ''}`}>
+    <div className={`bg-surface-raised/50 rounded-xl p-4 border ${borderColor} ${isDangerous ? 'animate-pulse' : ''}`}>
       <div className="flex items-center justify-between mb-3">
-        <div className="text-xs text-slate-400 uppercase tracking-wider">Risk Exposure</div>
+        <div className="text-xs text-text-secondary uppercase tracking-wider">Risk Exposure</div>
         {hasUnanalyzed && !isOverexposed && (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-600 text-slate-300">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-600 text-text-secondary">
             RUN DEEP DD
           </span>
         )}
         {isOverexposed && (
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isDangerous ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isDangerous ? 'bg-negative/20 text-negative' : 'bg-warning/20 text-warning'}`}>
             {isDangerous ? 'REBALANCE' : 'MONITOR'}
           </span>
         )}
@@ -254,29 +255,29 @@ const RiskMeter: React.FC<{
       {/* Categories row */}
       <div className="grid grid-cols-4 gap-1 text-center">
         <div className="flex flex-col items-center">
-          <Rocket className={`w-4 h-4 mb-0.5 ${rocketCount > 0 ? 'text-purple-400' : 'text-slate-600'}`} />
-          <span className={`font-bold text-sm ${rocketCount > 0 ? 'text-purple-400' : 'text-slate-600'}`}>{rocketCount}</span>
-          <span className="text-[8px] text-slate-500">Growth</span>
+          <Rocket className={`w-4 h-4 mb-0.5 ${rocketCount > 0 ? 'text-accent' : 'text-text-muted'}`} />
+          <span className={`font-bold text-sm ${rocketCount > 0 ? 'text-accent' : 'text-text-muted'}`}>{rocketCount}</span>
+          <span className="text-[8px] text-text-muted">Growth</span>
         </div>
         <div className="flex flex-col items-center">
-          <Anchor className={`w-4 h-4 mb-0.5 ${anchorCount > 0 ? 'text-blue-400' : 'text-slate-600'}`} />
-          <span className={`font-bold text-sm ${anchorCount > 0 ? 'text-blue-400' : 'text-slate-600'}`}>{anchorCount}</span>
-          <span className="text-[8px] text-slate-500">Core</span>
+          <Anchor className={`w-4 h-4 mb-0.5 ${anchorCount > 0 ? 'text-accent' : 'text-slate-600'}`} />
+          <span className={`font-bold text-sm ${anchorCount > 0 ? 'text-accent' : 'text-slate-600'}`}>{anchorCount}</span>
+          <span className="text-[8px] text-text-muted">Core</span>
         </div>
         <div className="flex flex-col items-center">
-          <Clock className={`w-4 h-4 mb-0.5 ${waitTimeCount > 0 ? 'text-amber-400' : 'text-slate-600'}`} />
-          <span className={`font-bold text-sm ${waitTimeCount > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{waitTimeCount}</span>
-          <span className="text-[8px] text-slate-500">Wait</span>
+          <Clock className={`w-4 h-4 mb-0.5 ${waitTimeCount > 0 ? 'text-warning' : 'text-text-muted'}`} />
+          <span className={`font-bold text-sm ${waitTimeCount > 0 ? 'text-warning' : 'text-text-muted'}`}>{waitTimeCount}</span>
+          <span className="text-[8px] text-text-muted">Wait</span>
         </div>
         <div className="flex flex-col items-center">
-          <AlertCircle className={`w-4 h-4 mb-0.5 ${unanalyzedCount > 0 ? 'text-slate-400' : 'text-slate-600'}`} />
-          <span className={`font-bold text-sm ${unanalyzedCount > 0 ? 'text-slate-400' : 'text-slate-600'}`}>{unanalyzedCount}</span>
-          <span className="text-[8px] text-slate-500">New</span>
+          <AlertCircle className={`w-4 h-4 mb-0.5 ${unanalyzedCount > 0 ? 'text-text-secondary' : 'text-slate-600'}`} />
+          <span className={`font-bold text-sm ${unanalyzedCount > 0 ? 'text-text-secondary' : 'text-slate-600'}`}>{unanalyzedCount}</span>
+          <span className="text-[8px] text-text-muted">New</span>
         </div>
       </div>
       
       {isOverexposed && (
-        <div className={`mt-2 text-[10px] text-center ${isDangerous ? 'text-red-400' : 'text-amber-400'}`}>
+        <div className={`mt-2 text-[10px] text-center ${isDangerous ? 'text-negative' : 'text-warning'}`}>
           {isDangerous ? 'Rebalance needed' : 'Monitor growth allocation'}
         </div>
       )}
@@ -351,13 +352,13 @@ const FreedomCountdown: React.FC<FreedomCountdownProps> = ({
   const nextMilestone = milestones.find(m => currentValue < m.value);
 
   return (
-    <div className="bg-gradient-to-br from-slate-800/80 to-indigo-900/30 rounded-xl p-5 border border-indigo-500/30">
+    <div className="bg-surface-raised rounded-xl p-5 border border-accent/30">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Target className="w-5 h-5 text-indigo-400" />
-          <span className="text-sm font-bold text-indigo-300 uppercase tracking-wider">Freedom Countdown</span>
+          <Target className="w-5 h-5 text-accent" />
+          <span className="text-sm font-bold text-accent uppercase tracking-wider">Freedom Countdown</span>
         </div>
-        <div className="text-xs text-slate-400">
+        <div className="text-xs text-text-secondary">
           Cíl: {(targetValue / 1000000).toFixed(0)}M Kč @ {targetAge} let
         </div>
       </div>
@@ -365,24 +366,24 @@ const FreedomCountdown: React.FC<FreedomCountdownProps> = ({
       {/* Main countdown display */}
       <div className="grid grid-cols-3 gap-4 mb-4">
         <div className="text-center">
-          <div className="text-3xl font-black text-white">{yearsToFreedom}</div>
-          <div className="text-xs text-slate-400">let</div>
+          <div className="text-3xl font-black text-text-primary">{yearsToFreedom}</div>
+          <div className="text-xs text-text-secondary">let</div>
         </div>
-        <div className="text-center border-x border-slate-700">
-          <div className="text-3xl font-black text-white">{monthsRemaining}</div>
-          <div className="text-xs text-slate-400">měsíců</div>
+        <div className="text-center border-x border-border">
+          <div className="text-3xl font-black text-text-primary">{monthsRemaining}</div>
+          <div className="text-xs text-text-secondary">měsíců</div>
         </div>
         <div className="text-center">
-          <div className="text-3xl font-black text-indigo-400">{freedomAge}</div>
-          <div className="text-xs text-slate-400">věk svobody</div>
+          <div className="text-3xl font-black text-accent">{freedomAge}</div>
+          <div className="text-xs text-text-secondary">věk svobody</div>
         </div>
       </div>
       
       {/* Progress bar with milestones */}
       <div className="relative mb-4">
-        <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-3 bg-surface-hover rounded-full overflow-hidden">
           <div 
-            className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-1000 relative"
+            className="h-full bg-gradient-to-r from-accent via-info to-positive transition-all duration-1000 relative"
             style={{ width: `${progressPercent}%` }}
           >
             <div className="absolute inset-0 bg-white/20 animate-pulse" />
@@ -413,15 +414,15 @@ const FreedomCountdown: React.FC<FreedomCountdownProps> = ({
       <div className="flex justify-between items-center text-xs mb-3">
         <div className="flex items-center gap-1">
           {currentMilestone && (
-            <span className="text-green-400">
+            <span className="text-positive">
               {currentMilestone.emoji} {currentMilestone.label} dosaženo!
             </span>
           )}
         </div>
         {nextMilestone && (
-          <div className="text-slate-400">
+          <div className="text-text-secondary">
             Další: {nextMilestone.emoji} {nextMilestone.label} 
-            <span className="text-indigo-400 ml-1">
+            <span className="text-accent ml-1">
               ({((currentValue / nextMilestone.value) * 100).toFixed(0)}%)
             </span>
           </div>
@@ -430,11 +431,11 @@ const FreedomCountdown: React.FC<FreedomCountdownProps> = ({
       
       {/* Motivational message */}
       {daysSaved > 0 && (
-        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 text-center">
-          <div className="text-green-400 text-sm">
+        <div className="bg-positive/10 border border-positive/30 rounded-lg p-3 text-center">
+          <div className="text-positive text-sm">
             🎉 Tvůj poslední vklad {formatCurrency(monthlyContribution)} přiblížil důchod o <span className="font-bold">{daysSaved} dní</span>!
           </div>
-          <div className="text-xs text-green-300/70 mt-1">
+          <div className="text-xs text-positive/70 mt-1">
             Každý vklad = nákup času pro tebe a rodinu
           </div>
         </div>
@@ -442,13 +443,13 @@ const FreedomCountdown: React.FC<FreedomCountdownProps> = ({
       
       {/* Quick stats */}
       <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-        <div className="bg-slate-800/50 rounded-lg p-2 text-center">
-          <div className="text-slate-400">Aktuální hodnota</div>
-          <div className="text-white font-bold">{formatCurrency(currentValue)}</div>
+        <div className="bg-surface-raised/50 rounded-lg p-2 text-center">
+          <div className="text-text-secondary">Aktuální hodnota</div>
+          <div className="text-text-primary font-bold">{formatCurrency(currentValue)}</div>
         </div>
-        <div className="bg-slate-800/50 rounded-lg p-2 text-center">
-          <div className="text-slate-400">Progress</div>
-          <div className="text-indigo-400 font-bold">{progressPercent.toFixed(2)}%</div>
+        <div className="bg-surface-raised/50 rounded-lg p-2 text-center">
+          <div className="text-text-secondary">Progress</div>
+          <div className="text-accent font-bold">{progressPercent.toFixed(2)}%</div>
         </div>
       </div>
     </div>
@@ -501,13 +502,13 @@ const CompoundSnowball: React.FC<CompoundSnowballProps> = ({
   const finalProjected = projectionPoints[projectionPoints.length - 1]?.projected || 0;
   
   return (
-    <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+    <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-purple-400" />
-          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Compound Snowball</span>
+          <TrendingUp className="w-4 h-4 text-accent" />
+          <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">Compound Snowball</span>
         </div>
-        <div className="text-xs text-slate-400">
+        <div className="text-xs text-text-secondary">
           {years}Y projekce @ {(annualReturn * 100).toFixed(0)}% p.a.
         </div>
       </div>
@@ -516,14 +517,14 @@ const CompoundSnowball: React.FC<CompoundSnowballProps> = ({
       <div className="space-y-2 mb-3">
         {projectionPoints.filter((_, i) => i % 5 === 0 || i === projectionPoints.length - 1).map((point) => (
           <div key={point.year} className="flex items-center gap-2 text-xs">
-            <span className="w-8 text-slate-500">{point.year}Y</span>
-            <div className="flex-1 h-4 bg-slate-700 rounded overflow-hidden relative">
+            <span className="w-8 text-text-muted">{point.year}Y</span>
+            <div className="flex-1 h-4 bg-surface-hover rounded overflow-hidden relative">
               <div 
-                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all"
+                className="h-full bg-gradient-to-r from-accent to-info transition-all"
                 style={{ width: `${(point.projected / maxValue) * 100}%` }}
               />
             </div>
-            <span className="w-20 text-right text-slate-300 font-mono">
+            <span className="w-20 text-right text-text-secondary font-mono">
               {point.projected >= 1000000 
                 ? `${(point.projected / 1000000).toFixed(1)}M` 
                 : `${(point.projected / 1000).toFixed(0)}k`}
@@ -533,12 +534,12 @@ const CompoundSnowball: React.FC<CompoundSnowballProps> = ({
       </div>
       
       {/* Final projection highlight */}
-      <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3 text-center">
-        <div className="text-xs text-slate-400">Za {years} let budeš mít</div>
-        <div className="text-2xl font-black text-purple-400">
+      <div className="bg-accent/10 border border-accent/30 rounded-lg p-3 text-center">
+        <div className="text-xs text-text-muted">Za {years} let budeš mít</div>
+        <div className="text-2xl font-black text-accent">
           {formatCurrency(finalProjected)}
         </div>
-        <div className="text-xs text-purple-300/70">
+        <div className="text-xs text-accent/70">
           při {(annualReturn * 100).toFixed(0)}% ročním výnosu + {formatCurrency(monthlyContribution)}/měsíc
         </div>
       </div>
@@ -579,7 +580,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
         icon: 'diamond',
         description: 'Drž akcii 9/10 i při -20% drawdown',
         earned: positions.some(p => 
-          p.gomes_score && p.gomes_score >= 9 && p.unrealized_pl_percent <= -20
+          p.conviction_score && p.conviction_score >= 9 && p.unrealized_pl_percent <= -20
         ),
         category: 'discipline'
       },
@@ -596,7 +597,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
         name: 'First Rocket',
         icon: 'rocket',
         description: 'Měj první pozici se skóre 9+',
-        earned: positions.some(p => p.gomes_score && p.gomes_score >= 9),
+        earned: positions.some(p => p.conviction_score && p.conviction_score >= 9),
         category: 'growth'
       },
       {
@@ -647,13 +648,13 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
   const earnedCount = badges.filter(b => b.earned).length;
   
   return (
-    <div className="bg-slate-800/50 rounded-xl p-4 border border-amber-500/30">
+    <div className="bg-surface-raised rounded-xl p-4 border border-warning/20">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4 text-amber-400" />
-          <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">Gomes Merit Badges</span>
+          <Shield className="w-4 h-4 text-warning" />
+          <span className="text-xs font-bold text-warning uppercase tracking-wider">Gomes Merit Badges</span>
         </div>
-        <div className="text-xs text-slate-400">
+        <div className="text-xs text-text-secondary">
           {earnedCount}/{badges.length} získáno
         </div>
       </div>
@@ -665,13 +666,13 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
             className={`
               p-2 rounded-lg text-center transition-all
               ${badge.earned 
-                ? 'bg-amber-500/20 border border-amber-500/40' 
-                : 'bg-slate-700/30 border border-slate-600/30 opacity-40'
+                ? 'bg-warning/20 border border-warning/40' 
+                : 'bg-surface-overlay border border-border-subtle opacity-40'
               }
             `}
             title={badge.description}
           >
-            <div className={`text-xl mb-1 ${badge.earned ? 'text-amber-400' : 'text-slate-500'}`}>
+            <div className={`text-xl mb-1 ${badge.earned ? 'text-warning' : 'text-text-muted'}`}>
               {badge.icon === 'scissors' && <span className="inline-block w-6 h-6">✂</span>}
               {badge.icon === 'diamond' && <span className="inline-block w-6 h-6">◆</span>}
               {badge.icon === 'target' && <span className="inline-block w-6 h-6">◎</span>}
@@ -682,7 +683,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
               {badge.icon === 'money' && <span className="inline-block w-6 h-6">$</span>}
               {badge.icon === 'trophy' && <span className="inline-block w-6 h-6">★</span>}
             </div>
-            <div className={`text-[10px] font-bold ${badge.earned ? 'text-amber-300' : 'text-slate-500'}`}>
+            <div className={`text-[10px] font-bold ${badge.earned ? 'text-warning' : 'text-text-muted'}`}>
               {badge.name}
             </div>
           </div>
@@ -697,30 +698,30 @@ const PortfolioRow: React.FC<{
   position: EnrichedPosition;
   onClick: () => void;
 }> = ({ position, onClick }) => {
-  const scoreColor = position.gomes_score 
-    ? position.gomes_score >= 7 ? 'text-green-400' 
-      : position.gomes_score >= 5 ? 'text-yellow-400' 
-      : 'text-red-400'
-    : 'text-slate-500';
+  const scoreColor = position.conviction_score 
+    ? position.conviction_score >= 7 ? 'text-positive' 
+      : position.conviction_score >= 5 ? 'text-warning' 
+      : 'text-negative'
+    : 'text-text-muted';
 
   const trendIcon = position.trend_status === 'BULLISH' 
-    ? <TrendingUp className="w-4 h-4 text-green-400" />
+    ? <TrendingUp className="w-4 h-4 text-positive" />
     : position.trend_status === 'BEARISH'
-    ? <TrendingDown className="w-4 h-4 text-red-400" />
-    : <BarChart3 className="w-4 h-4 text-slate-400" />;
+    ? <TrendingDown className="w-4 h-4 text-negative" />
+    : <BarChart3 className="w-4 h-4 text-text-muted" />;
 
-  const plColor = position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400';
+  const plColor = position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative';
   
   // Get action command
   const actionCmd = getActionCommand(
-    position.gomes_score,
+    position.conviction_score,
     position.weight_in_portfolio,
     position.target_weight_pct,
     position.unrealized_pl_percent
   );
   
   // Check if row should be highlighted (HARD EXIT)
-  const isHardExit = position.gomes_score !== null && position.gomes_score < 4;
+  const isHardExit = position.conviction_score !== null && position.conviction_score < 4;
   
   // Strategy: Free Ride eligible vs Growing
   const isFreeRideEligible = position.unrealized_pl_percent >= 150;
@@ -739,24 +740,24 @@ const PortfolioRow: React.FC<{
     <tr 
       onClick={onClick}
       className={`
-        border-b border-slate-700/50 cursor-pointer transition-all
-        hover:bg-slate-800/70
-        ${isHardExit ? 'bg-red-900/30' : ''}
-        ${position.is_deteriorated && !isHardExit ? 'animate-pulse bg-red-900/20' : ''}
+        border-b border-border/50 cursor-pointer transition-all
+        hover:bg-surface-raised/70
+        ${isHardExit ? 'bg-negative/15' : ''}
+        ${position.is_deteriorated && !isHardExit ? 'animate-pulse bg-negative/10' : ''}
       `}
     >
       {/* Ticker & Name */}
       <td className="py-3 px-3">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-white text-base">{position.ticker}</span>
+            <span className="font-bold text-text-primary text-base">{position.ticker}</span>
             {position.is_deteriorated && (
-              <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded animate-pulse">
+              <span className="px-1.5 py-0.5 bg-negative/20 text-negative text-[10px] font-bold rounded animate-pulse">
                 REVIEW
               </span>
             )}
           </div>
-          <div className="text-[10px] text-slate-400 truncate">
+          <div className="text-[10px] text-text-secondary truncate">
             {position.company_name || 'Unknown'}
           </div>
         </div>
@@ -773,25 +774,25 @@ const PortfolioRow: React.FC<{
       <td className="py-3 px-3">
         <div className="flex flex-col">
           <div className="flex items-center gap-1">
-            <span className={`font-mono text-sm font-bold ${position.is_overweight ? 'text-red-400' : position.is_underweight ? 'text-amber-400' : 'text-slate-300'}`}>
+            <span className={`font-mono text-sm font-bold ${position.is_overweight ? 'text-negative' : position.is_underweight ? 'text-warning' : 'text-text-secondary'}`}>
               {position.weight_in_portfolio.toFixed(1)}%
             </span>
-            <span className="text-slate-500 text-xs">/</span>
-            <span className="font-mono text-xs text-slate-400">{position.max_allocation_cap.toFixed(1)}%</span>
+            <span className="text-text-muted text-xs">/</span>
+            <span className="font-mono text-xs text-text-secondary">{position.max_allocation_cap.toFixed(1)}%</span>
           </div>
           {position.is_overweight && (
-            <div className="text-[9px] text-red-400">OVERWEIGHT</div>
+            <div className="text-[9px] text-negative">OVERWEIGHT</div>
           )}
           {position.is_underweight && !position.is_overweight && (
-            <div className="text-[9px] text-amber-400">UNDERWEIGHT</div>
+            <div className="text-[9px] text-warning">UNDERWEIGHT</div>
           )}
         </div>
       </td>
 
-      {/* Gomes Score */}
+      {/* Conviction Score */}
       <td className="py-3 px-3 text-center">
         <div className={`text-xl font-black ${scoreColor}`}>
-          {position.gomes_score ?? '-'}
+          {position.conviction_score ?? '-'}
         </div>
       </td>
 
@@ -800,15 +801,15 @@ const PortfolioRow: React.FC<{
         <div className="flex flex-col items-end">
           {position.current_price ? (
             <>
-              <div className="text-sm font-bold text-white font-mono">
+              <div className="text-sm font-bold text-text-primary font-mono">
                 ${position.current_price.toFixed(2)}
               </div>
-              <div className="text-[9px] text-slate-500">
+              <div className="text-[9px] text-text-muted">
                 Cost: ${position.avg_cost.toFixed(2)}
               </div>
             </>
           ) : (
-            <div className="text-xs text-slate-500">-</div>
+            <div className="text-xs text-text-muted">-</div>
           )}
         </div>
       </td>
@@ -817,42 +818,42 @@ const PortfolioRow: React.FC<{
       <td className="py-3 px-3">
         {position.action_signal === 'SELL' ? (
           <div className="flex flex-col">
-            <div className="text-red-400 font-bold text-xs">SELL</div>
-            <div className="text-[9px] text-red-300">Score &lt; 5</div>
+            <div className="text-negative font-bold text-xs">SELL</div>
+            <div className="text-[9px] text-negative/80">Score &lt; 5</div>
           </div>
         ) : position.optimal_size < 0 ? (
           // OVERWEIGHT: Show how much to SELL (negative optimal_size)
           <div className="flex flex-col">
             <div className="flex items-center gap-1">
-              <span className="text-orange-400 font-bold text-[9px]">TRIM</span>
-              <span className="text-sm font-bold text-orange-400 font-mono">
+              <span className="text-warning font-bold text-[9px]">TRIM</span>
+              <span className="text-sm font-bold text-warning font-mono">
                 {formatCurrency(Math.abs(position.optimal_size))}
               </span>
             </div>
-            <div className="text-[9px] text-orange-300">
+            <div className="text-[9px] text-warning/80">
               Nad limit {position.max_allocation_cap.toFixed(1)}%
             </div>
           </div>
         ) : position.optimal_size > 0 ? (
           <div className="flex flex-col">
             <div className="flex items-center gap-1">
-              {position.action_signal === 'SNIPER' && <span className="text-amber-400 text-[9px] font-bold">SNIPER</span>}
-              <span className="text-sm font-bold text-emerald-400 font-mono">
+              {position.action_signal === 'SNIPER' && <span className="text-warning text-[9px] font-bold">SNIPER</span>}
+              <span className="text-sm font-bold text-positive font-mono">
                 {formatCurrency(position.optimal_size)}
               </span>
             </div>
-            <div className="text-[9px] text-slate-500">
+            <div className="text-[9px] text-text-muted">
               Gap: {formatCurrency(position.gap_czk)}
             </div>
             {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
-              <div className="text-[9px] text-amber-400 font-bold">
+              <div className="text-[9px] text-warning font-bold">
                 #{position.allocation_priority} priorita
               </div>
             )}
           </div>
         ) : (
           <div className="flex flex-col">
-            <div className="text-slate-500 font-mono text-xs">0 Kč</div>
+            <div className="text-text-muted font-mono text-xs">0 Kč</div>
             <div className="text-[9px] text-slate-600">
               {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
             </div>
@@ -863,11 +864,11 @@ const PortfolioRow: React.FC<{
       {/* NEXT CATALYST */}
       <td className="py-3 px-3">
         {position.next_catalyst ? (
-          <div className="text-[9px] text-slate-400 uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
+          <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
             {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
           </div>
         ) : (
-          <div className="text-[9px] text-red-400/70 uppercase">NONE</div>
+          <div className="text-[9px] text-negative/70 uppercase">NONE</div>
         )}
       </td>
 
@@ -876,9 +877,9 @@ const PortfolioRow: React.FC<{
         <div className="flex flex-col items-center gap-1">
           {trendIcon}
           <span className={`text-[10px] font-medium ${
-            position.trend_status === 'BULLISH' ? 'text-green-400' :
-            position.trend_status === 'BEARISH' ? 'text-red-400' :
-            'text-slate-400'
+            position.trend_status === 'BULLISH' ? 'text-positive' :
+            position.trend_status === 'BEARISH' ? 'text-negative' :
+            'text-text-muted'
           }`}>
             {position.trend_status}
           </span>
@@ -889,17 +890,17 @@ const PortfolioRow: React.FC<{
       <td className="py-3 px-3">
         {isFreeRideEligible ? (
           <div className="flex flex-col">
-            <div className="text-[9px] text-amber-400 font-bold uppercase">FREE RIDE</div>
-            <div className="text-[8px] text-amber-300/70">
+            <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
+            <div className="text-[8px] text-warning/70">
               Sell {sharesToSellForFreeRide} shares
             </div>
           </div>
         ) : (
           <div className="flex flex-col">
-            <div className="text-[9px] text-slate-500 uppercase">GROWING</div>
-            <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
+            <div className="text-[9px] text-text-muted uppercase">GROWING</div>
+            <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden mt-1">
               <div 
-                className="h-full bg-gradient-to-r from-slate-600 to-emerald-500 transition-all"
+                className="h-full bg-gradient-to-r from-surface-overlay to-positive transition-all"
                 style={{ width: `${progressTo150}%` }}
               />
             </div>
@@ -917,7 +918,7 @@ const PortfolioRow: React.FC<{
             ? formatPercent(position.unrealized_pl_percent) 
             : '0.00%'}
         </div>
-        <div className="text-[10px] text-slate-500">
+        <div className="text-[10px] text-text-muted">
           {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
         </div>
       </td>
@@ -1062,39 +1063,39 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
   
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-surface-base border border-border rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-surface-base border-b border-border p-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-4">
             <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-2xl
-              ${position.gomes_score && position.gomes_score >= 7 ? 'bg-green-500/20 text-green-400' :
-                position.gomes_score && position.gomes_score >= 5 ? 'bg-yellow-500/20 text-yellow-400' :
-                'bg-red-500/20 text-red-400'}`}>
-              {position.gomes_score ?? '?'}
+              ${position.conviction_score && position.conviction_score >= 7 ? 'bg-positive/20 text-positive' :
+                position.conviction_score && position.conviction_score >= 5 ? 'bg-warning/20 text-warning' :
+                'bg-negative/20 text-negative'}`}>
+              {position.conviction_score ?? '?'}
             </div>
             <div>
-              <h2 className="text-2xl font-black text-white">{position.ticker}</h2>
-              <p className="text-slate-400">{stock?.company_name || 'Unknown Company'}</p>
+              <h2 className="text-2xl font-black text-text-primary">{position.ticker}</h2>
+              <p className="text-text-secondary">{stock?.company_name || 'Unknown Company'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button 
               onClick={() => setShowUpdateForm(!showUpdateForm)}
-              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+              className="px-3 py-2 bg-accent hover:bg-accent/80 text-text-primary rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
               Update Analysis
             </button>
-            <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg">
-              <X className="w-6 h-6 text-slate-400" />
+            <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+              <X className="w-6 h-6 text-text-secondary" />
             </button>
           </div>
         </div>
 
         {/* Update Form (collapsible) */}
         {showUpdateForm && (
-          <div className="p-4 bg-indigo-500/10 border-b border-indigo-500/30">
-            <h3 className="text-lg font-bold text-indigo-300 mb-3 flex items-center gap-2">
+          <div className="p-4 bg-accent/10 border-b border-accent/30">
+            <h3 className="text-lg font-bold text-accent mb-3 flex items-center gap-2">
               <PlusCircle className="w-5 h-5" />
               Add New Intelligence for {position.ticker}
             </h3>
@@ -1113,8 +1114,8 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
                   onClick={() => setSourceType(opt.value as typeof sourceType)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     sourceType === opt.value
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      ? 'bg-accent text-text-primary'
+                      : 'bg-surface-overlay text-text-secondary hover:bg-surface-hover'
                   }`}
                 >
                   {opt.label}
@@ -1137,23 +1138,23 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
                   : 'Enter your analysis notes...'
               }
               rows={6}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none mb-3"
+              className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent resize-none mb-3"
             />
             
             <div className="flex items-center justify-between">
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-text-muted">
                 {updateText.length} characters (min. 50)
               </div>
               <div className="flex items-center gap-3">
                 {updateResult && (
-                  <span className={`text-sm ${updateResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`text-sm ${updateResult.success ? 'text-positive' : 'text-negative'}`}>
                     {updateResult.message}
                   </span>
                 )}
                 <button
                   onClick={handleUpdate}
                   disabled={isUpdating || updateText.length < 50}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-600 text-white rounded-lg font-medium flex items-center gap-2 transition-colors"
+                  className="px-4 py-2 bg-accent hover:bg-accent/80 disabled:bg-surface-overlay text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
                 >
                   {isUpdating ? (
                     <>
@@ -1177,39 +1178,39 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
           <div className="p-4 space-y-2">
             {/* TREND BROKEN - Most Critical Warning */}
             {position.trend_status === 'BEARISH' && (
-              <div className="p-4 bg-red-500/20 border-2 border-red-500 rounded-lg flex items-start gap-3 animate-pulse">
-                <TrendingDown className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="p-4 bg-negative/20 border-2 border-negative rounded-lg flex items-start gap-3 animate-pulse">
+                <TrendingDown className="w-6 h-6 text-negative flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-red-400 font-black text-lg">TREND IS BROKEN</div>
-                  <div className="text-red-300 text-sm mt-1">
+                  <div className="text-negative font-black text-lg">TREND IS BROKEN</div>
+                  <div className="text-negative/80 text-sm mt-1">
                     Price below 30-week moving average. Re-evaluate fundamentals immediately!
                   </div>
-                  <div className="text-red-400/70 text-xs mt-2">
+                  <div className="text-negative/70 text-xs mt-2">
                     Weinstein Rule: Do not add to positions with broken trends regardless of fundamentals.
                   </div>
                 </div>
               </div>
             )}
             {isLargeCap && (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/50 rounded-lg flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-400" />
-                <span className="text-amber-300 font-semibold">
+              <div className="p-3 bg-warning/10 border border-warning/50 rounded-lg flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-warning" />
+                <span className="text-warning font-semibold">
                   Large Cap Alert: Limited asymmetric upside potential
                 </span>
               </div>
             )}
             {position.is_deteriorated && (
-              <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg flex items-center gap-3 animate-pulse">
-                <AlertCircle className="w-5 h-5 text-red-400" />
-                <span className="text-red-300 font-semibold">
+              <div className="p-3 bg-negative/10 border border-negative/50 rounded-lg flex items-center gap-3 animate-pulse">
+                <AlertCircle className="w-5 h-5 text-negative" />
+                <span className="text-negative/80 font-semibold">
                   Position Under Review: Fundamental score below threshold (4/10)
                 </span>
               </div>
             )}
             {familyGap && (
-              <div className="p-3 bg-purple-500/10 border border-purple-500/50 rounded-lg flex items-center gap-3">
-                <Users className="w-5 h-5 text-purple-400" />
-                <span className="text-purple-300">
+              <div className="p-3 bg-info/10 border border-info/50 rounded-lg flex items-center gap-3">
+                <Users className="w-5 h-5 text-info" />
+                <span className="text-info">
                   Cross-Account: Consider adding to <span className="font-bold">{familyGap.missing_from}</span> for balanced exposure
                 </span>
               </div>
@@ -1220,15 +1221,15 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
         {/* Three Column Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
           {/* LEFT: Holdings Stats */}
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
                 <DollarSign className="w-4 h-4" /> Position Details
               </h3>
               {!isEditingPosition ? (
                 <button
                   onClick={() => setIsEditingPosition(true)}
-                  className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors"
+                  className="p-1.5 text-text-muted hover:text-accent hover:bg-surface-hover rounded-lg transition-colors"
                   title="Edit position"
                 >
                   <Edit3 className="w-4 h-4" />
@@ -1238,7 +1239,7 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
                   <button
                     onClick={handleSavePosition}
                     disabled={isSavingPosition}
-                    className="p-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-colors disabled:opacity-50"
+                    className="p-1.5 bg-positive/20 hover:bg-positive/30 text-positive rounded-lg transition-colors disabled:opacity-50"
                     title="Save changes"
                   >
                     {isSavingPosition ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
@@ -1254,7 +1255,7 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
                       setEditCurrency(position.currency || 'USD');
                       setSaveError(null);
                     }}
-                    className="p-1.5 bg-slate-600 hover:bg-slate-500 text-slate-300 rounded-lg transition-colors"
+                    className="p-1.5 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded-lg transition-colors"
                     title="Cancel"
                   >
                     <X className="w-4 h-4" />
@@ -1264,7 +1265,7 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
             </div>
             
             {saveError && (
-              <div className="mb-3 p-2 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm">
+              <div className="mb-3 p-2 bg-negative/20 border border-negative/50 rounded-lg text-negative/80 text-sm">
                 {saveError}
               </div>
             )}
@@ -1272,82 +1273,82 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
             <div className="space-y-3">
               {/* Ticker (editable) */}
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">Ticker</span>
+                <span className="text-text-secondary">Ticker</span>
                 {isEditingPosition ? (
                   <input
                     type="text"
                     value={editTicker}
                     onChange={(e) => setEditTicker(e.target.value.toUpperCase())}
-                    className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-right font-mono text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
                   />
                 ) : (
-                  <span className="font-bold text-white">{position.ticker}</span>
+                  <span className="font-bold text-text-primary">{position.ticker}</span>
                 )}
               </div>
               
               {/* Company Name (editable) */}
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">Company</span>
+                <span className="text-text-secondary">Company</span>
                 {isEditingPosition ? (
                   <input
                     type="text"
                     value={editCompanyName}
                     onChange={(e) => setEditCompanyName(e.target.value)}
-                    className="w-40 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-right text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-40 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right text-sm focus:outline-none focus:border-accent"
                     placeholder="Company name"
                   />
                 ) : (
-                  <span className="text-white text-sm">{position.company_name || stock?.company_name || 'Unknown'}</span>
+                  <span className="text-text-primary text-sm">{position.company_name || stock?.company_name || 'Unknown'}</span>
                 )}
               </div>
               
               {/* Shares (editable) */}
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">Shares</span>
+                <span className="text-text-secondary">Shares</span>
                 {isEditingPosition ? (
                   <input
                     type="number"
                     step="0.01"
                     value={editShares}
                     onChange={(e) => setEditShares(e.target.value)}
-                    className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-right font-mono text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
                   />
                 ) : (
-                  <span className="font-bold text-white">{position.shares_count.toFixed(2)}</span>
+                  <span className="font-bold text-text-primary">{position.shares_count.toFixed(2)}</span>
                 )}
               </div>
               
               {/* Avg Cost (editable) */}
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">Avg. Cost</span>
+                <span className="text-text-secondary">Avg. Cost</span>
                 {isEditingPosition ? (
                   <div className="flex items-center gap-1">
-                    <span className="text-slate-500">$</span>
+                    <span className="text-text-muted">$</span>
                     <input
                       type="number"
                       step="0.01"
                       value={editAvgCost}
                       onChange={(e) => setEditAvgCost(e.target.value)}
-                      className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-right font-mono text-sm focus:outline-none focus:border-indigo-500"
+                      className="w-20 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
                     />
                   </div>
                 ) : (
-                  <span className="font-mono text-white">${position.avg_cost.toFixed(2)}</span>
+                  <span className="font-mono text-text-primary">${position.avg_cost.toFixed(2)}</span>
                 )}
               </div>
               
               {/* Current Price (editable) */}
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">Current Price</span>
+                <span className="text-text-secondary">Current Price</span>
                 {isEditingPosition ? (
                   <div className="flex items-center gap-1">
-                    <span className="text-slate-500">$</span>
+                    <span className="text-text-muted">$</span>
                     <input
                       type="number"
                       step="0.01"
                       value={editCurrentPrice}
                       onChange={(e) => setEditCurrentPrice(e.target.value)}
-                      className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-right font-mono text-sm focus:outline-none focus:border-indigo-500"
+                      className="w-20 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
                     />
                   </div>
                 ) : isEditingPrice ? (
@@ -1357,7 +1358,7 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
                       step="0.01"
                       value={editPrice}
                       onChange={(e) => setEditPrice(e.target.value)}
-                      className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-right font-mono text-sm focus:outline-none focus:border-indigo-500"
+                      className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
                       placeholder={currentPrice.toFixed(2)}
                       autoFocus
                     />
@@ -1377,26 +1378,26 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
                         }
                       }}
                       disabled={isSavingPrice}
-                      className="p-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded transition-colors"
+                      className="p-1 bg-positive/20 hover:bg-positive/30 text-positive rounded transition-colors"
                     >
                       <Check className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setIsEditingPrice(false)}
-                      className="p-1 bg-slate-600 hover:bg-slate-500 text-slate-300 rounded transition-colors"
+                      className="p-1 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded transition-colors"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-white">${currentPrice.toFixed(2)}</span>
+                    <span className="font-mono text-text-primary">${currentPrice.toFixed(2)}</span>
                     <button
                       onClick={() => {
                         setEditPrice(currentPrice.toFixed(2));
                         setIsEditingPrice(true);
                       }}
-                      className="p-1 text-slate-500 hover:text-indigo-400 transition-colors"
+                      className="p-1 text-text-muted hover:text-accent transition-colors"
                       title="Update price manually"
                     >
                       <RefreshCw className="w-3 h-3" />
@@ -1407,35 +1408,35 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
               
               {/* Currency (editable) */}
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">Currency</span>
+                <span className="text-text-secondary">Currency</span>
                 {isEditingPosition ? (
                   <select
                     value={editCurrency}
                     onChange={(e) => setEditCurrency(e.target.value)}
-                    className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-right text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right text-sm focus:outline-none focus:border-accent"
                   >
                     {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 ) : (
-                  <span className="font-mono text-white">{position.currency || 'USD'}</span>
+                  <span className="font-mono text-text-primary">{position.currency || 'USD'}</span>
                 )}
               </div>
               
-              <div className="border-t border-slate-600 pt-3 flex justify-between">
-                <span className="text-slate-400">Cost Basis</span>
-                <span className="font-mono text-slate-300">{formatCurrency(position.cost_basis, position.currency || 'USD')}</span>
+              <div className="border-t border-border pt-3 flex justify-between">
+                <span className="text-text-secondary">Cost Basis</span>
+                <span className="font-mono text-text-secondary">{formatCurrency(position.cost_basis, position.currency || 'USD')}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Market Value</span>
-                <span className="font-mono text-white">{formatCurrency(position.market_value, position.currency || 'USD')}</span>
+                <span className="text-text-secondary">Market Value</span>
+                <span className="font-mono text-text-primary">{formatCurrency(position.market_value, position.currency || 'USD')}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">Unrealized P/L</span>
+                <span className="text-text-secondary">Unrealized P/L</span>
                 <div className="text-right">
-                  <span className={`font-bold ${position.unrealized_pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`font-bold ${position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'}`}>
                     {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
                   </span>
-                  <div className={`text-xs ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className={`text-xs ${position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'}`}>
                     ({formatPercent(position.unrealized_pl_percent)})
                   </div>
                 </div>
@@ -1444,15 +1445,15 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
             
             {/* Free Ride Alert */}
             {position.unrealized_pl_percent >= 150 && (
-              <div className="mt-4 p-3 bg-amber-500/20 border border-amber-500/50 rounded-lg">
-                <div className="flex items-center gap-2 text-amber-400 font-bold mb-1">
+              <div className="mt-4 p-3 bg-warning/20 border border-warning/50 rounded-lg">
+                <div className="flex items-center gap-2 text-warning font-bold mb-1">
                   <Zap className="w-4 h-4" />
                   Rule of 150%
                 </div>
-                <p className="text-amber-200 text-sm mb-2">
+                <p className="text-warning/90 text-sm mb-2">
                   Gain exceeds 150%. Consider selling half to lock in profits and ride free shares.
                 </p>
-                <button className="w-full py-2 bg-amber-500/30 hover:bg-amber-500/50 text-amber-300 font-bold rounded-lg transition-colors">
+                <button className="w-full py-2 bg-warning/30 hover:bg-warning/50 text-warning font-bold rounded-lg transition-colors">
                   Take the Free Ride 🎰
                 </button>
               </div>
@@ -1460,29 +1461,29 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
           </div>
 
           {/* MIDDLE: The Thesis */}
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4 flex items-center gap-2">
               <Target className="w-4 h-4" /> Investment Thesis
             </h3>
             
             {/* Narrative */}
             <div className="mb-4">
-              <div className="text-xs text-slate-500 uppercase mb-1">Latest Analysis</div>
-              <p className="text-slate-300 text-sm leading-relaxed">
+              <div className="text-xs text-text-muted uppercase mb-1">Latest Analysis</div>
+              <p className="text-text-secondary text-sm leading-relaxed">
                 {stock?.trade_rationale || stock?.edge || 'No analysis available. Run Deep DD to generate.'}
               </p>
             </div>
 
             {/* Inflection Point Status */}
-            <div className="mb-4 p-3 bg-slate-700/50 rounded-lg">
-              <div className="text-xs text-slate-500 uppercase mb-1">Inflection Point</div>
+            <div className="mb-4 p-3 bg-surface-hover/50 rounded-lg">
+              <div className="text-xs text-text-muted uppercase mb-1">Inflection Point</div>
               <div className="flex items-center gap-2">
                 <span className={`w-3 h-3 rounded-full ${
-                  position.inflection_status === 'ACHIEVED' ? 'bg-green-400' :
-                  position.inflection_status === 'UPCOMING' ? 'bg-amber-400 animate-pulse' :
+                  position.inflection_status === 'ACHIEVED' ? 'bg-positive' :
+                  position.inflection_status === 'UPCOMING' ? 'bg-warning animate-pulse' :
                   'bg-slate-500'
                 }`} />
-                <span className="font-semibold text-white">
+                <span className="font-semibold text-text-primary">
                   {position.inflection_status || 'PENDING'}
                 </span>
               </div>
@@ -1490,37 +1491,37 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
 
             {/* Milestones */}
             <div className="mb-4">
-              <div className="text-xs text-slate-500 uppercase mb-2">Key Milestones</div>
+              <div className="text-xs text-text-muted uppercase mb-2">Key Milestones</div>
               <div className="space-y-2">
                 {stock?.catalysts?.split(',').slice(0, 3).map((catalyst, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
-                    <Check className="w-4 h-4 text-green-400" />
-                    <span className="text-slate-300">{catalyst.trim()}</span>
+                    <Check className="w-4 h-4 text-positive" />
+                    <span className="text-text-secondary">{catalyst.trim()}</span>
                   </div>
                 )) || (
-                  <div className="text-slate-500 text-sm">No milestones defined</div>
+                  <div className="text-text-muted text-sm">No milestones defined</div>
                 )}
               </div>
             </div>
 
             {/* Catalysts */}
             <div>
-              <div className="text-xs text-slate-500 uppercase mb-2">Upcoming Catalysts</div>
+              <div className="text-xs text-text-muted uppercase mb-2">Upcoming Catalysts</div>
               <div className="flex flex-wrap gap-2">
                 {stock?.catalysts?.split(',').map((c, i) => (
                   <span key={i} className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded">
                     {c.trim()}
                   </span>
                 )) || (
-                  <span className="text-slate-500 text-sm">None identified</span>
+                  <span className="text-text-muted text-sm">None identified</span>
                 )}
               </div>
             </div>
           </div>
 
           {/* RIGHT: Valuation & Exit */}
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4 flex items-center gap-2">
               <BarChart3 className="w-4 h-4" /> Valuation & Exit
             </h3>
 
@@ -1528,17 +1529,17 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
             <div className="mb-6">
               <div className="relative pt-8 pb-4">
                 {/* Labels */}
-                <div className="absolute top-0 left-0 text-xs text-slate-500">Floor</div>
-                <div className="absolute top-0 right-0 text-xs text-slate-500">Moon</div>
+                <div className="absolute top-0 left-0 text-xs text-text-muted">Floor</div>
+                <div className="absolute top-0 right-0 text-xs text-text-muted">Moon</div>
                 
                 {/* The Bar */}
-                <div className="h-4 bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 rounded-full relative">
+                <div className="h-4 bg-gradient-to-r from-positive via-warning to-negative rounded-full relative">
                   {/* Current Price Marker */}
                   <div 
                     className="absolute top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded shadow-lg shadow-white/50"
                     style={{ left: `${Math.max(0, Math.min(100, pricePosition))}%` }}
                   >
-                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-bold text-white bg-slate-900 px-2 py-1 rounded">
+                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-bold text-text-primary bg-surface-base px-2 py-1 rounded">
                       ${currentPrice.toFixed(2)}
                     </div>
                   </div>
@@ -1546,11 +1547,11 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
                 
                 {/* Price Labels */}
                 <div className="flex justify-between mt-2 text-xs">
-                  <span className="text-green-400">${greenLine.toFixed(2)}</span>
-                  <span className="text-yellow-400">${redLine.toFixed(2)}</span>
-                  <span className="text-red-400">${moonTarget.toFixed(2)}</span>
+                  <span className="text-positive">${greenLine.toFixed(2)}</span>
+                  <span className="text-warning">${redLine.toFixed(2)}</span>
+                  <span className="text-negative">${moonTarget.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-[10px] text-slate-500">
+                <div className="flex justify-between text-[10px] text-text-muted">
                   <span>Conservative</span>
                   <span>Base Case</span>
                   <span>Optimistic</span>
@@ -1559,46 +1560,46 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
             </div>
 
             {/* Gomes Gap Analysis Recommendation */}
-            <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-              <div className="text-xs text-slate-500 uppercase mb-2">Gap Analysis - Tento měsíc</div>
+            <div className="mb-4 p-3 bg-positive/10 border border-positive/30 rounded-lg">
+              <div className="text-xs text-text-muted uppercase mb-2">Gap Analysis - Tento měsíc</div>
               
               {/* Target vs Current Weight */}
               <div className="flex items-center justify-between mb-2">
-                <span className="text-slate-400 text-sm">Cílová váha:</span>
-                <span className="font-mono text-white">{position.max_allocation_cap.toFixed(1)}%</span>
+                <span className="text-text-secondary text-sm">Cílová váha:</span>
+                <span className="font-mono text-text-primary">{position.max_allocation_cap.toFixed(1)}%</span>
               </div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-slate-400 text-sm">Aktuální váha:</span>
-                <span className={`font-mono ${position.is_underweight ? 'text-amber-400' : position.is_overweight ? 'text-red-400' : 'text-green-400'}`}>
+                <span className="text-text-secondary text-sm">Aktuální váha:</span>
+                <span className={`font-mono ${position.is_underweight ? 'text-warning' : position.is_overweight ? 'text-negative' : 'text-positive'}`}>
                   {position.weight_in_portfolio.toFixed(1)}%
                 </span>
               </div>
-              <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-700">
-                <span className="text-slate-400 text-sm">Mezera (Gap):</span>
-                <span className={`font-mono font-bold ${position.gap_czk > 0 ? 'text-amber-400' : position.gap_czk < 0 ? 'text-red-400' : 'text-green-400'}`}>
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
+                <span className="text-text-secondary text-sm">Mezera (Gap):</span>
+                <span className={`font-mono font-bold ${position.gap_czk > 0 ? 'text-warning' : position.gap_czk < 0 ? 'text-negative' : 'text-positive'}`}>
                   {position.gap_czk > 0 ? '+' : ''}{formatCurrency(position.gap_czk)}
                 </span>
               </div>
               
               {/* Optimal Size */}
               <div className="flex items-center justify-between">
-                <span className="text-slate-300 font-semibold">Doporučený vklad:</span>
+                <span className="text-text-secondary font-semibold">Doporučený vklad:</span>
                 {position.action_signal === 'SELL' ? (
-                  <span className="text-xl font-bold text-red-400">PRODAT</span>
+                  <span className="text-xl font-bold text-negative">PRODAT</span>
                 ) : (
-                  <span className={`text-xl font-bold ${position.optimal_size > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  <span className={`text-xl font-bold ${position.optimal_size > 0 ? 'text-positive' : 'text-text-muted'}`}>
                     {formatCurrency(position.optimal_size)}
                   </span>
                 )}
               </div>
               
               {position.action_signal === 'SNIPER' && (
-                <div className="mt-2 text-xs text-amber-400 flex items-center gap-1">
+                <div className="mt-2 text-xs text-warning flex items-center gap-1">
                   Sniper příležitost! Vysoké skóre + velká mezera.
                 </div>
               )}
               {position.optimal_size === 0 && position.gap_czk > MIN_INVESTMENT_CZK && position.action_signal !== 'SELL' && (
-                <div className="mt-2 text-xs text-slate-500">
+                <div className="mt-2 text-xs text-text-muted">
                   Nízká priorita - tento měsíc mají přednost lepší příležitosti
                 </div>
               )}
@@ -1606,18 +1607,18 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
 
             {/* Action Buttons */}
             <div className="space-y-2">
-              <button className="w-full py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
+              <button className="w-full py-2 bg-positive/20 hover:bg-positive/30 text-positive font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
                 <PlusCircle className="w-4 h-4" />
                 Add to Position
               </button>
               {position.unrealized_pl_percent >= 100 && (
-                <button className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
+                <button className="w-full py-2 bg-warning/20 hover:bg-warning/30 text-warning font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
                   <TrendingUp className="w-4 h-4" />
                   Take Partial Profits (House Money)
                 </button>
               )}
               {position.is_deteriorated && (
-                <button className="w-full py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
+                <button className="w-full py-2 bg-negative/20 hover:bg-negative/30 text-negative font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
                   <AlertCircle className="w-4 h-4" />
                   Close Entire Position
                 </button>
@@ -1627,8 +1628,8 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
         </div>
 
         {/* Bottom: Thesis Drift Log */}
-        <div className="p-4 border-t border-slate-700">
-          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+        <div className="p-4 border-t border-border">
+          <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-3 flex items-center gap-2">
             <Clock className="w-4 h-4" /> Score History (Thesis Drift)
           </h3>
           <div className="flex gap-4 overflow-x-auto pb-2">
@@ -1638,19 +1639,19 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
               { date: '2026-01-10', score: 7, status: 'STABLE' },
               { date: '2025-12-15', score: 6, status: 'DETERIORATED' },
             ].map((entry, i) => (
-              <div key={i} className="flex-shrink-0 p-3 bg-slate-800 rounded-lg border border-slate-700 min-w-[120px]">
-                <div className="text-xs text-slate-500">{entry.date}</div>
+              <div key={i} className="flex-shrink-0 p-3 bg-surface-raised rounded-lg border border-border min-w-[120px]">
+                <div className="text-xs text-text-muted">{entry.date}</div>
                 <div className={`text-2xl font-black ${
-                  entry.score >= 7 ? 'text-green-400' : 
-                  entry.score >= 5 ? 'text-yellow-400' : 
-                  'text-red-400'
+                  entry.score >= 7 ? 'text-positive' : 
+                  entry.score >= 5 ? 'text-warning' : 
+                  'text-negative'
                 }`}>
                   {entry.score}/10
                 </div>
                 <div className={`text-xs ${
-                  entry.status === 'IMPROVED' ? 'text-green-400' :
-                  entry.status === 'DETERIORATED' ? 'text-red-400' :
-                  'text-slate-400'
+                  entry.status === 'IMPROVED' ? 'text-positive' :
+                  entry.status === 'DETERIORATED' ? 'text-negative' :
+                  'text-text-secondary'
                 }`}>
                   {entry.status}
                 </div>
@@ -1680,11 +1681,11 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateResult, setUpdateResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  const scoreColor = stock.gomes_score 
-    ? stock.gomes_score >= 7 ? 'bg-green-500/20 text-green-400' 
-      : stock.gomes_score >= 5 ? 'bg-yellow-500/20 text-yellow-400' 
-      : 'bg-red-500/20 text-red-400'
-    : 'bg-slate-700 text-slate-500';
+  const scoreColor = stock.conviction_score 
+    ? stock.conviction_score >= 7 ? 'bg-positive/20 text-positive' 
+      : stock.conviction_score >= 5 ? 'bg-warning/20 text-warning' 
+      : 'bg-negative/20 text-negative'
+    : 'bg-surface-hover text-text-muted';
 
   const handleUpdate = async () => {
     if (!updateText.trim() || updateText.length < 50) {
@@ -1720,41 +1721,41 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-purple-700/50 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-surface-base border border-info/50 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-slate-900 border-b border-purple-700/50 p-4 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-surface-base border-b border-info/50 p-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-4">
             <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-2xl ${scoreColor}`}>
-              {stock.gomes_score ?? '?'}
+              {stock.conviction_score ?? '?'}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-black text-white">{stock.ticker}</h2>
-                <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs font-bold rounded">
+                <h2 className="text-2xl font-black text-text-primary">{stock.ticker}</h2>
+                <span className="px-2 py-0.5 bg-info/20 text-info text-xs font-bold rounded">
                   WATCHLIST
                 </span>
               </div>
-              <p className="text-slate-400">{stock.company_name || 'Unknown Company'}</p>
+              <p className="text-text-secondary">{stock.company_name || 'Unknown Company'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button 
               onClick={() => setShowUpdateForm(!showUpdateForm)}
-              className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+              className="px-3 py-2 bg-info hover:bg-info/80 text-text-primary rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
               Update Analysis
             </button>
-            <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg">
-              <X className="w-6 h-6 text-slate-400" />
+            <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+              <X className="w-6 h-6 text-text-secondary" />
             </button>
           </div>
         </div>
 
         {/* Update Form */}
         {showUpdateForm && (
-          <div className="p-4 bg-purple-500/10 border-b border-purple-500/30">
-            <h3 className="text-lg font-bold text-purple-300 mb-3 flex items-center gap-2">
+          <div className="p-4 bg-info/10 border-b border-info/30">
+            <h3 className="text-lg font-bold text-info mb-3 flex items-center gap-2">
               <PlusCircle className="w-5 h-5" />
               Add New Intelligence for {stock.ticker}
             </h3>
@@ -1772,8 +1773,8 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
                   onClick={() => setSourceType(opt.value as typeof sourceType)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     sourceType === opt.value
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      ? 'bg-info text-text-primary'
+                      : 'bg-surface-hover text-text-secondary hover:bg-slate-600'
                   }`}
                 >
                   {opt.label}
@@ -1786,21 +1787,21 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
               onChange={(e) => setUpdateText(e.target.value)}
               placeholder="Paste new information about this stock..."
               rows={4}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 resize-none mb-3"
+              className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-info resize-none mb-3"
             />
             
             <div className="flex items-center justify-between">
-              <div className="text-xs text-slate-500">{updateText.length} characters (min. 50)</div>
+              <div className="text-xs text-text-muted">{updateText.length} characters (min. 50)</div>
               <div className="flex items-center gap-3">
                 {updateResult && (
-                  <span className={`text-sm ${updateResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`text-sm ${updateResult.success ? 'text-positive' : 'text-negative'}`}>
                     {updateResult.message}
                   </span>
                 )}
                 <button
                   onClick={handleUpdate}
                   disabled={isUpdating || updateText.length < 50}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-600 text-white rounded-lg font-medium flex items-center gap-2 transition-colors"
+                  className="px-4 py-2 bg-info hover:bg-info/80 disabled:bg-slate-600 text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
                 >
                   {isUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                   {isUpdating ? 'Processing...' : 'Run Analysis'}
@@ -1813,27 +1814,27 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
         {/* Content */}
         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Left: Analysis */}
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Investment Thesis</h3>
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4">Investment Thesis</h3>
             
             <div className="space-y-4">
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">Trade Rationale</div>
-                <p className="text-slate-300 text-sm">
+                <div className="text-xs text-text-muted uppercase mb-1">Trade Rationale</div>
+                <p className="text-text-secondary text-sm">
                   {stock.trade_rationale || stock.edge || 'No analysis available.'}
                 </p>
               </div>
               
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">Catalysts</div>
-                <p className="text-slate-300 text-sm">
+                <div className="text-xs text-text-muted uppercase mb-1">Catalysts</div>
+                <p className="text-text-secondary text-sm">
                   {stock.catalysts || 'No catalysts identified.'}
                 </p>
               </div>
               
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">Risks</div>
-                <p className="text-red-300 text-sm">
+                <div className="text-xs text-text-muted uppercase mb-1">Risks</div>
+                <p className="text-negative/80 text-sm">
                   {stock.risks || 'No risks documented.'}
                 </p>
               </div>
@@ -1841,45 +1842,45 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
           </div>
 
           {/* Right: Valuation */}
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Valuation & Targets</h3>
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4">Valuation & Targets</h3>
             
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-slate-400">Verdict</span>
+                <span className="text-text-secondary">Verdict</span>
                 <span className={`font-bold px-2 py-0.5 rounded text-sm ${
-                  stock.action_verdict === 'BUY_NOW' ? 'bg-green-500/20 text-green-400' :
-                  stock.action_verdict === 'ACCUMULATE' ? 'bg-emerald-500/20 text-emerald-400' :
-                  stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-blue-400' :
-                  'bg-slate-700 text-slate-400'
+                  stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
+                  stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
+                  stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-accent' :
+                  'bg-surface-hover text-text-secondary'
                 }`}>
                   {stock.action_verdict || 'N/A'}
                 </span>
               </div>
               
               <div className="flex justify-between">
-                <span className="text-slate-400">Current Price</span>
-                <span className="font-mono text-white">${stock.current_price?.toFixed(2) || 'N/A'}</span>
+                <span className="text-text-secondary">Current Price</span>
+                <span className="font-mono text-text-primary">${stock.current_price?.toFixed(2) || 'N/A'}</span>
               </div>
               
               <div className="flex justify-between">
-                <span className="text-slate-400">Entry Zone (Green)</span>
-                <span className="font-mono text-green-400">${stock.green_line?.toFixed(2) || 'N/A'}</span>
+                <span className="text-text-secondary">Entry Zone (Green)</span>
+                <span className="font-mono text-positive">${stock.green_line?.toFixed(2) || 'N/A'}</span>
               </div>
               
               <div className="flex justify-between">
-                <span className="text-slate-400">Target (Red)</span>
-                <span className="font-mono text-red-400">${stock.red_line?.toFixed(2) || 'N/A'}</span>
+                <span className="text-text-secondary">Target (Red)</span>
+                <span className="font-mono text-negative">${stock.red_line?.toFixed(2) || 'N/A'}</span>
               </div>
               
               <div className="flex justify-between">
-                <span className="text-slate-400">Price Zone</span>
+                <span className="text-text-secondary">Price Zone</span>
                 <span className={`font-bold px-2 py-0.5 rounded text-sm ${
-                  stock.price_zone === 'DEEP_VALUE' ? 'bg-green-500/20 text-green-400' :
-                  stock.price_zone === 'BUY_ZONE' ? 'bg-emerald-500/20 text-emerald-400' :
-                  stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-blue-400' :
-                  stock.price_zone === 'FAIR_VALUE' ? 'bg-yellow-500/20 text-yellow-400' :
-                  'bg-slate-700 text-slate-400'
+                  stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
+                  stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
+                  stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-accent' :
+                  stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
+                  'bg-surface-hover text-text-secondary'
                 }`}>
                   {stock.price_zone || 'N/A'}
                 </span>
@@ -1887,28 +1888,28 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
               
               {stock.price_target && (
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Price Target</span>
-                  <span className="font-mono text-white">{stock.price_target}</span>
+                  <span className="text-text-secondary">Price Target</span>
+                  <span className="font-mono text-text-primary">{stock.price_target}</span>
                 </div>
               )}
               
               {stock.moat_rating && (
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Moat Rating</span>
-                  <span className="font-bold text-amber-400">{stock.moat_rating}/5</span>
+                  <span className="text-text-secondary">Moat Rating</span>
+                  <span className="font-bold text-warning">{stock.moat_rating}/5</span>
                 </div>
               )}
             </div>
             
             {/* Buy Signal */}
-            {stock.gomes_score && stock.gomes_score >= 7 && stock.price_zone && ['DEEP_VALUE', 'BUY_ZONE', 'ACCUMULATE'].includes(stock.price_zone) && (
-              <div className="mt-4 p-3 bg-green-500/20 border border-green-500/50 rounded-lg">
-                <div className="flex items-center gap-2 text-green-400 font-bold">
+            {stock.conviction_score && stock.conviction_score >= 7 && stock.price_zone && ['DEEP_VALUE', 'BUY_ZONE', 'ACCUMULATE'].includes(stock.price_zone) && (
+              <div className="mt-4 p-3 bg-positive/20 border border-positive/50 rounded-lg">
+                <div className="flex items-center gap-2 text-positive font-bold">
                   <Target className="w-4 h-4" />
                   Strong Buy Signal
                 </div>
-                <p className="text-green-200 text-sm mt-1">
-                  High score ({stock.gomes_score}/10) + undervalued zone. Consider initiating position.
+                <p className="text-positive/90 text-sm mt-1">
+                  High score ({stock.conviction_score}/10) + undervalued zone. Consider initiating position.
                 </p>
               </div>
             )}
@@ -2023,21 +2024,21 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-emerald-700/50 rounded-2xl w-full max-w-lg">
-        <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+      <div className="bg-surface-base border border-positive/50 rounded-2xl w-full max-w-lg">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5 text-positive" />
             Import Portfolio CSV
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg">
-            <X className="w-5 h-5 text-slate-400" />
+          <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+            <X className="w-5 h-5 text-text-secondary" />
           </button>
         </div>
         
         <div className="p-4 space-y-4">
           {/* Broker Selection */}
           <div>
-            <label className="text-sm text-slate-400 block mb-2">Broker</label>
+            <label className="text-sm text-text-secondary block mb-2">Broker</label>
             <div className="flex gap-2">
               {[
                 { value: 'DEGIRO', label: 'DEGIRO' },
@@ -2049,8 +2050,8 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                   onClick={() => setBroker(b.value as BrokerType)}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     broker === b.value
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      ? 'bg-positive text-text-primary'
+                      : 'bg-surface-hover text-text-secondary hover:bg-slate-600'
                   }`}
                 >
                   {b.label}
@@ -2062,12 +2063,12 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
           {/* Portfolio Selection */}
           {!showNewPortfolio && portfolios.length > 0 ? (
             <div>
-              <label className="text-sm text-slate-400 block mb-2">Target Portfolio</label>
+              <label className="text-sm text-text-secondary block mb-2">Target Portfolio</label>
               <div className="flex gap-2">
                 <select
                   value={selectedPortfolioId || ''}
                   onChange={(e) => setSelectedPortfolioId(Number(e.target.value))}
-                  className="flex-1 px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-emerald-500"
+                  className="flex-1 px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary focus:outline-none focus:border-positive"
                 >
                   {portfolios.map((p) => (
                     <option key={p.portfolio.id} value={p.portfolio.id}>
@@ -2077,41 +2078,41 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                 </select>
                 <button
                   onClick={() => setShowNewPortfolio(true)}
-                  className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300"
+                  className="px-3 py-2 bg-surface-hover hover:bg-slate-600 rounded-lg text-text-secondary"
                 >
                   <Plus className="w-5 h-5" />
                 </button>
               </div>
             </div>
           ) : (
-            <div className="space-y-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
-              <div className="text-sm text-slate-300 font-medium">Create New Portfolio</div>
+            <div className="space-y-3 p-3 bg-surface-raised/50 rounded-lg border border-border">
+              <div className="text-sm text-text-secondary font-medium">Create New Portfolio</div>
               <input
                 type="text"
                 value={newPortfolioName}
                 onChange={(e) => setNewPortfolioName(e.target.value)}
                 placeholder="Portfolio name (e.g., Main, Wife, Kids)"
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-positive"
               />
               <input
                 type="text"
                 value={newPortfolioOwner}
                 onChange={(e) => setNewPortfolioOwner(e.target.value)}
                 placeholder="Owner name (optional)"
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-positive"
               />
               <div className="flex gap-2">
                 <button
                   onClick={handleCreatePortfolio}
                   disabled={loading || !newPortfolioName.trim()}
-                  className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white rounded-lg font-medium"
+                  className="flex-1 px-4 py-2 bg-positive hover:bg-positive/80 disabled:bg-slate-600 text-text-primary rounded-lg font-medium"
                 >
                   Create Portfolio
                 </button>
                 {portfolios.length > 0 && (
                   <button
                     onClick={() => setShowNewPortfolio(false)}
-                    className="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg"
+                    className="px-4 py-2 bg-surface-hover text-text-secondary rounded-lg"
                   >
                     Cancel
                   </button>
@@ -2122,13 +2123,13 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
 
           {/* File Upload */}
           <div>
-            <label className="text-sm text-slate-400 block mb-2">CSV File</label>
+            <label className="text-sm text-text-secondary block mb-2">CSV File</label>
             <div
               onClick={() => fileInputRef.current?.click()}
               className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
                 file 
-                  ? 'border-emerald-500 bg-emerald-500/10' 
-                  : 'border-slate-600 hover:border-slate-500 bg-slate-800/50'
+                  ? 'border-positive bg-positive/10' 
+                  : 'border-border hover:border-slate-500 bg-surface-raised/50'
               }`}
             >
               <input
@@ -2139,15 +2140,15 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                 className="hidden"
               />
               {file ? (
-                <div className="flex items-center justify-center gap-2 text-emerald-400">
+                <div className="flex items-center justify-center gap-2 text-positive">
                   <FileSpreadsheet className="w-6 h-6" />
                   <span className="font-medium">{file.name}</span>
                 </div>
               ) : (
-                <div className="text-slate-400">
+                <div className="text-text-secondary">
                   <Upload className="w-8 h-8 mx-auto mb-2" />
                   <p>Click to select CSV file</p>
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-text-muted mt-1">
                     Export from {broker === 'DEGIRO' ? 'DEGIRO' : broker === 'T212' ? 'Trading 212' : 'XTB'}
                   </p>
                 </div>
@@ -2157,28 +2158,28 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
 
           {/* Error/Success Messages */}
           {error && (
-            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm">
+            <div className="p-3 bg-negative/10 border border-negative/50 rounded-lg text-negative text-sm">
               {error}
             </div>
           )}
           {success && (
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/50 rounded-lg text-emerald-400 text-sm">
+            <div className="p-3 bg-positive/10 border border-positive/50 rounded-lg text-positive text-sm">
               {success}
             </div>
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-700 flex gap-3 justify-end">
+        <div className="p-4 border-t border-border flex gap-3 justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+            className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleUpload}
             disabled={!file || !selectedPortfolioId || loading}
-            className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-positive hover:bg-positive/80 disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2251,20 +2252,20 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md">
-        <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Plus className="w-5 h-5 text-indigo-400" />
+      <div className="bg-surface-base border border-border rounded-2xl w-full max-w-md">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <Plus className="w-5 h-5 text-accent" />
             Add Position Manually
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg">
-            <X className="w-5 h-5 text-slate-400" />
+          <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+            <X className="w-5 h-5 text-text-secondary" />
           </button>
         </div>
         
         <div className="p-4 space-y-4">
           {portfolios.length === 0 ? (
-            <div className="p-4 bg-amber-500/10 border border-amber-500/50 rounded-lg text-amber-300 text-sm">
+            <div className="p-4 bg-warning/10 border border-warning/50 rounded-lg text-warning text-sm">
               <AlertTriangle className="w-5 h-5 inline mr-2" />
               No portfolios yet. Import a CSV first to create a portfolio.
             </div>
@@ -2272,11 +2273,11 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
             <>
               {/* Portfolio Selection */}
               <div>
-                <label className="text-sm text-slate-400 block mb-2">Portfolio</label>
+                <label className="text-sm text-text-secondary block mb-2">Portfolio</label>
                 <select
                   value={selectedPortfolioId || ''}
                   onChange={(e) => setSelectedPortfolioId(Number(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
                 >
                   {portfolios.map((p) => (
                     <option key={p.portfolio.id} value={p.portfolio.id}>
@@ -2288,52 +2289,52 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
 
               {/* Ticker */}
               <div>
-                <label className="text-sm text-slate-400 block mb-2">Ticker Symbol</label>
+                <label className="text-sm text-text-secondary block mb-2">Ticker Symbol</label>
                 <input
                   type="text"
                   value={ticker}
                   onChange={(e) => setTicker(e.target.value.toUpperCase())}
                   placeholder="e.g., GKPRF"
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
                 />
               </div>
 
               {/* Shares & Cost */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-sm text-slate-400 block mb-2">Shares</label>
+                  <label className="text-sm text-text-secondary block mb-2">Shares</label>
                   <input
                     type="number"
                     step="0.01"
                     value={shares}
                     onChange={(e) => setShares(e.target.value)}
                     placeholder="100"
-                    className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-slate-400 block mb-2">Avg. Cost ($)</label>
+                  <label className="text-sm text-text-secondary block mb-2">Avg. Cost ($)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={avgCost}
                     onChange={(e) => setAvgCost(e.target.value)}
                     placeholder="1.50"
-                    className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
                   />
                 </div>
               </div>
 
               {/* Current Price (Optional) */}
               <div>
-                <label className="text-sm text-slate-400 block mb-2">Current Price (optional)</label>
+                <label className="text-sm text-text-secondary block mb-2">Current Price (optional)</label>
                 <input
                   type="number"
                   step="0.01"
                   value={currentPrice}
                   onChange={(e) => setCurrentPrice(e.target.value)}
                   placeholder="Leave empty to use avg. cost"
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
                 />
               </div>
             </>
@@ -2341,28 +2342,28 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
 
           {/* Error/Success Messages */}
           {error && (
-            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm">
+            <div className="p-3 bg-negative/10 border border-negative/50 rounded-lg text-negative text-sm">
               {error}
             </div>
           )}
           {success && (
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/50 rounded-lg text-emerald-400 text-sm">
+            <div className="p-3 bg-positive/10 border border-positive/50 rounded-lg text-positive text-sm">
               {success}
             </div>
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-700 flex gap-3 justify-end">
+        <div className="p-4 border-t border-border flex gap-3 justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+            className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={loading || portfolios.length === 0}
-            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-600 text-white font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2419,26 +2420,26 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl">
-        <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Zap className="w-5 h-5 text-amber-400" />
+      <div className="bg-surface-base border border-border rounded-2xl w-full max-w-2xl">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <Zap className="w-5 h-5 text-warning" />
             New Deep Due Diligence
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg">
-            <X className="w-5 h-5 text-slate-400" />
+          <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+            <X className="w-5 h-5 text-text-secondary" />
           </button>
         </div>
         
         <div className="p-4 space-y-4">
           {/* Input Type Selector */}
-          <div className="flex gap-2 p-1 bg-slate-800 rounded-lg">
+          <div className="flex gap-2 p-1 bg-surface-raised rounded-lg">
             <button
               onClick={() => setInputType('text')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 inputType === 'text' 
-                  ? 'bg-indigo-600 text-white' 
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-accent text-text-primary' 
+                  : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               Text / Transcript
@@ -2447,8 +2448,8 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
               onClick={() => setInputType('youtube')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 inputType === 'youtube' 
-                  ? 'bg-red-600 text-white' 
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-red-600 text-text-primary' 
+                  : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               YouTube
@@ -2457,8 +2458,8 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
               onClick={() => setInputType('google-docs')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 inputType === 'google-docs' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-blue-600 text-text-primary' 
+                  : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               Google Docs
@@ -2467,27 +2468,27 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
           
           {/* Error Message */}
           {error && (
-            <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm">
+            <div className="p-3 bg-negative/20 border border-negative/50 rounded-lg text-negative/80 text-sm">
               {error}
             </div>
           )}
           
           {/* Ticker (optional for all types) */}
           <div>
-            <label className="text-sm text-slate-400 block mb-2">Ticker Symbol (optional - auto-detected)</label>
+            <label className="text-sm text-text-secondary block mb-2">Ticker Symbol (optional - auto-detected)</label>
             <input
               type="text"
               value={ticker}
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
               placeholder="e.g. GKPRF"
-              className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
             />
           </div>
           
           {/* URL Input for YouTube / Google Docs */}
           {(inputType === 'youtube' || inputType === 'google-docs') && (
             <div>
-              <label className="text-sm text-slate-400 block mb-2">
+              <label className="text-sm text-text-secondary block mb-2">
                 {inputType === 'youtube' ? 'YouTube Video URL' : 'Google Docs URL'}
               </label>
               <input
@@ -2499,9 +2500,9 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
                     ? 'https://www.youtube.com/watch?v=...' 
                     : 'https://docs.google.com/document/d/...'
                 }
-                className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
               />
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-text-muted">
                 {inputType === 'youtube' 
                   ? 'AI will automatically transcribe the video and extract stock analysis.' 
                   : 'Make sure the document is shared with "Anyone with the link can view".'}
@@ -2512,29 +2513,29 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
           {/* Text Input */}
           {inputType === 'text' && (
             <div>
-              <label className="text-sm text-slate-400 block mb-2">Transcript / Research Notes</label>
+              <label className="text-sm text-text-secondary block mb-2">Transcript / Research Notes</label>
               <textarea
                 value={transcript}
                 onChange={(e) => setTranscript(e.target.value)}
                 placeholder="Paste earnings call transcript, video notes, or research analysis..."
                 rows={10}
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+                className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent resize-none"
               />
             </div>
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-700 flex gap-3 justify-end">
+        <div className="p-4 border-t border-border flex gap-3 justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+            className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-600 text-white font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2614,7 +2615,7 @@ function calculateMaxAllocationCap(
   // Start with base cap
   let finalCap = baseCap;
 
-  // Safety Multiplier 1: Gomes Score
+  // Safety Multiplier 1: Conviction Score
   if (gomesScore !== null && gomesScore < 7) {
     finalCap *= 0.5; // Reduce by half if low quality
   }
@@ -2642,7 +2643,7 @@ function calculateMaxAllocationCap(
 // MAIN DASHBOARD COMPONENT
 // ============================================================================
 
-export const GomesGuardianDashboard: React.FC = () => {
+export const InvestmentTerminal: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
@@ -2770,7 +2771,7 @@ export const GomesGuardianDashboard: React.FC = () => {
       for (const pos of portfolio.positions) {
         // Find matching stock from Gomes analysis (may not exist)
         const stock = stocks.find(s => s.ticker.toUpperCase() === pos.ticker.toUpperCase());
-        const gomesScore = stock?.gomes_score ?? null;
+        const gomesScore = stock?.conviction_score ?? null;
         
         // 1. Cílová váha podle skóre (Target Weight)
         const targetWeightPct = getTargetWeight(gomesScore);
@@ -2817,7 +2818,7 @@ export const GomesGuardianDashboard: React.FC = () => {
         const enriched: EnrichedPosition = {
           ...pos,
           stock,
-          gomes_score: gomesScore,
+          conviction_score: gomesScore,
           max_allocation_cap: maxAllocationCap,
           weight_in_portfolio: currentWeightPct,
           gap_czk: gapCZK,
@@ -2843,10 +2844,10 @@ export const GomesGuardianDashboard: React.FC = () => {
     // Sort by: 1) Score (highest first), 2) Gap (largest positive first)
     // Only positions with score >= 5 and positive gap get allocation
     const sortedForAllocation = [...tempPositions]
-      .filter(p => p.gomes_score !== null && p.gomes_score >= 5 && p.gap_czk > 0)
+      .filter(p => p.conviction_score !== null && p.conviction_score >= 5 && p.gap_czk > 0)
       .sort((a, b) => {
         // Primary: Higher score = higher priority
-        const scoreDiff = (b.gomes_score ?? 0) - (a.gomes_score ?? 0);
+        const scoreDiff = (b.conviction_score ?? 0) - (a.conviction_score ?? 0);
         if (scoreDiff !== 0) return scoreDiff;
         // Secondary: Larger gap = higher priority
         return b.gap_czk - a.gap_czk;
@@ -2921,7 +2922,7 @@ export const GomesGuardianDashboard: React.FC = () => {
 
   // Watchlist: stocks with analysis but NOT owned
   const watchlistStocks = useMemo(() => {
-    return stocks.filter(s => !ownedTickers.has(s.ticker.toUpperCase()) && s.gomes_score !== null);
+    return stocks.filter(s => !ownedTickers.has(s.ticker.toUpperCase()) && s.conviction_score !== null);
   }, [stocks, ownedTickers]);
 
   // Filter and sort positions
@@ -2943,7 +2944,7 @@ export const GomesGuardianDashboard: React.FC = () => {
         case 'weight':
           return b.weight_in_portfolio - a.weight_in_portfolio;
         case 'score':
-          return (b.gomes_score ?? 0) - (a.gomes_score ?? 0);
+          return (b.conviction_score ?? 0) - (a.conviction_score ?? 0);
         case 'pl':
           return b.unrealized_pl_percent - a.unrealized_pl_percent;
         default:
@@ -2968,7 +2969,7 @@ export const GomesGuardianDashboard: React.FC = () => {
     }
 
     // Sort by score
-    filtered.sort((a, b) => (b.gomes_score ?? 0) - (a.gomes_score ?? 0));
+    filtered.sort((a, b) => (b.conviction_score ?? 0) - (a.conviction_score ?? 0));
 
     return filtered;
   }, [watchlistStocks, searchQuery]);
@@ -3004,30 +3005,45 @@ export const GomesGuardianDashboard: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="text-center">
-          <RefreshCw className="w-12 h-12 text-indigo-400 animate-spin mx-auto mb-4" />
-          <p className="text-slate-400">Loading portfolio data...</p>
+          <RefreshCw className="w-12 h-12 text-accent animate-spin mx-auto mb-4" />
+          <p className="text-text-secondary">Loading portfolio data...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div className="min-h-screen bg-slate-950 text-text-primary">
       {/* HEADER */}
-      <header className="bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 sticky top-0 z-40">
+      <header className="bg-surface-base/80 backdrop-blur-sm border-b border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <Shield className="w-8 h-8 text-indigo-400" />
+              <Shield className="w-8 h-8 text-accent" />
               <h1 className="text-2xl font-black tracking-tight">AKCION</h1>
             </div>
             
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
+              {/* Notification Bell */}
+              <NotificationBell 
+                onNotificationClick={(notification) => {
+                  if (notification.ticker) {
+                    // Open stock detail modal
+                    const position = familyData.allPositions.find(
+                      (p: EnrichedPosition) => p.ticker === notification.ticker
+                    );
+                    if (position) {
+                      setSelectedPosition(position);
+                    }
+                  }
+                }}
+              />
+              
               {/* Import Portfolio */}
               <button
                 onClick={() => setShowImportModal(true)}
-                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold flex items-center gap-2 transition-colors text-sm"
+                className="btn-secondary text-sm"
               >
                 <Upload className="w-4 h-4" />
                 Import CSV
@@ -3036,7 +3052,7 @@ export const GomesGuardianDashboard: React.FC = () => {
               {/* Add Position Manually */}
               <button
                 onClick={() => setShowAddPositionModal(true)}
-                className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold flex items-center gap-2 transition-colors text-sm"
+                className="btn-secondary text-sm"
               >
                 <Plus className="w-4 h-4" />
                 Add Position
@@ -3045,7 +3061,7 @@ export const GomesGuardianDashboard: React.FC = () => {
               {/* New Analysis */}
               <button
                 onClick={() => setShowAnalysisModal(true)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold flex items-center gap-2 transition-colors"
+                className="btn-primary text-sm"
               >
                 <PlusCircle className="w-5 h-5" />
                 New Analysis
@@ -3056,23 +3072,23 @@ export const GomesGuardianDashboard: React.FC = () => {
           {/* Stats Row */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Total Value with Target Progress */}
-            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700 text-center">
-              <div className="text-xs text-slate-400 uppercase tracking-wider">Total AUM</div>
-              <div className="text-2xl font-black text-white mt-1">
+            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
+              <div className="text-xs text-text-secondary uppercase tracking-wider">Total AUM</div>
+              <div className="text-2xl font-black text-text-primary mt-1">
                 {formatCurrency(familyData.totalValue)}
               </div>
-              <div className="text-xs text-slate-500 mt-0.5">
+              <div className="text-xs text-text-muted mt-0.5">
                 ≈ €{familyData.totalValueEUR.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
               </div>
               {/* Target Progress Bar - Goal: 500,000 CZK */}
               <div className="mt-2">
-                <div className="flex justify-between items-center text-[10px] text-slate-500 mb-1">
+                <div className="flex justify-between items-center text-[10px] text-text-muted mb-1">
                   <span>Target: 500k Kč</span>
                   <span className="font-mono">{Math.min(100, (familyData.totalValue / 500000 * 100)).toFixed(0)}%</span>
                 </div>
-                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-surface-hover rounded-full overflow-hidden">
                   <div 
-                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-accent to-info transition-all duration-500"
                     style={{ width: `${Math.min(100, familyData.totalValue / 500000 * 100)}%` }}
                   />
                 </div>
@@ -3082,23 +3098,23 @@ export const GomesGuardianDashboard: React.FC = () => {
                   const years = Math.floor(months / 12);
                   const remainingMonths = months % 12;
                   return months > 0 ? (
-                    <div className="text-[10px] text-indigo-400 mt-1 flex items-center justify-center gap-1">
+                    <div className="text-[10px] text-accent mt-1 flex items-center justify-center gap-1">
                       <span>
                         {years > 0 ? `${years}y ` : ''}{remainingMonths}m to target
                         {' '}(15% return + 20k/mo)
                       </span>
                     </div>
                   ) : (
-                    <div className="text-[10px] text-green-400 mt-1">Target reached!</div>
+                    <div className="text-[10px] text-positive mt-1">Target reached!</div>
                   );
                 })()}
               </div>
             </div>
 
             {/* Cash (Munice) - Editable */}
-            <div className="bg-slate-800/50 rounded-xl p-4 border border-emerald-500/30 text-center">
+            <div className="bg-surface-raised/50 rounded-xl p-4 border border-positive/30 text-center">
               <div className="flex items-center justify-center gap-2">
-                <div className="text-xs text-slate-400 uppercase tracking-wider">Available Cash</div>
+                <div className="text-xs text-text-secondary uppercase tracking-wider">Available Cash</div>
                 {!isEditingCash && (
                   <button
                     onClick={() => {
@@ -3106,7 +3122,7 @@ export const GomesGuardianDashboard: React.FC = () => {
                       setEditCashCurrency('CZK');
                       setIsEditingCash(true);
                     }}
-                    className="p-1 text-slate-500 hover:text-emerald-400 transition-colors"
+                    className="p-1 text-text-muted hover:text-positive transition-colors"
                     title="Edit cash balance"
                   >
                     <Edit3 className="w-3 h-3" />
@@ -3120,14 +3136,14 @@ export const GomesGuardianDashboard: React.FC = () => {
                       type="number"
                       value={editCashValue}
                       onChange={(e) => setEditCashValue(e.target.value)}
-                      className="flex-1 px-2 py-1 bg-slate-700 border border-emerald-500/50 rounded text-white font-mono text-lg focus:outline-none focus:border-emerald-400"
+                      className="flex-1 px-2 py-1 bg-surface-hover border border-positive/50 rounded text-text-primary font-mono text-lg focus:outline-none focus:border-positive"
                       placeholder="0"
                       autoFocus
                     />
                     <select
                       value={editCashCurrency}
                       onChange={(e) => setEditCashCurrency(e.target.value)}
-                      className="px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm focus:outline-none focus:border-emerald-400"
+                      className="px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-sm focus:outline-none focus:border-positive"
                     >
                       {CASH_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
@@ -3162,14 +3178,14 @@ export const GomesGuardianDashboard: React.FC = () => {
                         }
                       }}
                       disabled={isSavingCash}
-                      className="flex-1 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 text-sm font-bold rounded transition-colors flex items-center justify-center gap-1"
+                      className="flex-1 py-1 bg-positive/20 hover:bg-positive/80/30 text-positive text-sm font-bold rounded transition-colors flex items-center justify-center gap-1"
                     >
                       {isSavingCash ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                       Save
                     </button>
                     <button
                       onClick={() => setIsEditingCash(false)}
-                      className="px-3 py-1 bg-slate-600 hover:bg-slate-500 text-slate-300 text-sm rounded transition-colors"
+                      className="px-3 py-1 bg-slate-600 hover:bg-slate-500 text-text-secondary text-sm rounded transition-colors"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -3177,13 +3193,13 @@ export const GomesGuardianDashboard: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <div className="text-2xl font-black text-emerald-400 mt-1">
+                  <div className="text-2xl font-black text-positive mt-1">
                     {formatCurrency(familyData.totalCash)}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
+                  <div className="text-xs text-text-muted mt-0.5">
                     ≈ €{(familyData.totalCash / (exchangeRates.EUR || 25)).toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
                   </div>
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="text-xs text-text-muted mt-1">
                     {familyData.totalValue > 0 ? ((familyData.totalCash / familyData.totalValue) * 100).toFixed(1) : 0}% of portfolio
                   </div>
                 </>
@@ -3191,12 +3207,12 @@ export const GomesGuardianDashboard: React.FC = () => {
             </div>
 
             {/* Position Count */}
-            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700 text-center">
-              <div className="text-xs text-slate-400 uppercase tracking-wider">Positions</div>
-              <div className="text-2xl font-black text-white mt-1">
+            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
+              <div className="text-xs text-text-secondary uppercase tracking-wider">Positions</div>
+              <div className="text-2xl font-black text-text-primary mt-1">
                 {familyData.allPositions.length}
               </div>
-              <div className="text-xs text-slate-500 mt-1">
+              <div className="text-xs text-text-muted mt-1">
                 {familyData.allPositions.filter(p => p.is_deteriorated).length} require attention
               </div>
             </div>
@@ -3221,8 +3237,8 @@ export const GomesGuardianDashboard: React.FC = () => {
             onClick={() => setActiveTab('portfolio')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors ${
               activeTab === 'portfolio'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                ? 'bg-accent text-text-primary'
+                : 'bg-surface-raised text-text-secondary hover:bg-surface-hover hover:text-text-primary'
             }`}
           >
             <Briefcase className="w-5 h-5" />
@@ -3235,8 +3251,8 @@ export const GomesGuardianDashboard: React.FC = () => {
             onClick={() => setActiveTab('watchlist')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors ${
               activeTab === 'watchlist'
-                ? 'bg-purple-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                ? 'bg-accent text-text-primary'
+                : 'bg-surface-raised text-text-muted hover:bg-surface-hover hover:text-text-primary'
             }`}
           >
             <Eye className="w-5 h-5" />
@@ -3249,8 +3265,8 @@ export const GomesGuardianDashboard: React.FC = () => {
             onClick={() => setActiveTab('freedom')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors ${
               activeTab === 'freedom'
-                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                ? 'bg-warning text-text-primary'
+                : 'bg-surface-raised text-text-muted hover:bg-surface-hover hover:text-text-primary'
             }`}
           >
             <Target className="w-5 h-5" />
@@ -3262,23 +3278,23 @@ export const GomesGuardianDashboard: React.FC = () => {
         {/* Toolbar */}
         <div className="flex items-center justify-between mb-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
             <input
               type="text"
               placeholder={activeTab === 'portfolio' ? "Search positions..." : "Search watchlist..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 w-64"
+              className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent w-64"
             />
           </div>
           
           {activeTab === 'portfolio' && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">Sort by:</span>
+              <span className="text-xs text-text-muted">Sort by:</span>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
-                className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="px-3 py-2 bg-surface-raised border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent"
               >
                 <option value="score">Score</option>
                 <option value="weight">Weight</option>
@@ -3307,30 +3323,30 @@ export const GomesGuardianDashboard: React.FC = () => {
               
               return (
                 <>
-                  <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Value</div>
-                    <div className="text-2xl font-bold text-white">
+                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Total Value</div>
+                    <div className="text-2xl font-bold text-text-primary">
                       {totalValue.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                     </div>
                   </div>
-                  <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Cost Basis</div>
-                    <div className="text-2xl font-bold text-slate-300">
+                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Cost Basis</div>
+                    <div className="text-2xl font-bold text-text-secondary">
                       {totals.costBasis.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                     </div>
                   </div>
-                  <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Unrealized P/L</div>
-                    <div className={`text-2xl font-bold ${totals.unrealizedPL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Unrealized P/L</div>
+                    <div className={`text-2xl font-bold ${totals.unrealizedPL >= 0 ? 'text-positive' : 'text-negative'}`}>
                       {totals.unrealizedPL >= 0 ? '+' : ''}{totals.unrealizedPL.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                       <span className="text-sm ml-2">
                         ({plPercent >= 0 ? '+' : ''}{plPercent.toFixed(2)}%)
                       </span>
                     </div>
                   </div>
-                  <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Cash Balance</div>
-                    <div className="text-2xl font-bold text-blue-400">
+                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Cash Balance</div>
+                    <div className="text-2xl font-bold text-accent">
                       {totals.cash.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                     </div>
                   </div>
@@ -3342,27 +3358,27 @@ export const GomesGuardianDashboard: React.FC = () => {
 
         {/* Gomes Allocation Plan - Monthly Summary */}
         {activeTab === 'portfolio' && (
-          <div className="mb-4 p-4 bg-gradient-to-r from-emerald-900/30 to-slate-800/50 rounded-xl border border-emerald-500/30">
+          <div className="mb-4 p-4 bg-surface-raised rounded-xl border border-positive/20">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/20 rounded-lg">
-                  <Target className="w-5 h-5 text-emerald-400" />
+                <div className="p-2 bg-positive/10 rounded-lg">
+                  <Target className="w-5 h-5 text-positive" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-emerald-300 uppercase tracking-wider">
+                  <h3 className="text-sm font-bold text-positive uppercase tracking-wider">
                     Měsíční alokační plán
                   </h3>
                   {isEditingContribution ? (
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-slate-400">Rozpočet:</span>
+                      <span className="text-xs text-text-secondary">Rozpočet:</span>
                       <input
                         type="number"
                         value={editContributionValue}
                         onChange={(e) => setEditContributionValue(e.target.value)}
-                        className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm font-mono focus:outline-none focus:border-emerald-500"
+                        className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-sm font-mono focus:outline-none focus:border-positive"
                         placeholder="20000"
                       />
-                      <span className="text-xs text-slate-400">Kč</span>
+                      <span className="text-xs text-text-secondary">Kč</span>
                       <button
                         onClick={async () => {
                           const amount = parseFloat(editContributionValue);
@@ -3386,31 +3402,31 @@ export const GomesGuardianDashboard: React.FC = () => {
                           }
                         }}
                         disabled={isSavingContribution}
-                        className="p-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded transition-colors"
+                        className="p-1 bg-positive/20 hover:bg-positive/80/30 text-positive rounded transition-colors"
                       >
                         {isSavingContribution ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                       </button>
                       <button
                         onClick={() => setIsEditingContribution(false)}
-                        className="p-1 bg-slate-600 hover:bg-slate-500 text-slate-300 rounded transition-colors"
+                        className="p-1 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded transition-colors"
                       >
                         <X className="w-3 h-3" />
                       </button>
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400 flex items-center gap-2">
+                    <p className="text-xs text-text-secondary flex items-center gap-2">
                       <span>
-                        Rozpočet: <span className="font-bold text-emerald-400">{formatCurrency(familyData.monthlyContribution)}</span>
+                        Rozpočet: <span className="font-bold text-positive">{formatCurrency(familyData.monthlyContribution)}</span>
                       </span>
                       <button
                         onClick={() => {
                           setEditContributionValue(familyData.monthlyContribution.toString());
                           setIsEditingContribution(true);
                         }}
-                        className="p-0.5 hover:bg-slate-700 rounded transition-colors"
+                        className="p-0.5 hover:bg-surface-hover rounded transition-colors"
                         title="Upravit měsíční rozpočet"
                       >
-                        <Edit3 className="w-3 h-3 text-slate-500 hover:text-emerald-400" />
+                        <Edit3 className="w-3 h-3 text-text-muted hover:text-positive" />
                       </button>
                       <span className="text-slate-600">|</span>
                       <span>Alokováno: {formatCurrency(familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
@@ -3431,8 +3447,8 @@ export const GomesGuardianDashboard: React.FC = () => {
                     <div 
                       key={pos.ticker}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                        i === 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' :
-                        'bg-slate-700/50 text-slate-300'
+                        i === 0 ? 'bg-positive/20 text-positive border border-positive/50' :
+                        'bg-surface-hover/50 text-text-secondary'
                       }`}
                     >
                       {pos.action_signal === 'SNIPER' && '[S] '}
@@ -3441,7 +3457,7 @@ export const GomesGuardianDashboard: React.FC = () => {
                   ))
                 }
                 {familyData.allPositions.filter(p => p.action_signal === 'SELL').length > 0 && (
-                  <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/50">
+                  <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-negative/20 text-negative border border-negative/50">
                     {familyData.allPositions.filter(p => p.action_signal === 'SELL').length}x PRODAT
                   </div>
                 )}
@@ -3452,29 +3468,29 @@ export const GomesGuardianDashboard: React.FC = () => {
 
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
-        <div className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
+        <div className="bg-surface-base/50 rounded-xl border border-slate-800 overflow-hidden">
           <table className="w-full table-fixed">
             <thead>
-              <tr className="border-b border-slate-700 bg-slate-800/50">
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[140px]">Symbol</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">Action</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">
+              <tr className="border-b border-border bg-surface-raised/50">
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">Symbol</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">Action</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">
                   <div>Váha</div>
-                  <div className="text-[9px] text-slate-500 font-normal">Aktuální / Cíl</div>
+                  <div className="text-[9px] text-text-muted font-normal">Aktuální / Cíl</div>
                 </th>
-                <th className="text-center py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[70px]">Score</th>
-                <th className="text-right py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[100px]">
+                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[70px]">Score</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">
                   <div>Price</div>
-                  <div className="text-[9px] text-slate-500 font-normal">Current</div>
+                  <div className="text-[9px] text-text-muted font-normal">Current</div>
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[140px]">
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">
                   <div>Optimal Size</div>
-                  <div className="text-[9px] text-slate-500 font-normal">Tento měsíc</div>
+                  <div className="text-[9px] text-text-muted font-normal">Tento měsíc</div>
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[120px]">Catalyst</th>
-                <th className="text-center py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[100px]">Trend</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[120px]">Strategy</th>
-                <th className="text-right py-3 px-3 text-xs font-bold text-slate-400 uppercase tracking-wider w-[110px]">P/L</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Catalyst</th>
+                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">Trend</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Strategy</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">P/L</th>
               </tr>
             </thead>
             <tbody>
@@ -3487,7 +3503,7 @@ export const GomesGuardianDashboard: React.FC = () => {
               ))}
               {displayedPositions.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-slate-500">
+                  <td colSpan={10} className="text-center py-12 text-text-muted">
                     {searchQuery ? 'No positions found' : 'No positions in portfolio. Import your DEGIRO CSV to get started.'}
                   </td>
                 </tr>
@@ -3499,62 +3515,62 @@ export const GomesGuardianDashboard: React.FC = () => {
 
         {/* Watchlist Table */}
         {activeTab === 'watchlist' && (
-          <div className="bg-slate-900/50 rounded-xl border border-purple-800/50 overflow-hidden">
+          <div className="bg-surface-raised rounded-xl border border-border overflow-hidden">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-purple-700/50 bg-purple-900/30">
-                  <th className="text-left py-3 px-4 text-xs font-bold text-purple-300 uppercase tracking-wider">Symbol</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-purple-300 uppercase tracking-wider">Company</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-purple-300 uppercase tracking-wider">Score</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-purple-300 uppercase tracking-wider">Verdict</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-purple-300 uppercase tracking-wider">Price Zone</th>
-                  <th className="text-right py-3 px-4 text-xs font-bold text-purple-300 uppercase tracking-wider">Action</th>
+                <tr className="border-b border-border bg-surface-overlay">
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Symbol</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Company</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Score</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Verdict</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Price Zone</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {displayedWatchlist.map((stock) => {
-                  const scoreColor = stock.gomes_score 
-                    ? stock.gomes_score >= 7 ? 'text-green-400' 
-                      : stock.gomes_score >= 5 ? 'text-yellow-400' 
-                      : 'text-red-400'
-                    : 'text-slate-500';
+                  const scoreColor = stock.conviction_score 
+                    ? stock.conviction_score >= 7 ? 'text-positive' 
+                      : stock.conviction_score >= 5 ? 'text-warning' 
+                      : 'text-negative'
+                    : 'text-text-muted';
                   
-                  const zoneColor = stock.price_zone === 'DEEP_VALUE' ? 'bg-green-500/20 text-green-400' :
-                                    stock.price_zone === 'BUY_ZONE' ? 'bg-emerald-500/20 text-emerald-400' :
-                                    stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-blue-400' :
-                                    stock.price_zone === 'FAIR_VALUE' ? 'bg-yellow-500/20 text-yellow-400' :
-                                    stock.price_zone === 'SELL_ZONE' ? 'bg-orange-500/20 text-orange-400' :
-                                    stock.price_zone === 'OVERVALUED' ? 'bg-red-500/20 text-red-400' :
-                                    'bg-slate-700 text-slate-400';
+                  const zoneColor = stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
+                                    stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
+                                    stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-accent' :
+                                    stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
+                                    stock.price_zone === 'SELL_ZONE' ? 'bg-warning/20 text-warning' :
+                                    stock.price_zone === 'OVERVALUED' ? 'bg-negative/20 text-negative' :
+                                    'bg-surface-hover text-text-secondary';
 
                   return (
                     <tr 
                       key={stock.id}
                       onClick={() => setSelectedWatchlistStock(stock)}
-                      className="border-b border-slate-700/50 cursor-pointer transition-all hover:bg-purple-900/20"
+                      className="border-b border-border-subtle cursor-pointer transition-all hover:bg-surface-hover"
                     >
                       <td className="py-3 px-4">
-                        <div className="font-bold text-white text-lg">{stock.ticker}</div>
+                        <div className="font-bold text-text-primary text-lg">{stock.ticker}</div>
                       </td>
                       <td className="py-3 px-4">
-                        <div className="text-slate-300 text-sm truncate max-w-[200px]">
+                        <div className="text-text-secondary text-sm truncate max-w-[200px]">
                           {stock.company_name || 'Unknown'}
                         </div>
                       </td>
                       <td className="py-3 px-4">
                         <div className={`text-2xl font-black ${scoreColor}`}>
-                          {stock.gomes_score ?? '-'}
+                          {stock.conviction_score ?? '-'}
                         </div>
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded text-xs font-bold ${
-                          stock.action_verdict === 'BUY_NOW' ? 'bg-green-500/20 text-green-400' :
-                          stock.action_verdict === 'ACCUMULATE' ? 'bg-emerald-500/20 text-emerald-400' :
-                          stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-blue-400' :
-                          stock.action_verdict === 'TRIM' ? 'bg-orange-500/20 text-orange-400' :
-                          stock.action_verdict === 'SELL' ? 'bg-red-500/20 text-red-400' :
-                          stock.action_verdict === 'AVOID' ? 'bg-red-800/30 text-red-500' :
-                          'bg-slate-700 text-slate-400'
+                          stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
+                          stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
+                          stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-accent' :
+                          stock.action_verdict === 'TRIM' ? 'bg-warning/20 text-warning' :
+                          stock.action_verdict === 'SELL' ? 'bg-negative/20 text-negative' :
+                          stock.action_verdict === 'AVOID' ? 'bg-red-800/30 text-negative' :
+                          'bg-surface-hover text-text-secondary'
                         }`}>
                           {stock.action_verdict || 'N/A'}
                         </span>
@@ -3565,7 +3581,7 @@ export const GomesGuardianDashboard: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded transition-colors">
+                        <button className="px-3 py-1 bg-accent hover:bg-accent/80 text-text-primary text-xs font-bold rounded transition-colors">
                           View Details
                         </button>
                       </td>
@@ -3574,7 +3590,7 @@ export const GomesGuardianDashboard: React.FC = () => {
                 })}
                 {displayedWatchlist.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-slate-500">
+                    <td colSpan={6} className="text-center py-12 text-text-muted">
                       {searchQuery 
                         ? 'No stocks found in watchlist' 
                         : 'No analyzed stocks yet. Click "New Analysis" to add stocks to your watchlist.'}
@@ -3588,21 +3604,21 @@ export const GomesGuardianDashboard: React.FC = () => {
 
         {/* Family Gaps Alert */}
         {activeTab === 'portfolio' && familyGaps && familyGaps.gaps.length > 0 && (
-          <div className="mt-6 p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl">
-            <h3 className="text-lg font-bold text-purple-400 flex items-center gap-2 mb-3">
+          <div className="mt-6 p-4 bg-info/10 border border-info/30 rounded-xl">
+            <h3 className="text-lg font-bold text-info flex items-center gap-2 mb-3">
               <Users className="w-5 h-5" />
               Cross-Account Discrepancies ({familyGaps.gaps.length})
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {familyGaps.gaps.slice(0, 6).map((gap, i) => (
-                <div key={i} className="p-3 bg-slate-800/50 rounded-lg">
-                  <div className="font-bold text-white">{gap.ticker}</div>
-                  <div className="text-sm text-slate-400">
-                    <span className="text-purple-400">{gap.holder}</span> holds, 
-                    <span className="text-amber-400"> {gap.missing_from}</span> does not
+                <div key={i} className="p-3 bg-surface-raised/50 rounded-lg">
+                  <div className="font-bold text-text-primary">{gap.ticker}</div>
+                  <div className="text-sm text-text-secondary">
+                    <span className="text-info">{gap.holder}</span> holds, 
+                    <span className="text-warning"> {gap.missing_from}</span> does not
                   </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    Score: {gap.gomes_score}/10 • {gap.action}
+                  <div className="text-xs text-text-muted mt-1">
+                    Score: {gap.conviction_score}/10 • {gap.action}
                   </div>
                 </div>
               ))}
@@ -3641,63 +3657,63 @@ export const GomesGuardianDashboard: React.FC = () => {
             </div>
             
             {/* Family Wealth Empire Preview */}
-            <div className="bg-gradient-to-br from-slate-800/80 to-emerald-900/30 rounded-xl p-5 border border-emerald-500/30">
+            <div className="bg-gradient-to-br from-slate-800/80 to-positive/10 rounded-xl p-5 border border-positive/30">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-emerald-400" />
-                  <span className="text-sm font-bold text-emerald-300 uppercase tracking-wider">Family Wealth Empire</span>
+                  <Users className="w-5 h-5 text-positive" />
+                  <span className="text-sm font-bold text-positive uppercase tracking-wider">Family Wealth Empire</span>
                 </div>
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-text-secondary">
                   Společná mise
                 </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="bg-slate-800/50 rounded-lg p-4 text-center">
+                <div className="bg-surface-raised/50 rounded-lg p-4 text-center">
                   <div className="text-3xl mb-2">🏰</div>
-                  <div className="text-lg font-bold text-white">{formatCurrency(familyData.totalValue)}</div>
-                  <div className="text-xs text-slate-400">Rodinný hrad</div>
+                  <div className="text-lg font-bold text-text-primary">{formatCurrency(familyData.totalValue)}</div>
+                  <div className="text-xs text-text-secondary">Rodinný hrad</div>
                 </div>
-                <div className="bg-slate-800/50 rounded-lg p-4 text-center">
+                <div className="bg-surface-raised/50 rounded-lg p-4 text-center">
                   <div className="text-3xl mb-2">💰</div>
-                  <div className="text-lg font-bold text-emerald-400">{formatCurrency(familyData.totalCash)}</div>
-                  <div className="text-xs text-slate-400">Válečná pokladna</div>
+                  <div className="text-lg font-bold text-positive">{formatCurrency(familyData.totalCash)}</div>
+                  <div className="text-xs text-text-secondary">Válečná pokladna</div>
                 </div>
               </div>
               
               {/* Monthly discipline tracker */}
-              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4">
+              <div className="bg-positive/10 border border-positive/30 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-emerald-300">Měsíční disciplína</span>
-                  <span className="text-xs text-slate-400">Leden 2026</span>
+                  <span className="text-sm text-positive">Měsíční disciplína</span>
+                  <span className="text-xs text-text-secondary">Leden 2026</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
-                    <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 w-1/2" /> {/* TODO: Track actual deposits */}
+                    <div className="h-2 bg-surface-hover rounded-full overflow-hidden">
+                      <div className="h-full bg-positive w-1/2" /> {/* TODO: Track actual deposits */}
                     </div>
                   </div>
-                  <div className="text-xs text-emerald-400 font-bold">20k / 40k</div>
+                  <div className="text-xs text-positive font-bold">20k / 40k</div>
                 </div>
-                <div className="text-xs text-slate-400 mt-2">
+                <div className="text-xs text-text-secondary mt-2">
                   💪 Přítelkyně: ✅ 20k posláno • Ty: ⏳ Čeká na vklad
                 </div>
               </div>
             </div>
             
             {/* Ghost of Mistakes Past - Placeholder */}
-            <div className="bg-slate-800/50 rounded-xl p-5 border border-red-500/20">
+            <div className="bg-surface-raised/50 rounded-xl p-5 border border-negative/20">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-red-400" />
-                  <span className="text-sm font-bold text-red-300 uppercase tracking-wider">Ghost of Mistakes Past</span>
+                  <AlertTriangle className="w-5 h-5 text-negative" />
+                  <span className="text-sm font-bold text-negative/80 uppercase tracking-wider">Ghost of Mistakes Past</span>
                 </div>
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-text-secondary">
                   Hřbitov chyb
                 </div>
               </div>
               
-              <div className="text-center py-8 text-slate-500">
+              <div className="text-center py-8 text-text-muted">
                 <div className="text-4xl mb-3">👻</div>
                 <div className="text-sm">Zatím žádné záznamy</div>
                 <div className="text-xs mt-1">
@@ -3711,13 +3727,13 @@ export const GomesGuardianDashboard: React.FC = () => {
 
       {/* MODALS */}
       {selectedPosition && (
-        <StockDetailModalGomes
+        <AssetDetailModal
           position={selectedPosition}
           onClose={() => setSelectedPosition(null)}
           onUpdate={async () => {
             // Refresh portfolio data after position update
             await refreshPortfolios();
-            // Also refresh stocks data for Gomes scores
+            // Also refresh stocks data for conviction scores
             const stocksData = await apiClient.getStocks();
             setStocks(stocksData.stocks);
           }}
@@ -3786,4 +3802,6 @@ export const GomesGuardianDashboard: React.FC = () => {
   );
 };
 
-export default GomesGuardianDashboard;
+export default InvestmentTerminal;
+
+

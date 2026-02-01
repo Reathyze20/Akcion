@@ -52,7 +52,7 @@ class Stock(Base):
     - Information Arbitrage (edge): What the market doesn't know
     - Catalysts: Upcoming events that will move the price
     - Risk Assessment: Honest evaluation of risks
-    - Gomes Score: 1-10 conviction rating
+    - Conviction Score: 1-10 conviction rating
     
     Versioning:
     - Each analysis creates a new version
@@ -108,15 +108,10 @@ class Stock(Base):
         nullable=True,
         doc="Market sentiment: Bullish, Bearish, Neutral"
     )
-    gomes_score = Column(
-        Integer,
-        nullable=True,
-        doc="Gomes conviction score 1-10 (10 = highest)"
-    )
     conviction_score = Column(
         Integer,
         nullable=True,
-        doc="Alternative conviction metric (backup)"
+        doc="Investment conviction score 1-10 (10 = highest)"
     )
     
     # Price & Timing
@@ -160,7 +155,7 @@ class Stock(Base):
     
     # Trading Action Fields
     action_verdict = Column(
-        String(50),
+        String(100),
         nullable=True,
         doc="Trading signal: BUY_NOW, ACCUMULATE, WATCH_LIST, TRIM, SELL, AVOID"
     )
@@ -170,12 +165,12 @@ class Stock(Base):
         doc="Entry point: 'Under $15' or 'Pullback to EMA20'"
     )
     price_target_short = Column(
-        String(50),
+        String(200),
         nullable=True,
         doc="3-6 month price target"
     )
     price_target_long = Column(
-        String(50),
+        String(200),
         nullable=True,
         doc="12-24 month price target"
     )
@@ -206,7 +201,7 @@ class Stock(Base):
     
     # Identity & Classification
     asset_class = Column(
-        String(50),
+        String(100),
         nullable=True,
         doc="Gomes Asset Class: ANCHOR, HIGH_BETA_ROCKET, BIOTECH_BINARY, TURNAROUND, VALUE_TRAP"
     )
@@ -407,7 +402,7 @@ class Stock(Base):
             "source_type": self.source_type,
             "speaker": self.speaker,
             "sentiment": self.sentiment,
-            "gomes_score": self.gomes_score,
+            "conviction_score": self.conviction_score,
             "conviction_score": self.conviction_score,
             "price_target": self.price_target,
             "time_horizon": self.time_horizon,
@@ -475,4 +470,4 @@ class Stock(Base):
     
     def __repr__(self) -> str:
         """Generate readable string representation."""
-        return f"<Stock(id={self.id}, ticker={self.ticker}, score={self.gomes_score})>"
+        return f"<Stock(id={self.id}, ticker={self.ticker}, score={self.conviction_score})>"

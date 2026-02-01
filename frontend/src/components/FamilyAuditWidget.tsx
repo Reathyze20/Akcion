@@ -38,17 +38,17 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
 
   const getActionColor = (action: string) => {
     switch (action) {
-      case 'KOUPIT': return 'text-green-400 bg-green-500/20';
-      case 'PRODAT': return 'text-red-400 bg-red-500/20';
-      case 'PŘIDAT': return 'text-emerald-400 bg-emerald-500/20';
-      default: return 'text-slate-400 bg-slate-500/20';
+      case 'KOUPIT': return 'text-positive bg-positive/20';
+      case 'PRODAT': return 'text-negative bg-negative/20';
+      case 'PŘIDAT': return 'text-positive bg-positive/20';
+      default: return 'text-text-secondary bg-slate-500/20';
     }
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 8) return 'text-green-400';
-    if (score >= 5) return 'text-yellow-400';
-    return 'text-red-400';
+    if (score >= 8) return 'text-positive';
+    if (score >= 5) return 'text-warning';
+    return 'text-negative';
   };
 
   return (
@@ -56,31 +56,31 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-purple-500/20 rounded-lg">
-            <Users className="w-5 h-5 text-purple-400" />
+          <div className="p-2 bg-accent/20 rounded-lg">
+            <Users className="w-5 h-5 text-accent" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-white">Rodinný Audit</h3>
-            <p className="text-xs text-slate-400">Synchronizace portfolií</p>
+            <h3 className="text-lg font-bold text-text-primary">Rodinný Audit</h3>
+            <p className="text-xs text-text-secondary">Synchronizace portfolií</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button 
             onClick={fetchAudit}
             disabled={loading}
-            className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
           >
-            <RefreshCw className={`w-4 h-4 text-slate-400 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 text-text-secondary ${loading ? 'animate-spin' : ''}`} />
           </button>
           {onClose && (
-            <button onClick={onClose} className="text-slate-400 hover:text-white">✕</button>
+            <button onClick={onClose} className="text-text-secondary hover:text-text-primary">✕</button>
           )}
         </div>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg flex items-center gap-2 text-red-300 text-sm">
+        <div className="mb-4 p-3 bg-negative/20 border border-negative/50 rounded-lg flex items-center gap-2 text-red-300 text-sm">
           <AlertTriangle className="w-4 h-4" />
           {error}
         </div>
@@ -88,7 +88,7 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
 
       {/* Loading */}
       {loading && (
-        <div className="py-8 text-center text-slate-400">
+        <div className="py-8 text-center text-text-secondary">
           <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin" />
           <p>Porovnávám portfolia...</p>
         </div>
@@ -97,10 +97,10 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
       {/* Portfolios compared */}
       {audit && !loading && (
         <>
-          <div className="flex items-center justify-center gap-2 mb-4 text-sm text-slate-400">
+          <div className="flex items-center justify-center gap-2 mb-4 text-sm text-text-secondary">
             {audit.portfolios_compared.map((name, i) => (
               <React.Fragment key={name}>
-                <span className="px-3 py-1 bg-slate-700 rounded-lg text-white">{name}</span>
+                <span className="px-3 py-1 bg-surface-hover rounded-lg text-text-primary">{name}</span>
                 {i < audit.portfolios_compared.length - 1 && (
                   <ArrowRight className="w-4 h-4" />
                 )}
@@ -111,27 +111,27 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
           {/* Gaps List */}
           {audit.gaps.length > 0 ? (
             <div className="space-y-2">
-              <div className="text-xs text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                <AlertTriangle className="w-3 h-3 text-amber-400" />
+              <div className="text-xs text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-2">
+                <AlertTriangle className="w-3 h-3 text-warning" />
                 Nalezené mezery ({audit.gaps.length})
               </div>
               
               {audit.gaps.map((gap, index) => (
                 <div 
                   key={`${gap.ticker}-${index}`}
-                  className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg 
+                  className="flex items-center justify-between p-3 bg-surface-hover/30 rounded-lg 
                              border border-amber-500/30 hover:border-amber-500/50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-lg
-                                     ${getScoreColor(gap.gomes_score)} bg-slate-800`}>
-                      {gap.gomes_score}
+                                     ${getScoreColor(gap.conviction_score)} bg-surface-raised`}>
+                      {gap.conviction_score}
                     </div>
                     <div>
-                      <div className="font-bold text-white">{gap.ticker}</div>
-                      <div className="text-xs text-slate-400">
-                        <span className="text-purple-400">{gap.holder}</span> má, 
-                        <span className="text-amber-400"> {gap.missing_from}</span> nemá
+                      <div className="font-bold text-text-primary">{gap.ticker}</div>
+                      <div className="text-xs text-text-secondary">
+                        <span className="text-accent">{gap.holder}</span> má, 
+                        <span className="text-warning"> {gap.missing_from}</span> nemá
                       </div>
                     </div>
                   </div>
@@ -143,15 +143,15 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
               ))}
 
               {/* Summary */}
-              <div className="mt-4 p-3 bg-purple-500/10 rounded-lg border border-purple-500/30 text-sm text-slate-300">
+              <div className="mt-4 p-3 bg-accent/10 rounded-lg border border-purple-500/30 text-sm text-text-secondary">
                 {audit.summary}
               </div>
             </div>
           ) : (
             <div className="text-center py-8">
-              <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-400" />
-              <p className="text-lg font-semibold text-green-400">Portfolia jsou synchronizovaná!</p>
-              <p className="text-sm text-slate-400 mt-1">Žádné mezery k řešení</p>
+              <CheckCircle className="w-12 h-12 mx-auto mb-3 text-positive" />
+              <p className="text-lg font-semibold text-positive">Portfolia jsou synchronizovaná!</p>
+              <p className="text-sm text-text-secondary mt-1">Žádné mezery k řešení</p>
             </div>
           )}
         </>
@@ -161,3 +161,5 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
 };
 
 export default FamilyAuditWidget;
+
+
