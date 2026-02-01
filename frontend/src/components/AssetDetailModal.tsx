@@ -19,6 +19,8 @@ import {
   Scissors, ShieldCheck, Info, FileText, Plus, HelpCircle
 } from 'lucide-react';
 import type { Stock } from '../types';
+import { GatekeeperShield } from './GatekeeperShield';
+import { useGatekeeperStatus } from '../hooks/useGatekeeperStatus';
 
 // Types - Extend base types with Gomes fields
 interface EnrichedPosition {
@@ -192,8 +194,35 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose }) => {
     });
   };
   
+  // ============================================================================
+  // GATEKEEPER SHIELD - Fiduciary Protection Layer
+  // ============================================================================
+  // Convert inflection status to Weinstein stage number
+  const getWeinsteinStage = (): 1 | 2 | 3 | 4 | null => {
+    // If we have explicit stage data from backend, use it
+    // Otherwise, infer from trend_status and inflection_status
+    if (position.trend_status === 'BEARISH') return 4;
+    if (inflectionStage === 'WAIT_TIME') return 1;
+    if (inflectionStage === 'UPCOMING') return 2;
+    if (inflectionStage === 'ACTIVE_GOLD_MINE') return 3;
+    return null;
+  };
+
+  const gatekeeperAnalysis = {
+    cash_runway_months: cashRunwayMonths,
+    stock_price: currentPrice,
+    wma_30: stock?.green_line ?? currentPrice * 0.9, // Use green_line as proxy for 30 WMA
+    stage_analysis: getWeinsteinStage(),
+    gomes_score: position.conviction_score,
+  };
+
+  // Get shield status for conditional rendering
+  const shieldStatus = useGatekeeperStatus(gatekeeperAnalysis);
+  const isBuyBlocked = shieldStatus.hideBuyButton;
+  
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-2">
+      <GatekeeperShield analysis={gatekeeperAnalysis}>
       <div className="bg-surface-base border border-border rounded-xl w-full max-w-7xl h-[95vh] flex flex-col overflow-hidden">
         
         {/* ======================================================================
@@ -1185,6 +1214,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose }) => {
           </div>
         </div>
       )}
+      </GatekeeperShield>
     </div>
   );
 };

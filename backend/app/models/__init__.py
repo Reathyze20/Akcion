@@ -38,6 +38,8 @@ from .gomes import (
     InvestmentVerdictModel,
     ImageAnalysisLogModel,
     GomesRulesLogModel,
+    GomesAlert,
+    GomesScoreHistory,
 )
 
 # Score History models
@@ -81,6 +83,8 @@ __all__ = [
     "InvestmentVerdictModel",
     "ImageAnalysisLogModel",
     "GomesRulesLogModel",
+    "GomesAlert",
+    "GomesScoreHistory",
     # Score History
     "ConvictionScoreHistory",
     "ThesisDriftAlert",

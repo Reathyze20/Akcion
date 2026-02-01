@@ -373,6 +373,25 @@ class Stock(Base):
         doc="Trading recommendation: AGGRESSIVE_BUY, BUY, HOLD, SELL, STRONG_SELL"
     )
     
+    # =========================================================================
+    # THESIS MONITORING (2026-02-01)
+    # =========================================================================
+    needs_review = Column(
+        Boolean,
+        default=False,
+        doc="Flag for stocks requiring urgent review (THESIS_BROKEN)"
+    )
+    review_reason = Column(
+        String(50),
+        nullable=True,
+        doc="Reason for review: THESIS_BROKEN, THESIS_DRIFT, CATALYST_MISSED"
+    )
+    last_review_requested = Column(
+        DateTime,
+        nullable=True,
+        doc="Timestamp when review was requested"
+    )
+    
     # Version Tracking
     is_latest = Column(
         Boolean,

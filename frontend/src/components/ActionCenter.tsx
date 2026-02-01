@@ -3,10 +3,13 @@
  *
  * Displays today's top trading opportunities with Buy Confidence scores.
  * Shows Master Signal aggregation results in an actionable format.
+ * 
+ * Now includes THESIS_BROKEN alerts at the top (Phase 3 of Gomes Enforcement Protocol).
  */
 
 import React, { useEffect, useState } from "react";
 import { apiClient } from "../api/client";
+import { GomesAlertPanel } from "./GomesAlertPanel";
 
 interface MasterSignalResult {
   ticker: string;
@@ -127,6 +130,18 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
 
   return (
     <div className="bg-white rounded-lg shadow">
+      {/* THESIS DRIFT ALERTS - Priority Display */}
+      <div className="px-6 pt-4">
+        <GomesAlertPanel 
+          showAllAlerts={true}
+          maxAlerts={5}
+          onTakeAction={(ticker) => {
+            // Refresh opportunities when action is taken
+            fetchOpportunities();
+          }}
+        />
+      </div>
+      
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <div>

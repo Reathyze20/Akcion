@@ -20,7 +20,7 @@ import type {
   PortfolioSummary, Position, Stock,
   FamilyAuditResponse, BrokerType
 } from '../types';
-import AssetDetailModal from './AssetDetailModal';
+import { StockDetail } from './StockDetail';
 import NotificationBell from './NotificationBell';
 
 // ============================================================================
@@ -3727,7 +3727,7 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* MODALS */}
       {selectedPosition && (
-        <AssetDetailModal
+        <StockDetail
           position={selectedPosition}
           onClose={() => setSelectedPosition(null)}
           onUpdate={async () => {
