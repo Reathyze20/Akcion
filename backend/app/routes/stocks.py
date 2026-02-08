@@ -15,10 +15,12 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database.connection import get_db
 from ..database.repositories import StockRepository
+from ..models.stock import Stock
 from ..schemas.responses import StockPortfolioResponse, StockResponse
 from ..services.market_data import MarketDataService
 from ..trading.price_lines_data import EXTRACTED_LINES
@@ -135,7 +137,7 @@ def enrich_stock_with_price_data(stock_response: StockResponse, prices_cache: di
 )
 async def get_stocks(
     sentiment: Optional[str] = Query(None, description="Filter by sentiment (BULLISH, BEARISH, NEUTRAL)"),
-    min_gomes_score: Optional[int] = Query(None, ge=1, le=10, description="Minimum Gomes Score (1-10)"),
+    min_conviction_score: Optional[int] = Query(None, ge=1, le=10, description="Minimum Conviction Score (1-10)"),
     min_conviction: Optional[int] = Query(None, ge=1, le=10, description="Minimum Conviction Score (1-10)"),
     speaker: Optional[str] = Query(None, description="Filter by speaker name"),
     db: Session = Depends(get_db),
@@ -155,8 +157,8 @@ async def get_stocks(
             stocks = repository.get_all_stocks()
         
         # Apply additional filters
-        if min_gomes_score is not None:
-            stocks = [s for s in stocks if s.gomes_score and s.gomes_score >= min_gomes_score]
+        if min_conviction_score is not None:
+            stocks = [s for s in stocks if s.conviction_score and s.conviction_score >= min_conviction_score]
         
         if min_conviction is not None:
             stocks = [s for s in stocks if s.conviction_score and s.conviction_score >= min_conviction]
@@ -170,8 +172,8 @@ async def get_stocks(
         filters_applied = {}
         if sentiment:
             filters_applied["sentiment"] = sentiment
-        if min_gomes_score:
-            filters_applied["min_gomes_score"] = min_gomes_score
+        if min_conviction_score:
+            filters_applied["min_conviction_score"] = min_conviction_score
         if min_conviction:
             filters_applied["min_conviction"] = min_conviction
         if speaker:
@@ -241,12 +243,12 @@ async def get_enriched_stocks(
     "/high-conviction",
     response_model=StockPortfolioResponse,
     summary="Get high conviction stocks",
-    description="Retrieve stocks with Gomes Score >= 7 and Conviction Score >= 7",
+    description="Retrieve stocks with Conviction Score >= 7 and Conviction Score >= 7",
 )
 async def get_high_conviction_stocks(
     db: Session = Depends(get_db),
 ) -> StockPortfolioResponse:
-    """Get high-conviction stock picks (Gomes Score >= 7, Conviction >= 7)."""
+    """Get high-conviction stock picks (Conviction Score >= 7, Conviction >= 7)."""
     try:
         repository = StockRepository(db)
         stocks = repository.get_high_conviction_stocks()
@@ -257,7 +259,7 @@ async def get_high_conviction_stocks(
             total_stocks=len(stock_responses),
             stocks=stock_responses,
             filters_applied={
-                "min_gomes_score": 7,
+                "min_conviction_score": 7,
                 "min_conviction_score": 7,
             },
         )
@@ -352,7 +354,7 @@ async def get_portfolio_stats(
         
         high_conviction = len(repository.get_high_conviction_stocks())
         
-        avg_gomes = sum(s.gomes_score for s in all_stocks if s.gomes_score) / len([s for s in all_stocks if s.gomes_score]) if any(s.gomes_score for s in all_stocks) else 0
+        avg_conviction = sum(s.conviction_score for s in all_stocks if s.conviction_score) / len([s for s in all_stocks if s.conviction_score]) if any(s.conviction_score for s in all_stocks) else 0
         avg_conviction = sum(s.conviction_score for s in all_stocks if s.conviction_score) / len([s for s in all_stocks if s.conviction_score]) if any(s.conviction_score for s in all_stocks) else 0
         
         unique_tickers = len(set(s.ticker for s in all_stocks))
@@ -366,7 +368,7 @@ async def get_portfolio_stats(
                 "neutral": neutral,
             },
             "high_conviction_count": high_conviction,
-            "average_gomes_score": round(avg_gomes, 2),
+            "average_conviction_score": round(avg_conviction, 2),
             "average_conviction_score": round(avg_conviction, 2),
         }
         
@@ -374,4 +376,250 @@ async def get_portfolio_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to calculate portfolio stats: {str(e)}",
+        )
+
+
+# ==============================================================================
+# Manual Price Update Endpoint
+# ==============================================================================
+
+from pydantic import BaseModel, Field
+
+class PriceUpdateRequest(BaseModel):
+    """Request model for manual price update."""
+    current_price: float = Field(..., gt=0, description="Current market price")
+    green_line: float | None = Field(None, gt=0, description="Conservative target (buy zone)")
+    red_line: float | None = Field(None, gt=0, description="Optimistic target (sell zone)")
+
+
+@router.put(
+    "/{ticker}/price",
+    summary="Update stock price manually",
+    description="Manually update the current price and price targets for a stock",
+)
+async def update_stock_price(
+    ticker: str,
+    price_data: PriceUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Manually update stock price and targets.
+    
+    Use this when:
+    - API price fetching is unavailable
+    - You want to set specific price targets
+    - Importing from broker (DEGIRO CSV)
+    """
+    try:
+        from ..models.stock import Stock
+        
+        # Find the stock
+        stock = db.query(Stock).filter(Stock.ticker.ilike(ticker)).first()
+        
+        if not stock:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stock '{ticker}' not found",
+            )
+        
+        # Update prices
+        stock.current_price = price_data.current_price
+        
+        if price_data.green_line is not None:
+            stock.green_line = price_data.green_line
+        
+        if price_data.red_line is not None:
+            stock.red_line = price_data.red_line
+        
+        db.commit()
+        db.refresh(stock)
+        
+        # Calculate new position
+        position_pct, zone = calculate_price_position(
+            stock.current_price,
+            stock.green_line,
+            stock.red_line
+        )
+        
+        logger.info(f"Updated price for {ticker}: ${price_data.current_price}")
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "current_price": stock.current_price,
+            "green_line": stock.green_line,
+            "red_line": stock.red_line,
+            "price_position_pct": position_pct,
+            "price_zone": zone,
+            "message": f"Price updated successfully for {ticker}",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update price for {ticker}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update price: {str(e)}",
+        )
+
+
+# ==============================================================================
+# Manual Conviction Score Update Endpoint
+# ==============================================================================
+
+class ScoreUpdateRequest(BaseModel):
+    """Request model for manual score update."""
+    conviction_score: int = Field(..., ge=0, le=10, description="Conviction Score (0-10)")
+    edge: Optional[str] = Field(None, description="Investment thesis/edge summary")
+    action_verdict: Optional[str] = Field(None, description="BUY, HOLD, SELL, WAIT")
+    company_name: Optional[str] = Field(None, description="Company name")
+
+
+@router.put(
+    "/{ticker}/score",
+    summary="Update stock Conviction Score manually",
+    description="Manually update the Conviction Score and related data for a stock",
+)
+async def update_stock_score(
+    ticker: str,
+    score_data: ScoreUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Manually update stock Conviction Score.
+    
+    Use this for quick score updates without running full Deep DD.
+    """
+    try:
+        # Find or create stock
+        stock = db.query(Stock).filter(Stock.ticker == ticker.upper()).first()
+        
+        if not stock:
+            # Create new stock entry
+            stock = Stock(
+                ticker=ticker.upper(),
+                company_name=score_data.company_name or ticker.upper(),
+                conviction_score=score_data.conviction_score,
+                edge=score_data.edge,
+                action_verdict=score_data.action_verdict or ("BUY" if score_data.conviction_score >= 7 else "HOLD" if score_data.conviction_score >= 5 else "SELL"),
+            )
+            db.add(stock)
+            logger.info(f"Created new stock {ticker} with score {score_data.conviction_score}")
+        else:
+            # Update existing
+            stock.conviction_score = score_data.conviction_score
+            if score_data.edge:
+                stock.edge = score_data.edge
+            if score_data.action_verdict:
+                stock.action_verdict = score_data.action_verdict
+            if score_data.company_name:
+                stock.company_name = score_data.company_name
+            logger.info(f"Updated score for {ticker}: {score_data.conviction_score}/10")
+        
+        db.commit()
+        db.refresh(stock)
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "conviction_score": stock.conviction_score,
+            "action_verdict": stock.action_verdict,
+            "message": f"Score updated successfully for {ticker}",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update score for {ticker}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update score: {str(e)}",
+        )
+
+# ==============================================================================
+# PATCH /api/stocks/{ticker} - Update Stock Data Manually
+# ==============================================================================
+
+class StockUpdateRequest(BaseModel):
+    """Request model for manual stock data update"""
+    next_catalyst: Optional[str] = None
+    thesis_narrative: Optional[str] = None
+    conviction_score: Optional[int] = Field(None, ge=1, le=10)
+    inflection_status: Optional[str] = None
+    price_floor: Optional[float] = None
+    price_base: Optional[float] = None
+    price_moon: Optional[float] = None
+    stop_loss_price: Optional[float] = None
+    max_allocation_cap: Optional[float] = None
+    cash_runway_months: Optional[int] = None
+
+
+@router.patch("/{ticker}", status_code=status.HTTP_200_OK)
+def update_stock_manual(
+    ticker: str,
+    update_data: StockUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Manually update stock data fields.
+    
+    Allows user to edit key fields like catalyst, thesis, score, price targets.
+    Only updates fields that are provided (not None).
+    """
+    try:
+        # Get stock
+        stock = db.query(Stock).filter(Stock.ticker == ticker.upper()).first()
+        if not stock:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stock {ticker} not found in database"
+            )
+        
+        # Update only provided fields
+        if update_data.next_catalyst is not None:
+            stock.next_catalyst = update_data.next_catalyst
+        if update_data.thesis_narrative is not None:
+            stock.thesis_narrative = update_data.thesis_narrative
+        if update_data.conviction_score is not None:
+            stock.conviction_score = update_data.conviction_score
+        if update_data.inflection_status is not None:
+            stock.inflection_status = update_data.inflection_status
+        if update_data.price_floor is not None:
+            stock.price_floor = update_data.price_floor
+        if update_data.price_base is not None:
+            stock.price_base = update_data.price_base
+        if update_data.price_moon is not None:
+            stock.price_moon = update_data.price_moon
+        if update_data.stop_loss_price is not None:
+            stock.stop_loss_price = update_data.stop_loss_price
+        if update_data.max_allocation_cap is not None:
+            stock.max_allocation_cap = update_data.max_allocation_cap
+        if update_data.cash_runway_months is not None:
+            stock.cash_runway_months = update_data.cash_runway_months
+        
+        from datetime import datetime
+        stock.last_updated = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(stock)
+        
+        logger.info(f"Stock {ticker} updated manually by user")
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "message": "Stock data updated successfully",
+            "updated_fields": {
+                k: v for k, v in update_data.dict().items() if v is not None
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update stock {ticker}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update stock: {str(e)}",
         )

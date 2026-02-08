@@ -13,10 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if __name__ == "__main__":
     import uvicorn
     
-    print("🚀 Starting Akcion FastAPI Backend...")
-    print("📍 API Docs: http://localhost:8002/api/docs")
-    print("📍 Health Check: http://localhost:8002/api/health")
-    print("⏸️  Press Ctrl+C to stop")
+    print("Starting Akcion FastAPI Backend...")
+    print("API Docs: http://localhost:8002/api/docs")
+    print("Health Check: http://localhost:8002/api/health")
+    print("Press Ctrl+C to stop")
     print()
     
     uvicorn.run(

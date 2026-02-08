@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 type SortKey = 'ticker' | 'sentiment' | 'conviction_score' | 'technical_score' | 
-                'fundamental_score' | 'gomes_score' | 'created_at';
+                'fundamental_score' | 'conviction_score' | 'created_at';
 type SortDirection = 'asc' | 'desc';
 
 export const PortfolioView: React.FC = () => {
@@ -46,7 +46,7 @@ export const PortfolioView: React.FC = () => {
     try {
       const filters: Record<string, string | number> = {};
       if (sentimentFilter) filters.sentiment = sentimentFilter;
-      if (minGomesScore) filters.min_gomes_score = minGomesScore;
+      if (minGomesScore) filters.min_conviction_score = minGomesScore;
 
       // Try enriched endpoint first for price data, fall back to basic if it fails
       try {
@@ -57,7 +57,7 @@ export const PortfolioView: React.FC = () => {
           filteredStocks = filteredStocks.filter(s => s.sentiment?.toUpperCase() === sentimentFilter.toUpperCase());
         }
         if (minGomesScore) {
-          filteredStocks = filteredStocks.filter(s => (s.gomes_score || 0) >= minGomesScore);
+          filteredStocks = filteredStocks.filter(s => (s.conviction_score || 0) >= minGomesScore);
         }
         setStocks(filteredStocks);
       } catch {
@@ -106,9 +106,9 @@ export const PortfolioView: React.FC = () => {
           aVal = a.conviction_score || 0;
           bVal = b.conviction_score || 0;
           break;
-        case 'gomes_score':
-          aVal = a.gomes_score || 0;
-          bVal = b.gomes_score || 0;
+        case 'conviction_score':
+          aVal = a.conviction_score || 0;
+          bVal = b.conviction_score || 0;
           break;
         case 'created_at':
           aVal = new Date(a.created_at);
@@ -144,25 +144,25 @@ export const PortfolioView: React.FC = () => {
 
   const getSentimentIcon = (sentiment: string | null) => {
     switch (sentiment) {
-      case 'BULLISH': return <TrendingUp className="w-4 h-4 text-semantic-bullish" />;
-      case 'BEARISH': return <TrendingDown className="w-4 h-4 text-semantic-bearish" />;
+      case 'BULLISH': return <TrendingUp className="w-4 h-4 text-positive" />;
+      case 'BEARISH': return <TrendingDown className="w-4 h-4 text-negative" />;
       default: return <Minus className="w-4 h-4 text-semantic-neutral" />;
     }
   };
 
   const getSentimentColor = (sentiment: string | null) => {
     switch (sentiment) {
-      case 'BULLISH': return 'text-semantic-bullish';
-      case 'BEARISH': return 'text-semantic-bearish';
+      case 'BULLISH': return 'text-positive';
+      case 'BEARISH': return 'text-negative';
       default: return 'text-semantic-neutral';
     }
   };
 
   const getScoreColor = (score: number | null | undefined) => {
     if (!score) return 'text-text-muted';
-    if (score >= 7) return 'text-semantic-bullish';
+    if (score >= 7) return 'text-positive';
     if (score >= 5) return 'text-semantic-neutral';
-    return 'text-semantic-bearish';
+    return 'text-negative';
   };
 
   const SortIcon: React.FC<{ column: SortKey }> = ({ column }) => {
@@ -180,7 +180,7 @@ export const PortfolioView: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col h-full bg-terminal-bg">
       {/* Metrics Bar */}
-      <div className="bg-terminal-surface border-b border-terminal-border px-6 py-4">
+      <div className="bg-surface-base border-b border-border px-6 py-4">
         <div className="grid grid-cols-4 gap-6">
           <div>
             <div className="text-xs text-text-muted uppercase tracking-wider mb-1">
@@ -194,7 +194,7 @@ export const PortfolioView: React.FC = () => {
             <div className="text-xs text-text-muted uppercase tracking-wider mb-1">
               Bullish Ideas
             </div>
-            <div className="text-2xl font-bold font-mono text-semantic-bullish">
+            <div className="text-2xl font-bold font-mono text-positive">
               {metrics.bullish}
             </div>
           </div>
@@ -202,7 +202,7 @@ export const PortfolioView: React.FC = () => {
             <div className="text-xs text-text-muted uppercase tracking-wider mb-1">
               Bearish Ideas
             </div>
-            <div className="text-2xl font-bold font-mono text-semantic-bearish">
+            <div className="text-2xl font-bold font-mono text-negative">
               {metrics.bearish}
             </div>
           </div>
@@ -218,25 +218,25 @@ export const PortfolioView: React.FC = () => {
       </div>
 
       {/* Filters Bar */}
-      <div className="bg-terminal-card border-b border-terminal-border px-6 py-3">
+      <div className="bg-surface-raised border-b border-border px-6 py-3">
         <div className="flex items-center gap-4">
           <select
             value={sentimentFilter || ''}
             onChange={(e) => setSentimentFilter(e.target.value || null)}
-            className="input text-xs py-1.5 bg-terminal-surface"
+            className="input text-xs py-1.5 bg-surface-base"
           >
             <option value="">All Sentiments</option>
-            <option value="BULLISH">🟢 Bullish</option>
-            <option value="BEARISH">🔴 Bearish</option>
-            <option value="NEUTRAL">⚪ Neutral</option>
+            <option value="BULLISH">Bullish</option>
+            <option value="BEARISH">Bearish</option>
+            <option value="NEUTRAL">Neutral</option>
           </select>
           
           <select
             value={minGomesScore || ''}
             onChange={(e) => setMinGomesScore(e.target.value ? parseInt(e.target.value) : null)}
-            className="input text-xs py-1.5 bg-terminal-surface"
+            className="input text-xs py-1.5 bg-surface-base"
           >
-            <option value="">Any Gomes Score</option>
+            <option value="">Any Conviction Score</option>
             <option value="7">7+ High Conviction</option>
             <option value="8">8+ Very High</option>
             <option value="9">9+ Exceptional</option>
@@ -249,7 +249,7 @@ export const PortfolioView: React.FC = () => {
             disabled={isLoading}
             className="btn-secondary text-xs py-1.5 px-3"
           >
-            {isLoading ? '⏳ Loading...' : '🔄 Refresh'}
+            {isLoading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -258,7 +258,7 @@ export const PortfolioView: React.FC = () => {
       <div className="flex-1 overflow-auto custom-scrollbar">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-blue"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
           </div>
         ) : stocks.length === 0 ? (
           <div className="flex items-center justify-center h-64">
@@ -271,8 +271,8 @@ export const PortfolioView: React.FC = () => {
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-terminal-surface sticky top-0 z-10">
-              <tr className="border-b border-terminal-border">
+            <thead className="bg-surface-base sticky top-0 z-10">
+              <tr className="border-b border-border">
                 <th 
                   className="text-left px-4 py-3 text-text-muted uppercase tracking-wider text-xs font-medium cursor-pointer hover:text-text-secondary"
                   onClick={() => handleSort('ticker')}
@@ -302,11 +302,11 @@ export const PortfolioView: React.FC = () => {
                 </th>
                 <th 
                   className="text-left px-4 py-3 text-text-muted uppercase tracking-wider text-xs font-medium cursor-pointer hover:text-text-secondary"
-                  onClick={() => handleSort('gomes_score')}
+                  onClick={() => handleSort('conviction_score')}
                 >
                   <div className="flex items-center gap-2">
                     Gomes
-                    <SortIcon column="gomes_score" />
+                    <SortIcon column="conviction_score" />
                   </div>
                 </th>
                 <th className="text-left px-4 py-3 text-text-muted uppercase tracking-wider text-xs font-medium">
@@ -333,7 +333,7 @@ export const PortfolioView: React.FC = () => {
               {sortedStocks.map((stock) => (
                 <tr 
                   key={stock.id}
-                  className="border-b border-terminal-border hover:bg-terminal-surface cursor-pointer transition-colors"
+                  className="border-b border-border hover:bg-surface-base cursor-pointer transition-colors"
                   onClick={() => setSelectedStock(stock)}
                 >
                   <td className="px-4 py-3">
@@ -354,9 +354,9 @@ export const PortfolioView: React.FC = () => {
                       <div className="flex-1 bg-terminal-bg rounded-full h-2 overflow-hidden">
                         <div 
                           className={`h-full ${
-                            (stock.conviction_score || 0) >= 7 ? 'bg-semantic-bullish' :
+                            (stock.conviction_score || 0) >= 7 ? 'bg-positive' :
                             (stock.conviction_score || 0) >= 5 ? 'bg-semantic-neutral' :
-                            'bg-semantic-bearish'
+                            'bg-negative'
                           }`}
                           style={{ width: `${((stock.conviction_score || 0) / 10) * 100}%` }}
                         ></div>
@@ -367,8 +367,8 @@ export const PortfolioView: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`font-mono text-sm font-bold ${getScoreColor(stock.gomes_score)}`}>
-                      {stock.gomes_score || '-'}
+                    <span className={`font-mono text-sm font-bold ${getScoreColor(stock.conviction_score)}`}>
+                      {stock.conviction_score || '-'}
                     </span>
                   </td>
                   <td className="px-4 py-3 max-w-xs">
@@ -410,3 +410,5 @@ export const PortfolioView: React.FC = () => {
     </div>
   );
 };
+
+

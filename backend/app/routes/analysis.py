@@ -53,6 +53,57 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analyze", tags=["Analysis"])
 
 
+def _refresh_verdicts_async(db: Session, tickers: list[str]) -> None:
+    """
+    Refresh investment verdicts for newly analyzed tickers.
+    Runs asynchronously to avoid blocking the response.
+    """
+    try:
+        from ..models.trading import ActiveWatchlist
+        from ..models.gomes import InvestmentVerdictModel
+        from datetime import datetime
+        
+        # Import gatekeeper if available
+        try:
+            from ..services.gomes_gatekeeper import GomesGatekeeper
+            gatekeeper = GomesGatekeeper(db)
+            
+            for ticker in tickers:
+                try:
+                    # Ensure ticker is in watchlist
+                    watchlist = db.query(ActiveWatchlist).filter(
+                        ActiveWatchlist.ticker == ticker
+                    ).first()
+                    
+                    if watchlist and watchlist.is_active:
+                        # Invalidate old verdicts
+                        old_verdicts = db.query(InvestmentVerdictModel).filter(
+                            InvestmentVerdictModel.ticker == ticker,
+                            InvestmentVerdictModel.valid_until == None
+                        ).all()
+                        
+                        for old in old_verdicts:
+                            old.valid_until = datetime.utcnow()
+                        
+                        # Create new verdict
+                        verdict = gatekeeper.evaluate_ticker(ticker)
+                        if verdict:
+                            db.add(verdict)
+                            
+                except Exception as e:
+                    logger.warning(f"Failed to refresh verdict for {ticker}: {e}")
+                    continue
+            
+            db.commit()
+            logger.info(f"Refreshed verdicts for {len(tickers)} tickers")
+            
+        except ImportError:
+            logger.info("Gatekeeper not available, skipping verdict refresh")
+            
+    except Exception as e:
+        logger.error(f"Failed to refresh verdicts: {e}")
+
+
 @router.post(
     "/text",
     response_model=AnalysisResponse,
@@ -135,6 +186,11 @@ async def analyze_text(
                 detail=f"Failed to save stocks: {error}"
             )
         
+        # Refresh verdicts for newly analyzed stocks
+        tickers = [s["ticker"] for s in stocks_data.get("stocks", [])]
+        if tickers:
+            _refresh_verdicts_async(db, tickers)
+        
         # Retrieve saved stocks
         saved_stocks = repository.get_all_stocks()
         
@@ -144,13 +200,12 @@ async def analyze_text(
                 ticker=stock.ticker,
                 company_name=stock.company_name,
                 sentiment=stock.sentiment or "Neutral",
-                gomes_score=stock.gomes_score or 5,
+                conviction_score=stock.conviction_score or 5,
                 price_target=stock.price_target,
                 edge=stock.edge,
                 catalysts=stock.catalysts,
                 risks=stock.risks,
                 time_horizon=stock.time_horizon,
-                conviction_score=stock.conviction_score,
                 action_verdict=stock.action_verdict
             )
             for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks
@@ -275,19 +330,23 @@ async def analyze_youtube(
                 detail=f"Failed to save stocks: {error}"
             )
         
+        # Refresh verdicts for newly analyzed stocks
+        tickers = [s["ticker"] for s in stocks_data.get("stocks", [])]
+        if tickers:
+            _refresh_verdicts_async(db, tickers)
+        
         saved_stocks = repository.get_all_stocks()
         stock_responses = [
             StockAnalysisResult(
                 ticker=stock.ticker,
                 company_name=stock.company_name,
                 sentiment=stock.sentiment or "Neutral",
-                gomes_score=stock.gomes_score or 5,
+                conviction_score=stock.conviction_score or 5,
                 price_target=stock.price_target,
                 edge=stock.edge,
                 catalysts=stock.catalysts,
                 risks=stock.risks,
                 time_horizon=stock.time_horizon,
-                conviction_score=stock.conviction_score,
                 action_verdict=stock.action_verdict
             )
             for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks
@@ -409,19 +468,23 @@ async def analyze_google_docs(
                 detail=f"Failed to save stocks: {error}"
             )
         
+        # Refresh verdicts for newly analyzed stocks
+        tickers = [s["ticker"] for s in stocks_data.get("stocks", [])]
+        if tickers:
+            _refresh_verdicts_async(db, tickers)
+        
         saved_stocks = repository.get_all_stocks()
         stock_responses = [
             StockAnalysisResult(
                 ticker=stock.ticker,
                 company_name=stock.company_name,
                 sentiment=stock.sentiment or "Neutral",
-                gomes_score=stock.gomes_score or 5,
+                conviction_score=stock.conviction_score or 5,
                 price_target=stock.price_target,
                 edge=stock.edge,
                 catalysts=stock.catalysts,
                 risks=stock.risks,
                 time_horizon=stock.time_horizon,
-                conviction_score=stock.conviction_score,
                 action_verdict=stock.action_verdict
             )
             for stock in saved_stocks[-len(stocks_data.get("stocks", [])):] if saved_stocks

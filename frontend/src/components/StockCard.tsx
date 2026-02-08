@@ -7,6 +7,7 @@
 import React from 'react';
 import { TrendingUp, TrendingDown, Minus, Target, AlertTriangle, Zap, Star, Briefcase, DollarSign } from 'lucide-react';
 import type { Stock, EnrichedStock, MatchSignal } from '../types';
+import { ScoreHistoryMiniChart } from './ScoreHistoryMiniChart';
 
 interface StockCardProps {
   stock: Stock | EnrichedStock;
@@ -28,19 +29,19 @@ const formatPrice = (price: number | null | undefined): string => {
 const getPriceZoneColor = (zone: string | null | undefined): string => {
   switch (zone) {
     case 'DEEP_VALUE':
-      return 'text-emerald-400';
+      return 'text-positive';
     case 'BUY_ZONE':
-      return 'text-green-400';
+      return 'text-positive';
     case 'ACCUMULATE':
       return 'text-lime-400';
     case 'FAIR_VALUE':
-      return 'text-yellow-400';
+      return 'text-warning';
     case 'SELL_ZONE':
-      return 'text-orange-400';
+      return 'text-warning';
     case 'OVERVALUED':
-      return 'text-red-400';
+      return 'text-negative';
     default:
-      return 'text-slate-400';
+      return 'text-text-secondary';
   }
 };
 
@@ -48,17 +49,17 @@ const getPriceZoneColor = (zone: string | null | undefined): string => {
 const getPriceZoneLabel = (zone: string | null | undefined): string => {
   switch (zone) {
     case 'DEEP_VALUE':
-      return '💎 DEEP VALUE';
+      return 'HLUBOKÁ HODNOTA';
     case 'BUY_ZONE':
-      return '🟢 BUY ZONE';
+      return 'NÁKUPNÍ PÁSMO';
     case 'ACCUMULATE':
-      return '📈 ACCUMULATE';
+      return 'AKUMULOVAT';
     case 'FAIR_VALUE':
-      return '⚖️ FAIR VALUE';
+      return 'FÉR. HODNOTA';
     case 'SELL_ZONE':
-      return '⚠️ SELL ZONE';
+      return 'PRODEJNÍ PÁSMO';
     case 'OVERVALUED':
-      return '🔴 OVERVALUED';
+      return 'NADHODNOCENO';
     default:
       return zone || '';
   }
@@ -88,26 +89,26 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
     const verdict = stock.action_verdict?.toUpperCase();
     switch (verdict) {
       case 'BUY_NOW':
-        return { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/50', label: '🟢 BUY NOW' };
+        return { bg: 'bg-positive/20', text: 'text-positive', border: 'border-positive/50', label: 'KOUPIT' };
       case 'ACCUMULATE':
-        return { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/50', label: '📈 ACCUMULATE' };
+        return { bg: 'bg-positive/20', text: 'text-positive', border: 'border-emerald-500/50', label: 'AKUMULOVAT' };
       case 'WATCH_LIST':
-        return { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/50', label: '👀 WATCH' };
+        return { bg: 'bg-warning/20', text: 'text-warning', border: 'border-yellow-500/50', label: 'SLEDOVAT' };
       case 'TRIM':
-        return { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/50', label: '⚠️ TRIM' };
+        return { bg: 'bg-warning/20', text: 'text-warning', border: 'border-orange-500/50', label: 'REDUKOVAT' };
       case 'SELL':
-        return { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/50', label: '🔴 SELL' };
+        return { bg: 'bg-negative/20', text: 'text-negative', border: 'border-negative/50', label: 'PRODAT' };
       case 'AVOID':
-        return { bg: 'bg-gray-500/20', text: 'text-gray-400', border: 'border-gray-500/50', label: '❌ AVOID' };
+        return { bg: 'bg-gray-500/20', text: 'text-gray-400', border: 'border-gray-500/50', label: 'VYHNOUT SE' };
       default:
-        return { bg: 'bg-slate-500/20', text: 'text-slate-400', border: 'border-slate-500/50', label: '📊 ANALYZE' };
+        return { bg: 'bg-slate-500/20', text: 'text-text-secondary', border: 'border-slate-500/50', label: 'ANALYZOVAT' };
     }
   };
 
   const getSentiment = (sentiment: string | null) => {
     const s = sentiment?.toUpperCase();
-    if (s === 'BULLISH') return { icon: TrendingUp, color: 'text-green-500' };
-    if (s === 'BEARISH') return { icon: TrendingDown, color: 'text-red-500' };
+    if (s === 'BULLISH') return { icon: TrendingUp, color: 'text-positive' };
+    if (s === 'BEARISH') return { icon: TrendingDown, color: 'text-negative' };
     return { icon: Minus, color: 'text-gray-500' };
   };
 
@@ -119,7 +120,7 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
         {[...Array(5)].map((_, i) => (
           <Star
             key={i}
-            className={`w-3 h-3 ${i < rating ? 'text-amber-400 fill-amber-400' : 'text-gray-600'}`}
+            className={`w-3 h-3 ${i < rating ? 'text-warning fill-amber-400' : 'text-gray-600'}`}
           />
         ))}
       </div>
@@ -141,11 +142,11 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
     >
       {/* Holdings Badge (if owned) */}
       {enriched?.user_holding && (
-        <div className="absolute top-0 left-0 px-3 py-1 bg-indigo-500/20 text-indigo-400 
+        <div className="absolute top-0 left-0 px-3 py-1 bg-accent/20 text-accent 
                         text-xs font-bold border-r-2 border-b-2 border-indigo-500/50 
                         rounded-br-lg flex items-center gap-1">
           <Briefcase size={12} />
-          OWNED: {enriched.holding_quantity?.toFixed(0)} shares
+          V PORTFOLIU: {enriched.holding_quantity?.toFixed(0)} akcií
         </div>
       )}
 
@@ -156,11 +157,11 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
         {actionBadge.label}
       </div>
 
-      {/* Header: Ticker & Gomes Score */}
+      {/* Header: Ticker & Conviction Score */}
       <div className="flex items-start justify-between mb-4 mt-2">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-3xl font-black text-white font-mono tracking-tight">
+            <h3 className="text-3xl font-black text-text-primary font-mono tracking-tight">
               {stock.ticker}
             </h3>
             <div className={sentiment.color}>
@@ -168,39 +169,49 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
             </div>
           </div>
           {stock.company_name && (
-            <p className="text-xs text-slate-400 max-w-[200px] truncate">
+            <p className="text-xs text-text-secondary max-w-[200px] truncate">
               {stock.company_name}
             </p>
           )}
         </div>
         
-        {/* Gomes Score */}
-        {stock.gomes_score && (
-          <div className="text-right">
-            <div className={`text-4xl font-black font-mono ${
-              stock.gomes_score >= 8 ? 'text-green-400' : 
-              stock.gomes_score >= 6 ? 'text-yellow-400' : 
-              'text-gray-400'
-            }`}>
-              {stock.gomes_score}
+        {/* Conviction Score with History */}
+        {stock.conviction_score && (
+          <div className="text-right flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              <ScoreHistoryMiniChart 
+                ticker={stock.ticker} 
+                currentScore={stock.conviction_score}
+                height={30}
+                width={60}
+              />
+              <div>
+                <div className={`text-4xl font-black font-mono ${
+                  stock.conviction_score >= 8 ? 'text-positive' : 
+                  stock.conviction_score >= 6 ? 'text-warning' : 
+                  'text-gray-400'
+                }`}>
+                  {stock.conviction_score}
+                </div>
+                <div className="text-[10px] text-text-muted font-semibold">SCORE</div>
+              </div>
             </div>
-            <div className="text-[10px] text-slate-500 font-semibold">SCORE</div>
           </div>
         )}
       </div>
 
       {/* Current Price & Price Position */}
       {stock.current_price && (
-        <div className="mb-4 p-3 bg-slate-900/70 rounded-lg border border-slate-700/50">
+        <div className="mb-4 p-3 bg-surface-base/70 rounded-lg border border-border/50">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-slate-400" />
-              <span className="text-lg font-bold text-white font-mono">
+              <DollarSign className="w-4 h-4 text-text-secondary" />
+              <span className="text-lg font-bold text-text-primary font-mono">
                 {formatPrice(stock.current_price)}
               </span>
             </div>
             {stock.price_zone && (
-              <span className={`text-xs font-bold px-2 py-1 rounded ${getPriceZoneColor(stock.price_zone)} bg-slate-800/80`}>
+              <span className={`text-xs font-bold px-2 py-1 rounded ${getPriceZoneColor(stock.price_zone)} bg-surface-raised/80`}>
                 {getPriceZoneLabel(stock.price_zone)}
               </span>
             )}
@@ -210,8 +221,8 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
           {stock.green_line && stock.red_line && (
             <div className="relative">
               <div className="flex justify-between text-[10px] mb-1">
-                <span className="text-green-400 font-mono">${stock.green_line.toFixed(2)}</span>
-                <span className="text-red-400 font-mono">${stock.red_line.toFixed(2)}</span>
+                <span className="text-positive font-mono">${stock.green_line.toFixed(2)}</span>
+                <span className="text-negative font-mono">${stock.red_line.toFixed(2)}</span>
               </div>
               <div className="h-2 rounded-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 relative overflow-hidden">
                 {stock.price_position_pct !== null && stock.price_position_pct !== undefined && (
@@ -224,10 +235,10 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
                   />
                 )}
               </div>
-              <div className="flex justify-between text-[9px] mt-0.5 text-slate-500">
-                <span>BUY ZONE</span>
-                <span>FAIR VALUE</span>
-                <span>SELL ZONE</span>
+              <div className="flex justify-between text-[9px] mt-0.5 text-text-muted">
+                <span>NÁKUP</span>
+                <span>FÉR. HODNOTA</span>
+                <span>PRODEJ</span>
               </div>
             </div>
           )}
@@ -237,21 +248,21 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
       {/* Trading Levels Grid */}
       <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
         {stock.entry_zone && (
-          <div className="bg-slate-900/50 rounded-lg p-2 border border-blue-500/30">
-            <div className="text-blue-400 font-semibold mb-0.5">ENTRY</div>
-            <div className="text-white text-xs font-mono">{stock.entry_zone}</div>
+          <div className="bg-surface-base/50 rounded-lg p-2 border border-blue-500/30">
+            <div className="text-accent font-semibold mb-0.5">VSTUP</div>
+            <div className="text-text-primary text-xs font-mono">{stock.entry_zone}</div>
           </div>
         )}
         {stock.price_target_short && (
-          <div className="bg-slate-900/50 rounded-lg p-2 border border-green-500/30">
-            <div className="text-green-400 font-semibold mb-0.5">TARGET</div>
-            <div className="text-white text-xs font-mono">{stock.price_target_short}</div>
+          <div className="bg-surface-base/50 rounded-lg p-2 border border-positive/30">
+            <div className="text-positive font-semibold mb-0.5">CÍL</div>
+            <div className="text-text-primary text-xs font-mono">{stock.price_target_short}</div>
           </div>
         )}
         {stock.stop_loss_risk && (
-          <div className="bg-slate-900/50 rounded-lg p-2 border border-red-500/30">
-            <div className="text-red-400 font-semibold mb-0.5">STOP</div>
-            <div className="text-white text-xs font-mono truncate">{stock.stop_loss_risk.split(' ').slice(0, 3).join(' ')}</div>
+          <div className="bg-surface-base/50 rounded-lg p-2 border border-negative/30">
+            <div className="text-negative font-semibold mb-0.5">STOP</div>
+            <div className="text-text-primary text-xs font-mono truncate">{stock.stop_loss_risk.split(' ').slice(0, 3).join(' ')}</div>
           </div>
         )}
       </div>
@@ -260,7 +271,7 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
       {stock.moat_rating && (
         <div className="mb-3">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-slate-500 font-semibold uppercase">Competitive Moat</span>
+            <span className="text-[10px] text-text-muted font-semibold uppercase">Konkurenční příkop</span>
             {renderMoatRating(stock.moat_rating)}
           </div>
         </div>
@@ -270,10 +281,10 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
       {stock.catalysts && (
         <div className="mb-3">
           <div className="flex items-center gap-1.5 mb-1.5">
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-[10px] text-slate-500 font-semibold uppercase">Catalysts</span>
+            <Zap className="w-3.5 h-3.5 text-warning" />
+            <span className="text-[10px] text-text-muted font-semibold uppercase">Katalyzátory</span>
           </div>
-          <p className="text-xs text-slate-300 leading-relaxed line-clamp-2">
+          <p className="text-xs text-text-secondary leading-relaxed line-clamp-2">
             {stock.catalysts}
           </p>
         </div>
@@ -283,10 +294,10 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
       {stock.trade_rationale && (
         <div className="mb-3">
           <div className="flex items-center gap-1.5 mb-1.5">
-            <Target className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-[10px] text-slate-500 font-semibold uppercase">Why Now</span>
+            <Target className="w-3.5 h-3.5 text-accent" />
+            <span className="text-[10px] text-text-muted font-semibold uppercase">Proč nyní</span>
           </div>
-          <p className="text-xs text-slate-300 leading-relaxed line-clamp-2">
+          <p className="text-xs text-text-secondary leading-relaxed line-clamp-2">
             {stock.trade_rationale}
           </p>
         </div>
@@ -294,23 +305,23 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
 
       {/* Position P/L (if owned) */}
       {enriched?.user_holding && enriched.holding_unrealized_pl !== null && (
-        <div className="mb-3 p-2 bg-slate-900/70 rounded-lg border border-slate-700/50">
+        <div className="mb-3 p-2 bg-surface-base/70 rounded-lg border border-border/50">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-[10px] text-slate-500 font-semibold uppercase mb-0.5">Your Position</div>
-              <div className="text-xs text-slate-400">
-                Avg: ${enriched.holding_avg_cost?.toFixed(2)} × {enriched.holding_quantity?.toFixed(0)} shares
+              <div className="text-[10px] text-text-muted font-semibold uppercase mb-0.5">Vaše pozice</div>
+              <div className="text-xs text-text-secondary">
+                Prům: ${enriched.holding_avg_cost?.toFixed(2)} × {enriched.holding_quantity?.toFixed(0)} akcií
               </div>
             </div>
             <div className="text-right">
               <div className={`text-sm font-bold ${
-                enriched.holding_unrealized_pl >= 0 ? 'text-green-400' : 'text-red-400'
+                enriched.holding_unrealized_pl >= 0 ? 'text-positive' : 'text-negative'
               }`}>
                 {enriched.holding_unrealized_pl >= 0 ? '+' : ''}
                 ${enriched.holding_unrealized_pl.toFixed(2)}
               </div>
               <div className={`text-xs ${
-                enriched.holding_unrealized_pl_percent! >= 0 ? 'text-green-400' : 'text-red-400'
+                enriched.holding_unrealized_pl_percent! >= 0 ? 'text-positive' : 'text-negative'
               }`}>
                 {enriched.holding_unrealized_pl_percent! >= 0 ? '+' : ''}
                 {enriched.holding_unrealized_pl_percent?.toFixed(2)}%
@@ -324,32 +335,34 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
       {enriched?.match_signal && enriched.match_signal !== 'NO_ACTION' && enriched.match_signal !== 'HOLD' && (
         <div className="mb-3">
           <div className={`px-3 py-2 rounded-lg text-center font-bold text-sm ${
-            enriched.match_signal === 'OPPORTUNITY' ? 'bg-green-500/20 text-green-400 border border-green-500/50' :
-            enriched.match_signal === 'ACCUMULATE' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' :
-            enriched.match_signal === 'DANGER_EXIT' ? 'bg-red-500/20 text-red-400 border border-red-500/50 animate-pulse' :
-            enriched.match_signal === 'WAIT_MARKET_BAD' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50' :
-            'bg-slate-500/20 text-slate-400 border border-slate-500/50'
+            enriched.match_signal === 'OPPORTUNITY' ? 'bg-positive/20 text-positive border border-positive/50' :
+            enriched.match_signal === 'ACCUMULATE' ? 'bg-positive/20 text-positive border border-emerald-500/50' :
+            enriched.match_signal === 'DANGER_EXIT' ? 'bg-negative/20 text-negative border border-negative/50 animate-pulse' :
+            enriched.match_signal === 'WAIT_MARKET_BAD' ? 'bg-warning/20 text-warning border border-yellow-500/50' :
+            'bg-slate-500/20 text-text-secondary border border-slate-500/50'
           }`}>
-            {enriched.match_signal === 'OPPORTUNITY' && '💡 OPPORTUNITY - Don\'t Own'}
-            {enriched.match_signal === 'ACCUMULATE' && '📈 Add More Shares'}
-            {enriched.match_signal === 'DANGER_EXIT' && '⚠️ EXIT SIGNAL'}
-            {enriched.match_signal === 'WAIT_MARKET_BAD' && '⏸️ Wait - Market RED'}
+            {enriched.match_signal === 'OPPORTUNITY' && 'PŘÍLEŽITOST - Nevlastním'}
+            {enriched.match_signal === 'ACCUMULATE' && 'Přidat další akcie'}
+            {enriched.match_signal === 'DANGER_EXIT' && 'SIGNAL K PRODEJI'}
+            {enriched.match_signal === 'WAIT_MARKET_BAD' && 'Čekat - Trh je červený'}
           </div>
         </div>
       )}
 
       {/* Footer: Time Horizon & Risk Warning */}
-      <div className="flex items-center justify-between pt-3 border-t border-slate-700/50 text-[10px]">
-        <div className="text-slate-500">
-          {stock.time_horizon || 'No timeframe'}
+      <div className="flex items-center justify-between pt-3 border-t border-border/50 text-[10px]">
+        <div className="text-text-muted">
+          {stock.time_horizon || 'Bez časového horizontu'}
         </div>
         {stock.risks && (
-          <div className="flex items-center gap-1 text-orange-400">
+          <div className="flex items-center gap-1 text-warning">
             <AlertTriangle className="w-3 h-3" />
-            <span>Risks present</span>
+            <span>Rizika přítomna</span>
           </div>
         )}
       </div>
     </div>
   );
 };
+
+

@@ -21,9 +21,9 @@ const Toast: React.FC<{ toast: ToastType }> = ({ toast }) => {
   const getColorClasses = () => {
     switch (toast.type) {
       case 'success':
-        return 'bg-green-600 border-green-500';
+        return 'bg-green-600 border-positive';
       case 'error':
-        return 'bg-red-600 border-red-500';
+        return 'bg-red-600 border-negative';
       case 'warning':
         return 'bg-yellow-600 border-yellow-500';
       case 'info':
@@ -41,14 +41,14 @@ const Toast: React.FC<{ toast: ToastType }> = ({ toast }) => {
     >
       <div className="flex items-start">
         <div className="flex-shrink-0">
-          <span className="text-white text-xl font-bold">{getIcon()}</span>
+          <span className="text-text-primary text-xl font-bold">{getIcon()}</span>
         </div>
         <div className="ml-3 flex-1">
-          <p className="text-sm text-white whitespace-pre-line">{toast.message}</p>
+          <p className="text-sm text-text-primary whitespace-pre-line">{toast.message}</p>
         </div>
         <button
           onClick={() => removeToast(toast.id)}
-          className="ml-4 text-white hover:text-gray-200 transition-colors"
+          className="ml-4 text-text-primary hover:text-gray-200 transition-colors"
           aria-label="Close"
         >
           <span className="text-xl">×</span>
@@ -71,3 +71,5 @@ export const ToastContainer: React.FC = () => {
     </div>
   );
 };
+
+

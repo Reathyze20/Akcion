@@ -34,7 +34,14 @@ from .schemas import (
 
 # Import new routes
 from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analysis, stocks
-from .routes import intelligence_gomes, master_signal, ml_learning, backtest, notifications
+from .routes import intelligence_gomes, master_signal, notifications
+from .routes import investment  # Investment Intelligence
+from .routes import currency  # Currency exchange rates
+from .routes import yahoo_finance  # Yahoo Finance Smart Cache
+from .routes import dev_utils  # Development utilities (DISABLE IN PRODUCTION!)
+
+# Import alert scheduler
+from .services.alert_scheduler import start_scheduler, stop_scheduler
 
 # ==============================================================================
 # Application Setup
@@ -82,12 +89,30 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database connection on startup"""
+    """Initialize database connection and background services on startup"""
+    # Database initialization
     success, error = initialize_database(settings.database_url)
     if not success:
         print(f"WARNING: Database initialization failed: {error}")
     else:
         print("SUCCESS: Database connected successfully")
+    
+    # Start alert scheduler (background monitoring)
+    try:
+        await start_scheduler()
+        print("SUCCESS: Alert scheduler started")
+    except Exception as e:
+        print(f"WARNING: Alert scheduler failed to start: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    try:
+        await stop_scheduler()
+        print("SUCCESS: Alert scheduler stopped")
+    except Exception as e:
+        print(f"WARNING: Error stopping scheduler: {e}")
 
 
 # ==============================================================================
@@ -104,9 +129,11 @@ app.include_router(gomes.router)
 app.include_router(intelligence_gomes.router)
 app.include_router(master_signal.router)
 app.include_router(master_signal.action_router)
-app.include_router(ml_learning.router)
-app.include_router(backtest.router)
 app.include_router(notifications.router)
+app.include_router(investment.router)  # Investment Intelligence
+app.include_router(currency.router)  # Currency exchange rates
+app.include_router(yahoo_finance.router)  # Yahoo Finance Smart Cache
+app.include_router(dev_utils.router)  # Development utilities (DISABLE IN PRODUCTION!)
 
 
 # ==============================================================================
@@ -402,7 +429,7 @@ async def get_all_stocks(
         
         # Apply filters
         if min_score is not None:
-            stocks = [s for s in stocks if s.gomes_score and s.gomes_score >= min_score]
+            stocks = [s for s in stocks if s.conviction_score and s.conviction_score >= min_score]
         
         if sentiment:
             stocks = [s for s in stocks if s.sentiment == sentiment]

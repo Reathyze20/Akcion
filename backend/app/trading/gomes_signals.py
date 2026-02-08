@@ -74,7 +74,7 @@ class GomesIntegratedSignalGenerator:
             Tuple of (TradingSignal or None, GomesVerdict)
         """
         ticker = prediction.ticker
-        logger.info(f"🎯 Gomes-Integrated Signal Generation: {ticker}")
+        logger.info(f"Gomes-Integrated Signal Generation: {ticker}")
         
         # =====================================================================
         # 1. GET GOMES VERDICT FIRST
@@ -90,23 +90,23 @@ class GomesIntegratedSignalGenerator:
         # =====================================================================
         if not verdict.passed_gomes_filter:
             logger.warning(
-                f"🚫 {ticker} BLOCKED by Gomes: {verdict.blocked_reason}"
+                f"{ticker} BLOCKED by Gomes: {verdict.blocked_reason}"
             )
             return None, verdict
         
         if verdict.verdict == InvestmentVerdict.AVOID:
-            logger.warning(f"⚠️ {ticker} marked as AVOID by Gomes")
+            logger.warning(f"{ticker} marked as AVOID by Gomes")
             return None, verdict
         
         if verdict.verdict == InvestmentVerdict.BLOCKED:
-            logger.warning(f"🚫 {ticker} BLOCKED by Gomes filter")
+            logger.warning(f"{ticker} BLOCKED by Gomes filter")
             return None, verdict
         
         # =====================================================================
         # 3. CHECK ML PREDICTION DIRECTION
         # =====================================================================
         if prediction.prediction_type != 'UP':
-            logger.debug(f"⏸️ {ticker} ML predicts {prediction.prediction_type}, not BUY signal")
+            logger.debug(f"{ticker} ML predicts {prediction.prediction_type}, not BUY signal")
             return None, verdict
         
         # =====================================================================
@@ -126,7 +126,7 @@ class GomesIntegratedSignalGenerator:
         max_pct = verdict.max_position_pct / 100  # Convert to decimal
         if kelly_size > max_pct:
             logger.info(
-                f"📉 {ticker} Kelly {kelly_size:.1%} capped to Gomes limit {max_pct:.1%}"
+                f"{ticker} Kelly {kelly_size:.1%} capped to Gomes limit {max_pct:.1%}"
             )
             kelly_size = max_pct
         
@@ -134,11 +134,11 @@ class GomesIntegratedSignalGenerator:
         # 5. APPLY FILTERS
         # =====================================================================
         if kelly_size < 0.01:  # Less than 1%
-            logger.debug(f"⏸️ {ticker} position too small after Gomes adjustment")
+            logger.debug(f"{ticker} position too small after Gomes adjustment")
             return None, verdict
         
         if risk_reward < risk_reward_min:
-            logger.debug(f"⏸️ {ticker} R/R ratio {risk_reward:.2f} < minimum {risk_reward_min}")
+            logger.debug(f"{ticker} R/R ratio {risk_reward:.2f} < minimum {risk_reward_min}")
             return None, verdict
         
         # =====================================================================
@@ -161,7 +161,7 @@ class GomesIntegratedSignalGenerator:
         # Build comprehensive notes
         notes_parts = [
             f"ML: {prediction.prediction_type} ({float(prediction.confidence)*100:.0f}%)",
-            f"Gomes: {verdict.verdict.value} (score {verdict.gomes_score}/10)",
+            f"Gomes: {verdict.verdict.value} (score {verdict.conviction_score}/10)",
             f"Phase: {verdict.lifecycle_phase.value if verdict.lifecycle_phase else 'N/A'}",
             f"Tier: {verdict.position_tier.value if verdict.position_tier else 'N/A'}",
             f"Kelly: {kelly_size:.1%}",
@@ -177,7 +177,7 @@ class GomesIntegratedSignalGenerator:
             signal_type='BUY',
             ml_prediction_id=prediction.id,
             analyst_source_id=analyst_source_id,
-            confidence=Decimal(str(float(prediction.confidence) * verdict.gomes_score / 10)),  # Weighted
+            confidence=Decimal(str(float(prediction.confidence) * verdict.conviction_score / 10)),  # Weighted
             kelly_size=Decimal(str(kelly_size)),
             entry_price=Decimal(str(entry_price)),
             target_price=Decimal(str(target_price)) if target_price else None,
@@ -195,7 +195,7 @@ class GomesIntegratedSignalGenerator:
         self.db.refresh(signal)
         
         logger.info(
-            f"✅ {ticker} SIGNAL GENERATED: "
+            f"{ticker} SIGNAL GENERATED: "
             f"{verdict.verdict.value} | Kelly {kelly_size:.1%} | R/R {risk_reward:.2f}"
         )
         
@@ -226,10 +226,10 @@ class GomesIntegratedSignalGenerator:
                         blocked_count += 1
                         
             except Exception as e:
-                logger.error(f"❌ Failed to generate signal for {prediction.ticker}: {e}")
+                logger.error(f"Failed to generate signal for {prediction.ticker}: {e}")
         
         logger.info(
-            f"📊 Batch complete: {len(results)} signals generated, "
+            f"Batch complete: {len(results)} signals generated, "
             f"{blocked_count} blocked by Gomes, "
             f"{len(predictions) - len(results) - blocked_count} filtered by R/R"
         )
@@ -264,7 +264,7 @@ class GomesIntegratedSignalGenerator:
             # Enrich with Gomes data
             signal['gomes_context'] = {
                 'verdict': verdict.verdict if verdict else None,
-                'gomes_score': verdict.gomes_score if verdict else None,
+                'conviction_score': verdict.conviction_score if verdict else None,
                 'passed_filter': verdict.passed_gomes_filter if verdict else True,
                 'lifecycle_phase': verdict.lifecycle_phase if verdict else None,
                 'position_tier': verdict.position_tier if verdict else None,

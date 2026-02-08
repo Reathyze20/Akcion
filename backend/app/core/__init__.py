@@ -45,6 +45,12 @@ from .prompts import (
     GEMINI_MODEL_NAME,
     PromptBuilder,
     get_analysis_prompt,  # Deprecated, use PromptBuilder
+    # V2.0 Enhanced Prompts
+    ENTERPRISE_ANALYST_PROMPT_V2,
+    QUICK_ANALYSIS_PROMPT,
+    DEEP_DD_PROMPT_V2,
+    THESIS_DRIFT_PROMPT_V2,
+    MARKET_CONTEXT_PROMPT,
 )
 
 # Content Extraction
@@ -80,6 +86,12 @@ __all__ = [
     "GEMINI_MODEL_NAME",
     "PromptBuilder",
     "get_analysis_prompt",
+    # V2.0 Enhanced Prompts
+    "ENTERPRISE_ANALYST_PROMPT_V2",
+    "QUICK_ANALYSIS_PROMPT",
+    "DEEP_DD_PROMPT_V2",
+    "THESIS_DRIFT_PROMPT_V2",
+    "MARKET_CONTEXT_PROMPT",
     # Extractors
     "extract_video_id",
     "get_youtube_transcript",

@@ -85,6 +85,12 @@ class Portfolio(Base):
         default=0.0,
         doc="Available cash for investments"
     )
+    monthly_contribution = Column(
+        Float,
+        nullable=False,
+        default=20000.0,
+        doc="Monthly contribution amount in CZK for allocation planning"
+    )
     created_at = Column(
         DateTime,
         default=datetime.utcnow,
@@ -266,3 +272,95 @@ class MarketStatus(Base):
 
     def __repr__(self) -> str:
         return f"<MarketStatus(status={self.status.value})>"
+
+
+class InvestmentLogType(str, Enum):
+    """
+    Types of investment activities tracked for gamification.
+    """
+    DEPOSIT = "DEPOSIT"       # Monthly contribution
+    BUY = "BUY"               # Stock purchase
+    SELL = "SELL"             # Stock sale
+    DIVIDEND = "DIVIDEND"     # Dividend received
+    MILESTONE = "MILESTONE"   # Portfolio milestone reached
+    BADGE = "BADGE"           # Merit badge earned
+
+
+class InvestmentLog(Base):
+    """
+    Investment activity log for gamification and journaling.
+    
+    Tracks all significant portfolio actions with emotional context
+    for AI-powered monthly summaries and motivation.
+    """
+    
+    __tablename__ = "investment_logs"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+        doc="Unique identifier"
+    )
+    portfolio_id = Column(
+        Integer,
+        ForeignKey("portfolios.id", ondelete="CASCADE"),
+        nullable=True,
+        doc="Associated portfolio (nullable for global events)"
+    )
+    log_type = Column(
+        SQLEnum(InvestmentLogType),
+        nullable=False,
+        doc="Type of activity"
+    )
+    ticker = Column(
+        String(20),
+        nullable=True,
+        doc="Stock ticker (for BUY/SELL)"
+    )
+    amount = Column(
+        Float,
+        nullable=True,
+        doc="Amount in CZK"
+    )
+    shares = Column(
+        Float,
+        nullable=True,
+        doc="Number of shares (for BUY/SELL)"
+    )
+    price = Column(
+        Float,
+        nullable=True,
+        doc="Price per share at time of action"
+    )
+    emotion_tag = Column(
+        String(100),
+        nullable=True,
+        doc="Emotional context (e.g., 'Bál jsem se, ale koupil jsem dip')"
+    )
+    note = Column(
+        String(500),
+        nullable=True,
+        doc="User note or AI-generated insight"
+    )
+    badge_id = Column(
+        String(50),
+        nullable=True,
+        doc="Badge ID if log_type is BADGE"
+    )
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        index=True,
+        doc="When the action occurred"
+    )
+
+    # Relationship
+    portfolio: Mapped["Portfolio"] = relationship(
+        "Portfolio",
+        foreign_keys=[portfolio_id]
+    )
+
+    def __repr__(self) -> str:
+        return f"<InvestmentLog({self.log_type.value}, {self.ticker or 'N/A'}, {self.amount})>"

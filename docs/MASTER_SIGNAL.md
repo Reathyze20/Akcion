@@ -1,291 +1,154 @@
-# Master Signal Aggregator - Documentation
+# Master Signal v2.0 - 3-Pillar System
 
 ## 🎯 Přehled
 
-**Master Signal Aggregator** je "mozek" trading systému. Kombinuje všechny dostupné signály do jednoho actionable čísla: **Buy Confidence (0-100%)**.
+**Master Signal v2.0** je zjednodušený systém pro micro-cap investování podle metodologie Marka Gomese.
 
-## 📊 Komponenty Signálu
+### Co bylo odstraněno (a proč)
 
-Master Signal agreguje 5 komponent s různými vahami:
+| Komponenta | Důvod odstranění |
+|------------|------------------|
+| **ML/PatchTST** | Micro-capy jsou nepředvídatelné. GSI udělá +100% za den po oznámení kontraktu - žádný model tohle z historického grafu nevidí. |
+| **Sentiment Analysis** | O GKPRF nepíše Bloomberg. Sentiment = placené PR zprávy. |
+| **RSI/MACD** | 10k shares/day volume = šum, ne signál. |
+| **Backtesting** | Spread 5-10% u micro-capů zkresluje simulaci. |
 
-| Komponenta          | Váha | Popis                                       |
-| ------------------- | ---- | ------------------------------------------- |
-| **Gomes Score**     | 35%  | Gomes Intelligence verdict                  |
-| **ML Confidence**   | 25%  | PatchTST predikce confidence                |
-| **Technical Score** | 20%  | RSI/MACD indikátory                         |
-| **Gap Analysis**    | 10%  | Match s portfoliem (opportunity/accumulate) |
-| **Risk/Reward**     | 10%  | R/R ratio kvalita                           |
+---
 
-## 🚀 Použití
+## 📊 Nový 3-Pilířový Systém
 
-### Backend API
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MASTER SIGNAL v2.0                        │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 1. THESIS TRACKER (60%)                             │    │
+│  │    • Gemini Pro + Transkripty                       │    │
+│  │    • Milníky (Contracts, Certifications, Revenue)   │    │
+│  │    • Červené vlajky (Dilution, Delays, Leadership)  │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 2. VALUATION & CASH (25%)                           │    │
+│  │    • Cash on Hand                                   │    │
+│  │    • Debt                                           │    │
+│  │    • Burn Rate → Runway < 6 měsíců = RED FLAG       │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 3. WEINSTEIN TREND GUARD (15%)                      │    │
+│  │    • 30 WMA (Weekly Moving Average)                 │    │
+│  │    • Pod klesající? → NEKUPOVAT                     │    │
+│  │    • Nad rostoucí? → KUPOVAT                        │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 API Použití
+
+### Get Master Signal
+
+```http
+GET /api/master-signal/GKPRF
+```
+
+**Response:**
+```json
+{
+  "ticker": "GKPRF",
+  "buy_confidence": 72.5,
+  "signal_strength": "BUY",
+  "components": {
+    "thesis_tracker": {
+      "score": 85.0,
+      "gomes_score": 80.0,
+      "milestones_hit": 2,
+      "red_flags": 0,
+      "verdict": "BUY"
+    },
+    "valuation_cash": {
+      "score": 70.0,
+      "cash_on_hand_m": 15.2,
+      "runway_months": 18,
+      "runway_status": "HEALTHY",
+      "dilution_risk": false
+    },
+    "weinstein_guard": {
+      "score": 55.0,
+      "phase": "PHASE_2_ADVANCE",
+      "price": 0.45,
+      "wma_30": 0.42,
+      "price_vs_wma_pct": 7.1
+    }
+  },
+  "blocked": false,
+  "verdict": "BUY"
+}
+```
+
+---
+
+## 🚫 Blocking Rules
+
+Systém automaticky blokuje nákup v těchto situacích:
+
+1. **Weinstein Phase 4**: Cena pod klesající 30 WMA → DO NOT BUY
+2. **Cash Runway < 6 měsíců**: Vysoké riziko ředění → AVOID
+3. **3+ Red Flags**: Příliš mnoho varovných signálů → AVOID
+
+---
+
+## 📈 Weinstein Phases
+
+| Phase | Popis | Akce |
+|-------|-------|------|
+| **Phase 1 (Base)** | Cena pod WMA, ale WMA se zvedá | WATCH |
+| **Phase 2 (Advance)** | Cena nad rostoucí WMA | **BUY** ✅ |
+| **Phase 3 (Top)** | Cena nad WMA, ale WMA klesá | SELL |
+| **Phase 4 (Decline)** | Cena pod klesající WMA | **AVOID** ❌ |
+
+---
+
+## 💰 Cash Runway Status
+
+| Status | Runway | Riziko ředění |
+|--------|--------|---------------|
+| **HEALTHY** | > 12 měsíců | Nízké |
+| **CAUTION** | 6-12 měsíců | Střední |
+| **DANGER** | < 6 měsíců | **Vysoké** ⚠️ |
+
+---
+
+## 🔧 Python Usage
 
 ```python
-from app.trading.master_signal import calculate_buy_confidence
+from app.trading.master_signal import calculate_master_signal_v2
 
-# Jednoduché použití
-result = calculate_buy_confidence(db, ticker="AAPL", user_id=1)
+# Calculate for single ticker
+result = calculate_master_signal_v2(db, "GKPRF")
 
 print(f"Buy Confidence: {result.buy_confidence}%")
-print(f"Signal Strength: {result.signal_strength}")
-print(f"Verdict: {result.verdict}")
-print(f"Entry: ${result.entry_price}")
-print(f"Target: ${result.target_price}")
-print(f"Stop Loss: ${result.stop_loss}")
-
-# Top příležitosti
-from app.trading.master_signal import get_top_opportunities
-
-opportunities = get_top_opportunities(
-    db=db,
-    user_id=1,
-    min_confidence=70.0,
-    limit=10
-)
-
-for opp in opportunities:
-    print(f"{opp.ticker}: {opp.buy_confidence}% - {opp.signal_strength}")
+print(f"Signal: {result.signal_strength.value}")
+print(f"Blocked: {result.blocked}")
+print(f"Runway: {result.components.valuation_cash.runway_months} months")
+print(f"Weinstein Phase: {result.components.weinstein_guard.phase.value}")
 ```
 
-### REST API Endpoints
+---
 
-#### 1. Master Signal pro jeden ticker
+## 📋 Dependencies Removed
 
-```http
-GET /api/master-signal/AAPL?user_id=1
-```
+**Smazáno z requirements.txt:**
+- `torch==2.1.2` (~2GB)
+- `torchvision==0.16.2`
+- `torchaudio==2.1.2`
+- `neuralforecast==1.6.4`
+- `statsforecast==1.6.0`
+- `datasetsforecast==0.0.8`
+- `scikit-learn==1.3.2`
+- `ta==0.11.0` (technical analysis)
+- `redis==5.0.1` (not needed)
 
-**Response:**
-
-```json
-{
-  "ticker": "AAPL",
-  "buy_confidence": 85.5,
-  "signal_strength": "STRONG_BUY",
-  "components": {
-    "gomes_score": 90.0,
-    "ml_confidence": 78.5,
-    "technical_score": 75.0,
-    "gap_score": 100.0,
-    "risk_reward_score": 80.0
-  },
-  "verdict": "STRONG_BUY",
-  "entry_price": 185.5,
-  "target_price": 205.0,
-  "stop_loss": 167.0,
-  "risk_reward_ratio": 2.3,
-  "kelly_size": 0.15,
-  "calculated_at": "2026-01-17T14:30:00Z"
-}
-```
-
-#### 2. Batch Master Signals
-
-```http
-GET /api/master-signal/batch?tickers=AAPL,GOOGL,MSFT&user_id=1
-```
-
-**Response:**
-
-```json
-{
-  "results": [
-    {"ticker": "AAPL", "buy_confidence": 85.5, ...},
-    {"ticker": "GOOGL", "buy_confidence": 72.0, ...},
-    {"ticker": "MSFT", "buy_confidence": 68.0, ...}
-  ],
-  "count": 3
-}
-```
-
-#### 3. Action Center - Top Opportunities
-
-```http
-GET /api/action-center/opportunities?user_id=1&min_confidence=70&limit=10
-```
-
-**Response:**
-
-```json
-{
-  "opportunities": [
-    {
-      "ticker": "AAPL",
-      "buy_confidence": 85.5,
-      "signal_strength": "STRONG_BUY",
-      "entry_price": 185.5,
-      "target_price": 205.0,
-      "stop_loss": 167.0,
-      "risk_reward_ratio": 2.3,
-      "kelly_size": 0.15
-    }
-  ],
-  "count": 5,
-  "last_updated": "2026-01-17T14:30:00Z"
-}
-```
-
-#### 4. Action Center - Full Watchlist
-
-```http
-GET /api/action-center/watchlist?user_id=1&sort_by=confidence
-```
-
-#### 5. Action Center - Summary
-
-```http
-GET /api/action-center/summary?user_id=1
-```
-
-**Response:**
-
-```json
-{
-  "strong_buy_count": 5,
-  "buy_count": 8,
-  "weak_buy_count": 3,
-  "neutral_count": 9,
-  "avoid_count": 2,
-  "top_opportunity": {
-    "ticker": "AAPL",
-    "buy_confidence": 85.5
-  },
-  "last_updated": "2026-01-17T14:30:00Z"
-}
-```
-
-## 📈 Signal Strength Classification
-
-| Buy Confidence | Signal Strength | Akce                |
-| -------------- | --------------- | ------------------- |
-| 80-100%        | **STRONG_BUY**  | ✅ Obchodovat ihned |
-| 60-79%         | **BUY**         | ✅ Obchodovat       |
-| 40-59%         | **WEAK_BUY**    | ⚠️ Zvážit           |
-| 20-39%         | **NEUTRAL**     | 🔍 Sledovat         |
-| 0-19%          | **AVOID**       | ❌ Neobchodovat     |
-
-## 🎨 Frontend Integrace
-
-### TypeScript Type Definitions
-
-```typescript
-interface MasterSignalResult {
-  ticker: string;
-  buy_confidence: number; // 0-100
-  signal_strength: "STRONG_BUY" | "BUY" | "WEAK_BUY" | "NEUTRAL" | "AVOID";
-  components: {
-    gomes_score: number;
-    ml_confidence: number;
-    technical_score: number;
-    gap_score: number;
-    risk_reward_score: number;
-  };
-  verdict: string;
-  blocked_reason?: string;
-  entry_price?: number;
-  target_price?: number;
-  stop_loss?: number;
-  risk_reward_ratio?: number;
-  kelly_size?: number;
-  calculated_at: string;
-  expires_at?: string;
-}
-
-interface ActionCenterOpportunities {
-  opportunities: MasterSignalResult[];
-  count: number;
-  last_updated: string;
-}
-```
-
-### React Component Example
-
-```tsx
-import React, { useEffect, useState } from "react";
-
-const ActionCenter: React.FC = () => {
-  const [opportunities, setOpportunities] = useState<MasterSignalResult[]>([]);
-
-  useEffect(() => {
-    fetch("/api/action-center/opportunities?user_id=1&min_confidence=70")
-      .then((res) => res.json())
-      .then((data) => setOpportunities(data.opportunities));
-  }, []);
-
-  return (
-    <div className="action-center">
-      <h2>📊 Today's Opportunities</h2>
-      {opportunities.map((opp) => (
-        <div key={opp.ticker} className={`card ${opp.signal_strength}`}>
-          <h3>{opp.ticker}</h3>
-          <div className="confidence-bar">
-            <div style={{ width: `${opp.buy_confidence}%` }}>{opp.buy_confidence}%</div>
-          </div>
-          <div className="details">
-            <span>Entry: ${opp.entry_price}</span>
-            <span>Target: ${opp.target_price}</span>
-            <span>Stop: ${opp.stop_loss}</span>
-            <span>R/R: {opp.risk_reward_ratio}:1</span>
-            <span>Size: {(opp.kelly_size * 100).toFixed(1)}%</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-```
-
-## 🔧 Konfigurace
-
-### Úprava Vah
-
-Pokud chcete změnit váhy komponent:
-
-```python
-from app.trading.master_signal import MasterSignalAggregator, WeightConfig
-
-# Custom weight configuration
-class CustomWeights:
-    GOMES_SCORE = 0.40      # 40% Gomes (více váhy)
-    ML_CONFIDENCE = 0.30    # 30% ML
-    TECHNICAL = 0.15        # 15% Technical
-    GAP_ANALYSIS = 0.10     # 10% Gap
-    RISK_REWARD = 0.05      # 5% R/R
-
-aggregator = MasterSignalAggregator(db, weights=CustomWeights())
-```
-
-## ⚠️ Důležité Poznámky
-
-1. **Gomes Filter Priority**: Pokud ticker neprojde Gomesovým filtrem, automaticky dostává nízké skóre
-2. **ML Quality**: Low-confidence ML predikce mají 50% penaltu
-3. **Technical Score**: Momentálně vrací 50 (neutral) - TODO: implementovat RSI/MACD
-4. **User Context**: Pokud nezadáte `user_id`, gap analysis vrací neutral (50)
-
-## 📝 TODO - Další Vylepšení
-
-- [ ] Implementovat RSI/MACD výpočet pro Technical Score
-- [ ] Přidat sentiment analysis komponentu (news/RSS)
-- [ ] Implementovat backtesting pro validaci signálů
-- [ ] Přidat caching pro rychlejší response
-- [ ] WebSocket real-time updates když se změní confidence
-- [ ] Historical tracking změn Buy Confidence v čase
-
-## 🧪 Testing
-
-Unit testy jsou v `backend/app/trading/tests/test_master_signal.py`.
-
-```bash
-# Spustit testy
-pytest backend/app/trading/tests/test_master_signal.py -v
-
-# Pouze jednotkové (bez DB)
-pytest backend/app/trading/tests/test_master_signal.py -v -m "not integration"
-```
-
-## 📚 Referenční Dokumentace
-
-- [Gomes Logic](../trading/gomes_logic.py)
-- [ML Engine](../trading/ml_engine.py)
-- [Gap Analysis](../services/gap_analysis.py)
-- [Kelly Criterion](../trading/kelly.py)
+**Úspora:** ~2.5 GB dependencies

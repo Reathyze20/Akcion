@@ -1,0 +1,3807 @@
+/**
+ * Akcion Investment Terminal
+ * 
+ * Enterprise-grade portfolio management dashboard:
+ * - Multi-Account Portfolio Consolidation
+ * - Conviction Scoring & Risk Assessment
+ * - Position Sizing (Kelly Criterion)
+ * - Thesis Drift Monitoring & Alerts
+ */
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  TrendingUp, TrendingDown, AlertTriangle, Shield, Rocket, Anchor,
+  DollarSign, Users, PlusCircle, RefreshCw, Search,
+  Target, Zap, AlertCircle, X, Check, Clock, BarChart3, Eye, Briefcase,
+  Upload, Plus, FileSpreadsheet, Edit3
+} from 'lucide-react';
+import { apiClient } from '../api/client';
+import type { 
+  PortfolioSummary, Position, Stock,
+  FamilyAuditResponse, BrokerType
+} from '../types';
+import { StockDetail } from './StockDetail';
+import NotificationBell from './NotificationBell';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface EnrichedPosition extends Position {
+  stock?: Stock;
+  conviction_score: number | null;
+  // Gomes Gap Analysis
+  max_allocation_cap: number;    // Maximum allocation % (from Gomes Logic)
+  target_weight_pct: number;     // Ideální váha podle skóre (deprecated - use max_allocation_cap)
+  weight_in_portfolio: number;   // Aktuální váha v portfoliu
+  gap_czk: number;               // Mezera v CZK (+ = dokoupit, - = prodat)
+  optimal_size: number;          // Kolik investovat TENTO MĚSÍC (po prioritizaci)
+  allocation_priority: number;   // Priorita (1 = nejvyšší)
+  // Status
+  trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  is_deteriorated: boolean;
+  is_overweight: boolean;
+  is_underweight: boolean;
+  action_signal: 'BUY' | 'HOLD' | 'SELL' | 'SNIPER';  // Akční signál
+  inflection_status?: string;
+  // Next Catalyst
+  next_catalyst?: string;  // Format: "EVENT / DATE" or null
+}
+
+interface FamilyPortfolioData {
+  totalValue: number;
+  totalValueEUR: number;  // EUR equivalent
+  totalCash: number;
+  monthlyContribution: number;  // Celkový měsíční příspěvek ze všech portfolií
+  portfolios: PortfolioSummary[];
+  allPositions: EnrichedPosition[];
+  rocketCount: number;  // High growth (score >= 7)
+  anchorCount: number;  // Core positions (score 5-6)
+  waitTimeCount: number; // Wait Time positions (score 1-4)
+  unanalyzedCount: number; // Not yet analyzed (no score)
+  riskScore: number;    // 0-100
+}
+
+// ============================================================================
+// GOMES TARGET WEIGHTS (Conviction Mapping)
+// ============================================================================
+// Kolik % celého portfolia si akcie ZASLOUŽÍ na základě skóre
+const TARGET_WEIGHTS: Record<number, number> = {
+  10: 15,   // CORE - Highest conviction (12-15%)
+  9: 15,    // CORE - High conviction  
+  8: 12,    // STRONG - Solid position (10-12%)
+  7: 10,    // GROWTH - Growth position (7-10%)
+  6: 5,     // WATCH - Monitor closely (3-5%)
+  5: 3,     // WATCH - Small position
+  4: 0,     // EXIT - Should not hold
+  3: 0,     // EXIT - Sell signal
+  2: 0,     // EXIT - Strong sell
+  1: 0,     // EXIT - Avoid completely
+  0: 0,
+};
+
+// Hard Caps (Gomesova pojistka)
+const MAX_POSITION_WEIGHT = 15;  // Max 15% portfolia v jedné akcii
+const MIN_INVESTMENT_CZK = 1000; // Min vklad (kvůli poplatkům)
+const DEFAULT_MONTHLY_CONTRIBUTION = 20000; // Výchozí měsíční vklad v CZK
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+const formatCurrency = (amount: number, currency: string = 'CZK'): string => {
+  return new Intl.NumberFormat('cs-CZ', { 
+    style: 'currency', 
+    currency,
+    maximumFractionDigits: 0 
+  }).format(amount);
+};
+
+const formatPercent = (value: number | undefined | null): string => {
+  if (value === undefined || value === null || isNaN(value)) {
+    return '0.00%';
+  }
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}%`;
+};
+
+/**
+ * Calculate estimated months to reach target with monthly contributions and returns
+ * Formula: Future Value = PV * (1 + r)^n + PMT * ((1 + r)^n - 1) / r
+ */
+const calculateMonthsToTarget = (
+  currentValue: number,
+  targetValue: number,
+  monthlyContribution: number = 20000,
+  annualReturn: number = 0.15
+): number => {
+  if (currentValue >= targetValue) return 0;
+  const monthlyReturn = annualReturn / 12;
+  let value = currentValue;
+  let months = 0;
+  const maxMonths = 240; // 20 years max
+  
+  while (value < targetValue && months < maxMonths) {
+    value = value * (1 + monthlyReturn) + monthlyContribution;
+    months++;
+  }
+  return months;
+};
+
+const getTargetWeight = (score: number | null): number => {
+  if (score === null) return 0;
+  const roundedScore = Math.round(score);
+  return TARGET_WEIGHTS[roundedScore] ?? 0;
+};
+
+/**
+ * Get action signal based on score and weight gap
+ */
+const getActionSignal = (
+  score: number | null, 
+  currentWeight: number, 
+  targetWeight: number
+): 'BUY' | 'HOLD' | 'SELL' | 'SNIPER' => {
+  if (score === null) return 'HOLD';
+  if (score < 5) return 'SELL';  // Score < 5 = EXIT
+  
+  const gapPct = targetWeight - currentWeight;
+  
+  // Sniper opportunity: score 8+ and significantly underweight (>5% gap)
+  if (score >= 8 && gapPct > 5) return 'SNIPER';
+  
+  // Buy signal: underweight by >2%
+  if (gapPct > 2) return 'BUY';
+  
+  // Hold: roughly at target
+  return 'HOLD';
+};
+
+/**
+ * Get dynamic action command for position
+ * STRONG BUY, HARD EXIT, HOLD, FREE RIDE
+ */
+const getActionCommand = (
+  score: number | null,
+  currentWeight: number,
+  targetWeight: number,
+  unrealizedProfitPct: number
+): { text: string; color: string; bgColor?: string } => {
+  // Priority 1: Free Ride at 150%+
+  if (unrealizedProfitPct >= 150) {
+    return { text: 'FREE RIDE', color: 'text-warning', bgColor: 'bg-warning/10' };
+  }
+  
+  // Priority 2: Hard Exit for score < 4
+  if (score !== null && score < 4) {
+    return { text: 'HARD EXIT', color: 'text-negative', bgColor: 'bg-negative/20' };
+  }
+  
+  // Priority 3: Strong Buy for score >= 8 and underweight
+  if (score !== null && score >= 8 && currentWeight < targetWeight) {
+    return { text: 'STRONG BUY', color: 'text-positive font-bold' };
+  }
+  
+  // Priority 4: Hold if at or above target weight
+  if (score !== null && score >= 5 && currentWeight >= targetWeight) {
+    return { text: 'HOLD', color: 'text-text-muted' };
+  }
+  
+  // Default: BUY signal for underweight positions with score 5-7
+  if (score !== null && score >= 5 && currentWeight < targetWeight) {
+    return { text: 'BUY', color: 'text-positive' };
+  }
+  
+  // No score or edge case
+  return { text: 'ANALYZE', color: 'text-text-muted' };
+};
+
+const getTrendStatus = (stock: Stock | undefined): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
+  if (!stock || !stock.current_price || !stock.green_line || !stock.red_line) {
+    return 'NEUTRAL';
+  }
+  const priceRange = stock.red_line - stock.green_line;
+  if (priceRange <= 0) return 'NEUTRAL';
+  const position = (stock.current_price - stock.green_line) / priceRange;
+  if (position <= 0.4) return 'BULLISH';
+  if (position >= 0.7) return 'BEARISH';
+  return 'NEUTRAL';
+};
+
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+// Risk Meter Component - warns when Growth > 60%
+const RiskMeter: React.FC<{ 
+  rocketCount: number; 
+  anchorCount: number; 
+  waitTimeCount: number; 
+  unanalyzedCount: number;
+  riskScore: number 
+}> = ({
+  rocketCount, anchorCount, waitTimeCount, unanalyzedCount, riskScore
+}) => {
+  // Risk thresholds: >60% Growth = Orange warning, >70% = Red danger
+  const analyzedTotal = rocketCount + anchorCount + waitTimeCount;
+  const isOverexposed = analyzedTotal > 0 && riskScore > 60;
+  const isDangerous = analyzedTotal > 0 && riskScore > 70;
+  const hasUnanalyzed = unanalyzedCount > 0;
+  const riskColor = isDangerous ? 'text-negative' : isOverexposed ? 'text-warning' : 'text-positive';
+  const riskBg = isDangerous ? 'bg-negative' : isOverexposed ? 'bg-warning' : 'bg-positive';
+  const borderColor = isDangerous ? 'border-negative/50' : isOverexposed ? 'border-warning/50' : hasUnanalyzed ? 'border-border' : 'border-border-subtle';
+  
+  return (
+    <div className={`bg-surface-raised/50 rounded-xl p-4 border ${borderColor} ${isDangerous ? 'animate-pulse' : ''}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs text-text-secondary uppercase tracking-wider">Risk Exposure</div>
+        {hasUnanalyzed && !isOverexposed && (
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-600 text-text-secondary">
+            RUN DEEP DD
+          </span>
+        )}
+        {isOverexposed && (
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isDangerous ? 'bg-negative/20 text-negative' : 'bg-warning/20 text-warning'}`}>
+            {isDangerous ? 'REBALANCE' : 'MONITOR'}
+          </span>
+        )}
+      </div>
+      
+      {/* Score display */}
+      <div className={`text-3xl font-black ${riskColor} text-center mb-3`}>
+        {riskScore}%
+      </div>
+      
+      {/* Categories row */}
+      <div className="grid grid-cols-4 gap-1 text-center">
+        <div className="flex flex-col items-center">
+          <Rocket className={`w-4 h-4 mb-0.5 ${rocketCount > 0 ? 'text-accent' : 'text-text-muted'}`} />
+          <span className={`font-bold text-sm ${rocketCount > 0 ? 'text-accent' : 'text-text-muted'}`}>{rocketCount}</span>
+          <span className="text-[8px] text-text-muted">Growth</span>
+        </div>
+        <div className="flex flex-col items-center">
+          <Anchor className={`w-4 h-4 mb-0.5 ${anchorCount > 0 ? 'text-accent' : 'text-slate-600'}`} />
+          <span className={`font-bold text-sm ${anchorCount > 0 ? 'text-accent' : 'text-slate-600'}`}>{anchorCount}</span>
+          <span className="text-[8px] text-text-muted">Core</span>
+        </div>
+        <div className="flex flex-col items-center">
+          <Clock className={`w-4 h-4 mb-0.5 ${waitTimeCount > 0 ? 'text-warning' : 'text-text-muted'}`} />
+          <span className={`font-bold text-sm ${waitTimeCount > 0 ? 'text-warning' : 'text-text-muted'}`}>{waitTimeCount}</span>
+          <span className="text-[8px] text-text-muted">Wait</span>
+        </div>
+        <div className="flex flex-col items-center">
+          <AlertCircle className={`w-4 h-4 mb-0.5 ${unanalyzedCount > 0 ? 'text-text-secondary' : 'text-slate-600'}`} />
+          <span className={`font-bold text-sm ${unanalyzedCount > 0 ? 'text-text-secondary' : 'text-slate-600'}`}>{unanalyzedCount}</span>
+          <span className="text-[8px] text-text-muted">New</span>
+        </div>
+      </div>
+      
+      {isOverexposed && (
+        <div className={`mt-2 text-[10px] text-center ${isDangerous ? 'text-negative' : 'text-warning'}`}>
+          {isDangerous ? 'Rebalance needed' : 'Monitor growth allocation'}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// FREEDOM COUNTDOWN - Retirement Visualization
+// ============================================================================
+
+interface FreedomCountdownProps {
+  currentValue: number;
+  targetValue: number;  // e.g. 30,000,000 CZK
+  monthlyContribution: number;
+  annualReturn: number;
+  targetAge: number;    // e.g. 50
+  currentAge: number;   // calculated from target
+}
+
+const FreedomCountdown: React.FC<FreedomCountdownProps> = ({
+  currentValue,
+  targetValue,
+  monthlyContribution,
+  annualReturn,
+  targetAge,
+  currentAge
+}) => {
+  // Calculate months to reach target with compound growth
+  const calculateFreedomDate = (): { months: number; projectedValue: number; daysSaved: number } => {
+    const monthlyReturn = annualReturn / 12;
+    let value = currentValue;
+    let months = 0;
+    const maxMonths = 360; // 30 years max
+    
+    while (value < targetValue && months < maxMonths) {
+      value = value * (1 + monthlyReturn) + monthlyContribution;
+      months++;
+    }
+    
+    // Calculate how many days the last contribution "saved"
+    // Without last contribution, how many extra months needed?
+    let valueWithoutLastContribution = currentValue - monthlyContribution;
+    if (valueWithoutLastContribution < 0) valueWithoutLastContribution = 0;
+    let monthsWithout = 0;
+    let tempValue = valueWithoutLastContribution;
+    while (tempValue < targetValue && monthsWithout < maxMonths) {
+      tempValue = tempValue * (1 + monthlyReturn) + monthlyContribution;
+      monthsWithout++;
+    }
+    const daysSaved = (monthsWithout - months) * 30; // Approximate days
+    
+    return { months, projectedValue: value, daysSaved: Math.max(0, daysSaved) };
+  };
+
+  const { months, daysSaved } = calculateFreedomDate();
+  const yearsToFreedom = Math.floor(months / 12);
+  const monthsRemaining = months % 12;
+  const freedomAge = currentAge + yearsToFreedom;
+  const progressPercent = Math.min(100, (currentValue / targetValue) * 100);
+  
+  // Milestones
+  const milestones = [
+    { value: 500000, label: '500k', emoji: '🌱' },
+    { value: 1000000, label: '1M', emoji: '🚀' },
+    { value: 5000000, label: '5M', emoji: '💎' },
+    { value: 10000000, label: '10M', emoji: '👑' },
+    { value: 30000000, label: '30M', emoji: '🏰' },
+  ];
+  
+  const currentMilestone = milestones.filter(m => currentValue >= m.value).pop();
+  const nextMilestone = milestones.find(m => currentValue < m.value);
+
+  return (
+    <div className="bg-surface-raised rounded-xl p-5 border border-accent/30">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Target className="w-5 h-5 text-accent" />
+          <span className="text-sm font-bold text-accent uppercase tracking-wider">Freedom Countdown</span>
+        </div>
+        <div className="text-xs text-text-secondary">
+          Cíl: {(targetValue / 1000000).toFixed(0)}M Kč @ {targetAge} let
+        </div>
+      </div>
+      
+      {/* Main countdown display */}
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="text-center">
+          <div className="text-3xl font-black text-text-primary">{yearsToFreedom}</div>
+          <div className="text-xs text-text-secondary">let</div>
+        </div>
+        <div className="text-center border-x border-border">
+          <div className="text-3xl font-black text-text-primary">{monthsRemaining}</div>
+          <div className="text-xs text-text-secondary">měsíců</div>
+        </div>
+        <div className="text-center">
+          <div className="text-3xl font-black text-accent">{freedomAge}</div>
+          <div className="text-xs text-text-secondary">věk svobody</div>
+        </div>
+      </div>
+      
+      {/* Progress bar with milestones */}
+      <div className="relative mb-4">
+        <div className="h-3 bg-surface-hover rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-accent via-info to-positive transition-all duration-1000 relative"
+            style={{ width: `${progressPercent}%` }}
+          >
+            <div className="absolute inset-0 bg-white/20 animate-pulse" />
+          </div>
+        </div>
+        {/* Milestone markers */}
+        <div className="absolute inset-0 flex items-center">
+          {milestones.map((m) => {
+            const pos = (m.value / targetValue) * 100;
+            if (pos > 100) return null;
+            return (
+              <div 
+                key={m.label}
+                className="absolute transform -translate-x-1/2"
+                style={{ left: `${pos}%` }}
+                title={`${m.label} Kč`}
+              >
+                <div className={`text-xs ${currentValue >= m.value ? 'opacity-100' : 'opacity-30'}`}>
+                  {m.emoji}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      
+      {/* Current milestone & next target */}
+      <div className="flex justify-between items-center text-xs mb-3">
+        <div className="flex items-center gap-1">
+          {currentMilestone && (
+            <span className="text-positive">
+              {currentMilestone.emoji} {currentMilestone.label} dosaženo!
+            </span>
+          )}
+        </div>
+        {nextMilestone && (
+          <div className="text-text-secondary">
+            Další: {nextMilestone.emoji} {nextMilestone.label} 
+            <span className="text-accent ml-1">
+              ({((currentValue / nextMilestone.value) * 100).toFixed(0)}%)
+            </span>
+          </div>
+        )}
+      </div>
+      
+      {/* Motivational message */}
+      {daysSaved > 0 && (
+        <div className="bg-positive/10 border border-positive/30 rounded-lg p-3 text-center">
+          <div className="text-positive text-sm">
+            🎉 Tvůj poslední vklad {formatCurrency(monthlyContribution)} přiblížil důchod o <span className="font-bold">{daysSaved} dní</span>!
+          </div>
+          <div className="text-xs text-positive/70 mt-1">
+            Každý vklad = nákup času pro tebe a rodinu
+          </div>
+        </div>
+      )}
+      
+      {/* Quick stats */}
+      <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+        <div className="bg-surface-raised/50 rounded-lg p-2 text-center">
+          <div className="text-text-secondary">Aktuální hodnota</div>
+          <div className="text-text-primary font-bold">{formatCurrency(currentValue)}</div>
+        </div>
+        <div className="bg-surface-raised/50 rounded-lg p-2 text-center">
+          <div className="text-text-secondary">Progress</div>
+          <div className="text-accent font-bold">{progressPercent.toFixed(2)}%</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// COMPOUND SNOWBALL - Future Value Projection
+// ============================================================================
+
+interface CompoundSnowballProps {
+  currentValue: number;
+  monthlyContribution: number;
+  annualReturn: number;
+  years: number;
+}
+
+const CompoundSnowball: React.FC<CompoundSnowballProps> = ({
+  currentValue,
+  monthlyContribution,
+  annualReturn,
+  years
+}) => {
+  // Calculate projection points
+  const projectionPoints = useMemo(() => {
+    const points: { year: number; projected: number; target: number }[] = [];
+    const monthlyReturn = annualReturn / 12;
+    let value = currentValue;
+    
+    for (let year = 0; year <= years; year++) {
+      // Target line (ideal path)
+      const targetValue = currentValue * Math.pow(1 + annualReturn, year) + 
+        monthlyContribution * 12 * ((Math.pow(1 + annualReturn, year) - 1) / annualReturn);
+      
+      points.push({
+        year,
+        projected: value,
+        target: targetValue
+      });
+      
+      // Compound for next year
+      for (let month = 0; month < 12; month++) {
+        value = value * (1 + monthlyReturn) + monthlyContribution;
+      }
+    }
+    return points;
+  }, [currentValue, monthlyContribution, annualReturn, years]);
+  
+  const maxValue = Math.max(...projectionPoints.map(p => Math.max(p.projected, p.target)));
+  const finalProjected = projectionPoints[projectionPoints.length - 1]?.projected || 0;
+  
+  return (
+    <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-accent" />
+          <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">Compound Snowball</span>
+        </div>
+        <div className="text-xs text-text-secondary">
+          {years}Y projekce @ {(annualReturn * 100).toFixed(0)}% p.a.
+        </div>
+      </div>
+      
+      {/* Simple bar visualization */}
+      <div className="space-y-2 mb-3">
+        {projectionPoints.filter((_, i) => i % 5 === 0 || i === projectionPoints.length - 1).map((point) => (
+          <div key={point.year} className="flex items-center gap-2 text-xs">
+            <span className="w-8 text-text-muted">{point.year}Y</span>
+            <div className="flex-1 h-4 bg-surface-hover rounded overflow-hidden relative">
+              <div 
+                className="h-full bg-gradient-to-r from-accent to-info transition-all"
+                style={{ width: `${(point.projected / maxValue) * 100}%` }}
+              />
+            </div>
+            <span className="w-20 text-right text-text-secondary font-mono">
+              {point.projected >= 1000000 
+                ? `${(point.projected / 1000000).toFixed(1)}M` 
+                : `${(point.projected / 1000).toFixed(0)}k`}
+            </span>
+          </div>
+        ))}
+      </div>
+      
+      {/* Final projection highlight */}
+      <div className="bg-accent/10 border border-accent/30 rounded-lg p-3 text-center">
+        <div className="text-xs text-text-muted">Za {years} let budeš mít</div>
+        <div className="text-2xl font-black text-accent">
+          {formatCurrency(finalProjected)}
+        </div>
+        <div className="text-xs text-accent/70">
+          při {(annualReturn * 100).toFixed(0)}% ročním výnosu + {formatCurrency(monthlyContribution)}/měsíc
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// MERIT BADGES - Gamification
+// ============================================================================
+
+interface MeritBadge {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  earned: boolean;
+  earnedDate?: string;
+  category: 'discipline' | 'strategy' | 'growth';
+}
+
+const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number }> = ({ positions, totalValue }) => {
+  // Calculate earned badges based on portfolio state
+  const badges: MeritBadge[] = useMemo(() => {
+    const allBadges: MeritBadge[] = [
+      // Discipline badges
+      {
+        id: 'weed-cutter',
+        name: 'Weed Cutter',
+        icon: 'scissors',
+        description: 'Prodej akcii se skóre pod 3',
+        earned: false, // Would track in DB when sale happens
+        category: 'discipline'
+      },
+      {
+        id: 'diamond-hands',
+        name: 'Diamond Hands',
+        icon: 'diamond',
+        description: 'Drž akcii 9/10 i při -20% drawdown',
+        earned: positions.some(p => 
+          p.conviction_score && p.conviction_score >= 9 && p.unrealized_pl_percent <= -20
+        ),
+        category: 'discipline'
+      },
+      {
+        id: 'sniper',
+        name: 'Sniper',
+        icon: 'target',
+        description: 'Nakup přesně na supportu 30WMA',
+        earned: false, // Would track entry vs 30WMA
+        category: 'strategy'
+      },
+      {
+        id: 'first-rocket',
+        name: 'First Rocket',
+        icon: 'rocket',
+        description: 'Měj první pozici se skóre 9+',
+        earned: positions.some(p => p.conviction_score && p.conviction_score >= 9),
+        category: 'growth'
+      },
+      {
+        id: 'diversified',
+        name: 'Diversified',
+        icon: 'grid',
+        description: 'Měj 5+ různých pozic',
+        earned: positions.length >= 5,
+        category: 'strategy'
+      },
+      {
+        id: 'free-rider',
+        name: 'Free Rider',
+        icon: 'bird',
+        description: 'Měj pozici s P/L 100%+ (house money)',
+        earned: positions.some(p => p.unrealized_pl_percent >= 100),
+        category: 'growth'
+      },
+      {
+        id: 'patient-investor',
+        name: 'Patient Investor',
+        icon: 'zen',
+        description: 'Drž portfolio bez panického prodeje 6+ měsíců',
+        earned: false, // Would track in DB
+        category: 'discipline'
+      },
+      {
+        id: 'six-figures',
+        name: 'Six Figures',
+        icon: 'money',
+        description: 'Portfolio přesáhlo 100k Kč',
+        earned: totalValue >= 100000,
+        category: 'growth'
+      },
+      {
+        id: 'half-million',
+        name: 'Half Millionaire',
+        icon: 'trophy',
+        description: 'Portfolio přesáhlo 500k Kč',
+        earned: totalValue >= 500000,
+        category: 'growth'
+      }
+    ];
+    
+    return allBadges;
+  }, [positions, totalValue]);
+  
+  const earnedCount = badges.filter(b => b.earned).length;
+  
+  return (
+    <div className="bg-surface-raised rounded-xl p-4 border border-warning/20">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Shield className="w-4 h-4 text-warning" />
+          <span className="text-xs font-bold text-warning uppercase tracking-wider">Gomes Merit Badges</span>
+        </div>
+        <div className="text-xs text-text-secondary">
+          {earnedCount}/{badges.length} získáno
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-3 gap-2">
+        {badges.map((badge) => (
+          <div 
+            key={badge.id}
+            className={`
+              p-2 rounded-lg text-center transition-all
+              ${badge.earned 
+                ? 'bg-warning/20 border border-warning/40' 
+                : 'bg-surface-overlay border border-border-subtle opacity-40'
+              }
+            `}
+            title={badge.description}
+          >
+            <div className={`text-xl mb-1 ${badge.earned ? 'text-warning' : 'text-text-muted'}`}>
+              {badge.icon === 'scissors' && <span className="inline-block w-6 h-6">✂</span>}
+              {badge.icon === 'diamond' && <span className="inline-block w-6 h-6">◆</span>}
+              {badge.icon === 'target' && <span className="inline-block w-6 h-6">◎</span>}
+              {badge.icon === 'rocket' && <span className="inline-block w-6 h-6">↑</span>}
+              {badge.icon === 'grid' && <span className="inline-block w-6 h-6">#</span>}
+              {badge.icon === 'bird' && <span className="inline-block w-6 h-6">~</span>}
+              {badge.icon === 'zen' && <span className="inline-block w-6 h-6">○</span>}
+              {badge.icon === 'money' && <span className="inline-block w-6 h-6">$</span>}
+              {badge.icon === 'trophy' && <span className="inline-block w-6 h-6">★</span>}
+            </div>
+            <div className={`text-[10px] font-bold ${badge.earned ? 'text-warning' : 'text-text-muted'}`}>
+              {badge.name}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Portfolio Row Component
+const PortfolioRow: React.FC<{
+  position: EnrichedPosition;
+  onClick: () => void;
+}> = ({ position, onClick }) => {
+  const scoreColor = position.conviction_score 
+    ? position.conviction_score >= 7 ? 'text-positive' 
+      : position.conviction_score >= 5 ? 'text-warning' 
+      : 'text-negative'
+    : 'text-text-muted';
+
+  const trendIcon = position.trend_status === 'BULLISH' 
+    ? <TrendingUp className="w-4 h-4 text-positive" />
+    : position.trend_status === 'BEARISH'
+    ? <TrendingDown className="w-4 h-4 text-negative" />
+    : <BarChart3 className="w-4 h-4 text-text-muted" />;
+
+  const plColor = position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative';
+  
+  // Get action command
+  const actionCmd = getActionCommand(
+    position.conviction_score,
+    position.weight_in_portfolio,
+    position.target_weight_pct,
+    position.unrealized_pl_percent
+  );
+  
+  // Check if row should be highlighted (HARD EXIT)
+  const isHardExit = position.conviction_score !== null && position.conviction_score < 4;
+  
+  // Strategy: Free Ride eligible vs Growing
+  const isFreeRideEligible = position.unrealized_pl_percent >= 150;
+  const progressTo150 = Math.min(100, (position.unrealized_pl_percent / 150) * 100);
+  
+  // Calculate shares to sell for Free Ride
+  const sharesToSellForFreeRide = useMemo(() => {
+    if (!isFreeRideEligible) return 0;
+    const currentPrice = position.stock?.current_price ?? position.current_price ?? 0;
+    if (currentPrice <= 0) return 0;
+    const costBasis = position.shares_count * position.avg_cost;
+    return Math.ceil(costBasis / currentPrice);
+  }, [position, isFreeRideEligible]);
+
+  return (
+    <tr 
+      onClick={onClick}
+      className={`
+        border-b border-border/50 cursor-pointer transition-all
+        hover:bg-surface-raised/70
+        ${isHardExit ? 'bg-negative/15' : ''}
+        ${position.is_deteriorated && !isHardExit ? 'animate-pulse bg-negative/10' : ''}
+      `}
+    >
+      {/* Ticker & Name */}
+      <td className="py-3 px-3">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-text-primary text-base">{position.ticker}</span>
+            {position.is_deteriorated && (
+              <span className="px-1.5 py-0.5 bg-negative/20 text-negative text-[10px] font-bold rounded animate-pulse">
+                REVIEW
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] text-text-secondary truncate">
+            {position.company_name || 'Unknown'}
+          </div>
+        </div>
+      </td>
+
+      {/* ACTION - Dynamic Command */}
+      <td className="py-3 px-3">
+        <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
+          {actionCmd.text}
+        </div>
+      </td>
+
+      {/* Weight % - Aktuální vs Cílová */}
+      <td className="py-3 px-3">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-1">
+            <span className={`font-mono text-sm font-bold ${position.is_overweight ? 'text-negative' : position.is_underweight ? 'text-warning' : 'text-text-secondary'}`}>
+              {position.weight_in_portfolio.toFixed(1)}%
+            </span>
+            <span className="text-text-muted text-xs">/</span>
+            <span className="font-mono text-xs text-text-secondary">{position.max_allocation_cap.toFixed(1)}%</span>
+          </div>
+          {position.is_overweight && (
+            <div className="text-[9px] text-negative">OVERWEIGHT</div>
+          )}
+          {position.is_underweight && !position.is_overweight && (
+            <div className="text-[9px] text-warning">UNDERWEIGHT</div>
+          )}
+        </div>
+      </td>
+
+      {/* Conviction Score */}
+      <td className="py-3 px-3 text-center">
+        <div className={`text-xl font-black ${scoreColor}`}>
+          {position.conviction_score ?? '-'}
+        </div>
+      </td>
+
+      {/* Current Price */}
+      <td className="py-3 px-3 text-right">
+        <div className="flex flex-col items-end">
+          {position.current_price ? (
+            <>
+              <div className="text-sm font-bold text-text-primary font-mono">
+                ${position.current_price.toFixed(2)}
+              </div>
+              <div className="text-[9px] text-text-muted">
+                Cost: ${position.avg_cost.toFixed(2)}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-text-muted">-</div>
+          )}
+        </div>
+      </td>
+
+      {/* Optimal Size - GAP ANALYSIS */}
+      <td className="py-3 px-3">
+        {position.action_signal === 'SELL' ? (
+          <div className="flex flex-col">
+            <div className="text-negative font-bold text-xs">SELL</div>
+            <div className="text-[9px] text-negative/80">Score &lt; 5</div>
+          </div>
+        ) : position.optimal_size < 0 ? (
+          // OVERWEIGHT: Show how much to SELL (negative optimal_size)
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1">
+              <span className="text-warning font-bold text-[9px]">TRIM</span>
+              <span className="text-sm font-bold text-warning font-mono">
+                {formatCurrency(Math.abs(position.optimal_size))}
+              </span>
+            </div>
+            <div className="text-[9px] text-warning/80">
+              Nad limit {position.max_allocation_cap.toFixed(1)}%
+            </div>
+          </div>
+        ) : position.optimal_size > 0 ? (
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1">
+              {position.action_signal === 'SNIPER' && <span className="text-warning text-[9px] font-bold">SNIPER</span>}
+              <span className="text-sm font-bold text-positive font-mono">
+                {formatCurrency(position.optimal_size)}
+              </span>
+            </div>
+            <div className="text-[9px] text-text-muted">
+              Gap: {formatCurrency(position.gap_czk)}
+            </div>
+            {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
+              <div className="text-[9px] text-warning font-bold">
+                #{position.allocation_priority} priorita
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            <div className="text-text-muted font-mono text-xs">0 Kč</div>
+            <div className="text-[9px] text-slate-600">
+              {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
+            </div>
+          </div>
+        )}
+      </td>
+
+      {/* NEXT CATALYST */}
+      <td className="py-3 px-3">
+        {position.next_catalyst ? (
+          <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
+            {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
+          </div>
+        ) : (
+          <div className="text-[9px] text-negative/70 uppercase">NONE</div>
+        )}
+      </td>
+
+      {/* 30 WMA Status */}
+      <td className="py-3 px-3">
+        <div className="flex flex-col items-center gap-1">
+          {trendIcon}
+          <span className={`text-[10px] font-medium ${
+            position.trend_status === 'BULLISH' ? 'text-positive' :
+            position.trend_status === 'BEARISH' ? 'text-negative' :
+            'text-text-muted'
+          }`}>
+            {position.trend_status}
+          </span>
+        </div>
+      </td>
+
+      {/* STRATEGY - Position Health */}
+      <td className="py-3 px-3">
+        {isFreeRideEligible ? (
+          <div className="flex flex-col">
+            <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
+            <div className="text-[8px] text-warning/70">
+              Sell {sharesToSellForFreeRide} shares
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            <div className="text-[9px] text-text-muted uppercase">GROWING</div>
+            <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden mt-1">
+              <div 
+                className="h-full bg-gradient-to-r from-surface-overlay to-positive transition-all"
+                style={{ width: `${progressTo150}%` }}
+              />
+            </div>
+            <div className="text-[8px] text-slate-600 mt-0.5">
+              {position.unrealized_pl_percent.toFixed(0)}% / 150%
+            </div>
+          </div>
+        )}
+      </td>
+
+      {/* P/L % */}
+      <td className="py-3 px-3 text-right">
+        <div className={`font-bold text-sm ${plColor}`}>
+          {position.unrealized_pl_percent !== undefined && position.unrealized_pl_percent !== null 
+            ? formatPercent(position.unrealized_pl_percent) 
+            : '0.00%'}
+        </div>
+        <div className="text-[10px] text-text-muted">
+          {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
+        </div>
+      </td>
+    </tr>
+  );
+};
+
+// ============================================================================
+// STOCK DETAIL MODAL
+// ============================================================================
+
+interface StockDetailModalProps {
+  position: EnrichedPosition;
+  familyGaps: FamilyAuditResponse | null;
+  onClose: () => void;
+  onUpdate: () => void;  // Callback to refresh data after update
+}
+
+const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGaps, onClose, onUpdate }) => {
+  const stock = position.stock;
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [updateText, setUpdateText] = useState('');
+  const [sourceType, setSourceType] = useState<'earnings' | 'news' | 'chat' | 'transcript' | 'manual'>('manual');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateResult, setUpdateResult] = useState<{ success: boolean; message: string } | null>(null);
+  
+  // Position editing state
+  const [isEditingPosition, setIsEditingPosition] = useState(false);
+  const [editShares, setEditShares] = useState(position.shares_count.toString());
+  const [editAvgCost, setEditAvgCost] = useState(position.avg_cost.toString());
+  const [editCurrentPrice, setEditCurrentPrice] = useState((stock?.current_price ?? position.current_price ?? 0).toString());
+  const [editCompanyName, setEditCompanyName] = useState(position.company_name || stock?.company_name || '');
+  const [editTicker, setEditTicker] = useState(position.ticker);
+  const [editCurrency, setEditCurrency] = useState(position.currency || 'USD');
+  const [isSavingPosition, setIsSavingPosition] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  
+  // Available currencies
+  const CURRENCIES = ['USD', 'EUR', 'CZK', 'CAD', 'GBP', 'HKD', 'CHF'];
+  
+  // Legacy price editing state (for inline price edit)
+  const [isEditingPrice, setIsEditingPrice] = useState(false);
+  const [editPrice, setEditPrice] = useState('');
+  const [isSavingPrice, setIsSavingPrice] = useState(false);
+  
+  // Price targets (mock calculation - should come from Deep DD)
+  const currentPrice = stock?.current_price ?? position.current_price ?? 0;
+  const greenLine = stock?.green_line ?? currentPrice * 0.7;
+  const redLine = stock?.red_line ?? currentPrice * 1.5;
+  const moonTarget = redLine * 1.5;
+  
+  // Calculate price position percentage
+  const priceRange = moonTarget - greenLine;
+  const pricePosition = priceRange > 0 ? ((currentPrice - greenLine) / priceRange) * 100 : 50;
+  
+  // Check if this stock has family gap
+  const familyGap = familyGaps?.gaps.find(g => g.ticker === position.ticker);
+  
+  // Market cap warning (mock - should be from stock data)
+  const isLargeCap = false; // TODO: Get from actual market cap data
+  
+  // Handle stock update
+  const handleUpdate = async () => {
+    if (!updateText.trim() || updateText.length < 50) {
+      setUpdateResult({ success: false, message: 'Text must be at least 50 characters.' });
+      return;
+    }
+    
+    setIsUpdating(true);
+    setUpdateResult(null);
+    
+    try {
+      const result = await apiClient.updateStockAnalysis(position.ticker, updateText, sourceType);
+      
+      if (result.success) {
+        const driftLabel = result.thesis_drift === 'IMPROVED' ? '[UP]' : 
+                          result.thesis_drift === 'DETERIORATED' ? '[DOWN]' : '[STABLE]';
+        setUpdateResult({ 
+          success: true, 
+          message: `${driftLabel} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
+        });
+        // Refresh parent data
+        setTimeout(() => {
+          onUpdate();
+          setShowUpdateForm(false);
+          setUpdateText('');
+        }, 2000);
+      }
+    } catch {
+      setUpdateResult({ success: false, message: 'Update failed. Please try again.' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+  
+  // Handle position update (shares, avg_cost, current_price, company_name, ticker, currency)
+  const handleSavePosition = async () => {
+    setIsSavingPosition(true);
+    setSaveError(null);
+    
+    try {
+      const shares = parseFloat(editShares);
+      const avgCost = parseFloat(editAvgCost);
+      const price = parseFloat(editCurrentPrice);
+      
+      if (isNaN(shares) || shares <= 0) {
+        setSaveError('Shares must be a positive number');
+        return;
+      }
+      if (isNaN(avgCost) || avgCost < 0) {
+        setSaveError('Average cost must be a non-negative number');
+        return;
+      }
+      if (isNaN(price) || price <= 0) {
+        setSaveError('Current price must be a positive number');
+        return;
+      }
+      
+      await apiClient.updatePosition(position.id, {
+        shares_count: shares,
+        avg_cost: avgCost,
+        current_price: price,
+        company_name: editCompanyName.trim() || undefined,
+        ticker: editTicker.trim() !== position.ticker ? editTicker.trim() : undefined,
+        currency: editCurrency,
+      });
+      
+      // Also update the stock price if it changed
+      if (price !== currentPrice) {
+        await apiClient.updateStockPrice(position.ticker, price);
+      }
+      
+      setIsEditingPosition(false);
+      onUpdate();
+    } catch (err) {
+      console.error('Failed to save position:', err);
+      setSaveError('Failed to save changes. Please try again.');
+    } finally {
+      setIsSavingPosition(false);
+    }
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-surface-base border border-border rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-surface-base border-b border-border p-4 flex items-center justify-between z-10">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-2xl
+              ${position.conviction_score && position.conviction_score >= 7 ? 'bg-positive/20 text-positive' :
+                position.conviction_score && position.conviction_score >= 5 ? 'bg-warning/20 text-warning' :
+                'bg-negative/20 text-negative'}`}>
+              {position.conviction_score ?? '?'}
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-text-primary">{position.ticker}</h2>
+              <p className="text-text-secondary">{stock?.company_name || 'Unknown Company'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setShowUpdateForm(!showUpdateForm)}
+              className="px-3 py-2 bg-accent hover:bg-accent/80 text-text-primary rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Update Analysis
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+              <X className="w-6 h-6 text-text-secondary" />
+            </button>
+          </div>
+        </div>
+
+        {/* Update Form (collapsible) */}
+        {showUpdateForm && (
+          <div className="p-4 bg-accent/10 border-b border-accent/30">
+            <h3 className="text-lg font-bold text-accent mb-3 flex items-center gap-2">
+              <PlusCircle className="w-5 h-5" />
+              Add New Intelligence for {position.ticker}
+            </h3>
+            
+            {/* Source Type Selector */}
+            <div className="flex gap-2 mb-3">
+              {[
+                { value: 'earnings', label: 'Earnings Call' },
+                { value: 'news', label: 'News/PR' },
+                { value: 'transcript', label: 'Video Transcript' },
+                { value: 'chat', label: 'Research Note' },
+                { value: 'manual', label: 'Manual Entry' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSourceType(opt.value as typeof sourceType)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    sourceType === opt.value
+                      ? 'bg-accent text-text-primary'
+                      : 'bg-surface-overlay text-text-secondary hover:bg-surface-hover'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            
+            <textarea
+              value={updateText}
+              onChange={(e) => setUpdateText(e.target.value)}
+              placeholder={
+                sourceType === 'earnings' 
+                  ? 'Paste earnings call summary, key metrics, guidance updates...' 
+                  : sourceType === 'news' 
+                  ? 'Paste news article, press release content...'
+                  : sourceType === 'transcript'
+                  ? 'Paste video transcript or interview notes...'
+                  : sourceType === 'chat'
+                  ? 'Paste research notes or analyst commentary...'
+                  : 'Enter your analysis notes...'
+              }
+              rows={6}
+              className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent resize-none mb-3"
+            />
+            
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-text-muted">
+                {updateText.length} characters (min. 50)
+              </div>
+              <div className="flex items-center gap-3">
+                {updateResult && (
+                  <span className={`text-sm ${updateResult.success ? 'text-positive' : 'text-negative'}`}>
+                    {updateResult.message}
+                  </span>
+                )}
+                <button
+                  onClick={handleUpdate}
+                  disabled={isUpdating || updateText.length < 50}
+                  className="px-4 py-2 bg-accent hover:bg-accent/80 disabled:bg-surface-overlay text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
+                >
+                  {isUpdating ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      Run Analysis
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Warnings - Trend Broken is CRITICAL (Weinstein Rule) */}
+        {(position.trend_status === 'BEARISH' || isLargeCap || position.is_deteriorated || familyGap) && (
+          <div className="p-4 space-y-2">
+            {/* TREND BROKEN - Most Critical Warning */}
+            {position.trend_status === 'BEARISH' && (
+              <div className="p-4 bg-negative/20 border-2 border-negative rounded-lg flex items-start gap-3 animate-pulse">
+                <TrendingDown className="w-6 h-6 text-negative flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-negative font-black text-lg">TREND IS BROKEN</div>
+                  <div className="text-negative/80 text-sm mt-1">
+                    Price below 30-week moving average. Re-evaluate fundamentals immediately!
+                  </div>
+                  <div className="text-negative/70 text-xs mt-2">
+                    Weinstein Rule: Do not add to positions with broken trends regardless of fundamentals.
+                  </div>
+                </div>
+              </div>
+            )}
+            {isLargeCap && (
+              <div className="p-3 bg-warning/10 border border-warning/50 rounded-lg flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-warning" />
+                <span className="text-warning font-semibold">
+                  Large Cap Alert: Limited asymmetric upside potential
+                </span>
+              </div>
+            )}
+            {position.is_deteriorated && (
+              <div className="p-3 bg-negative/10 border border-negative/50 rounded-lg flex items-center gap-3 animate-pulse">
+                <AlertCircle className="w-5 h-5 text-negative" />
+                <span className="text-negative/80 font-semibold">
+                  Position Under Review: Fundamental score below threshold (4/10)
+                </span>
+              </div>
+            )}
+            {familyGap && (
+              <div className="p-3 bg-info/10 border border-info/50 rounded-lg flex items-center gap-3">
+                <Users className="w-5 h-5 text-info" />
+                <span className="text-info">
+                  Cross-Account: Consider adding to <span className="font-bold">{familyGap.missing_from}</span> for balanced exposure
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Three Column Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
+          {/* LEFT: Holdings Stats */}
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                <DollarSign className="w-4 h-4" /> Position Details
+              </h3>
+              {!isEditingPosition ? (
+                <button
+                  onClick={() => setIsEditingPosition(true)}
+                  className="p-1.5 text-text-muted hover:text-accent hover:bg-surface-hover rounded-lg transition-colors"
+                  title="Edit position"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleSavePosition}
+                    disabled={isSavingPosition}
+                    className="p-1.5 bg-positive/20 hover:bg-positive/30 text-positive rounded-lg transition-colors disabled:opacity-50"
+                    title="Save changes"
+                  >
+                    {isSavingPosition ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingPosition(false);
+                      setEditShares(position.shares_count.toString());
+                      setEditAvgCost(position.avg_cost.toString());
+                      setEditCurrentPrice(currentPrice.toString());
+                      setEditCompanyName(position.company_name || stock?.company_name || '');
+                      setEditTicker(position.ticker);
+                      setEditCurrency(position.currency || 'USD');
+                      setSaveError(null);
+                    }}
+                    className="p-1.5 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded-lg transition-colors"
+                    title="Cancel"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            {saveError && (
+              <div className="mb-3 p-2 bg-negative/20 border border-negative/50 rounded-lg text-negative/80 text-sm">
+                {saveError}
+              </div>
+            )}
+            
+            <div className="space-y-3">
+              {/* Ticker (editable) */}
+              <div className="flex justify-between items-center">
+                <span className="text-text-secondary">Ticker</span>
+                {isEditingPosition ? (
+                  <input
+                    type="text"
+                    value={editTicker}
+                    onChange={(e) => setEditTicker(e.target.value.toUpperCase())}
+                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
+                  />
+                ) : (
+                  <span className="font-bold text-text-primary">{position.ticker}</span>
+                )}
+              </div>
+              
+              {/* Company Name (editable) */}
+              <div className="flex justify-between items-center">
+                <span className="text-text-secondary">Company</span>
+                {isEditingPosition ? (
+                  <input
+                    type="text"
+                    value={editCompanyName}
+                    onChange={(e) => setEditCompanyName(e.target.value)}
+                    className="w-40 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right text-sm focus:outline-none focus:border-accent"
+                    placeholder="Company name"
+                  />
+                ) : (
+                  <span className="text-text-primary text-sm">{position.company_name || stock?.company_name || 'Unknown'}</span>
+                )}
+              </div>
+              
+              {/* Shares (editable) */}
+              <div className="flex justify-between items-center">
+                <span className="text-text-secondary">Shares</span>
+                {isEditingPosition ? (
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editShares}
+                    onChange={(e) => setEditShares(e.target.value)}
+                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
+                  />
+                ) : (
+                  <span className="font-bold text-text-primary">{position.shares_count.toFixed(2)}</span>
+                )}
+              </div>
+              
+              {/* Avg Cost (editable) */}
+              <div className="flex justify-between items-center">
+                <span className="text-text-secondary">Avg. Cost</span>
+                {isEditingPosition ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-text-muted">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editAvgCost}
+                      onChange={(e) => setEditAvgCost(e.target.value)}
+                      className="w-20 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                ) : (
+                  <span className="font-mono text-text-primary">${position.avg_cost.toFixed(2)}</span>
+                )}
+              </div>
+              
+              {/* Current Price (editable) */}
+              <div className="flex justify-between items-center">
+                <span className="text-text-secondary">Current Price</span>
+                {isEditingPosition ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-text-muted">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editCurrentPrice}
+                      onChange={(e) => setEditCurrentPrice(e.target.value)}
+                      className="w-20 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                ) : isEditingPrice ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editPrice}
+                      onChange={(e) => setEditPrice(e.target.value)}
+                      className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
+                      placeholder={currentPrice.toFixed(2)}
+                      autoFocus
+                    />
+                    <button
+                      onClick={async () => {
+                        const price = parseFloat(editPrice);
+                        if (isNaN(price) || price <= 0) return;
+                        setIsSavingPrice(true);
+                        try {
+                          await apiClient.updateStockPrice(position.ticker, price);
+                          onUpdate();
+                          setIsEditingPrice(false);
+                        } catch (err) {
+                          console.error('Failed to update price:', err);
+                        } finally {
+                          setIsSavingPrice(false);
+                        }
+                      }}
+                      disabled={isSavingPrice}
+                      className="p-1 bg-positive/20 hover:bg-positive/30 text-positive rounded transition-colors"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setIsEditingPrice(false)}
+                      className="p-1 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-text-primary">${currentPrice.toFixed(2)}</span>
+                    <button
+                      onClick={() => {
+                        setEditPrice(currentPrice.toFixed(2));
+                        setIsEditingPrice(true);
+                      }}
+                      className="p-1 text-text-muted hover:text-accent transition-colors"
+                      title="Update price manually"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Currency (editable) */}
+              <div className="flex justify-between items-center">
+                <span className="text-text-secondary">Currency</span>
+                {isEditingPosition ? (
+                  <select
+                    value={editCurrency}
+                    onChange={(e) => setEditCurrency(e.target.value)}
+                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right text-sm focus:outline-none focus:border-accent"
+                  >
+                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                ) : (
+                  <span className="font-mono text-text-primary">{position.currency || 'USD'}</span>
+                )}
+              </div>
+              
+              <div className="border-t border-border pt-3 flex justify-between">
+                <span className="text-text-secondary">Cost Basis</span>
+                <span className="font-mono text-text-secondary">{formatCurrency(position.cost_basis, position.currency || 'USD')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Market Value</span>
+                <span className="font-mono text-text-primary">{formatCurrency(position.market_value, position.currency || 'USD')}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-text-secondary">Unrealized P/L</span>
+                <div className="text-right">
+                  <span className={`font-bold ${position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'}`}>
+                    {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
+                  </span>
+                  <div className={`text-xs ${position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'}`}>
+                    ({formatPercent(position.unrealized_pl_percent)})
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Free Ride Alert */}
+            {position.unrealized_pl_percent >= 150 && (
+              <div className="mt-4 p-3 bg-warning/20 border border-warning/50 rounded-lg">
+                <div className="flex items-center gap-2 text-warning font-bold mb-1">
+                  <Zap className="w-4 h-4" />
+                  Rule of 150%
+                </div>
+                <p className="text-warning/90 text-sm mb-2">
+                  Gain exceeds 150%. Consider selling half to lock in profits and ride free shares.
+                </p>
+                <button className="w-full py-2 bg-warning/30 hover:bg-warning/50 text-warning font-bold rounded-lg transition-colors">
+                  Take the Free Ride 🎰
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* MIDDLE: The Thesis */}
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Target className="w-4 h-4" /> Investment Thesis
+            </h3>
+            
+            {/* Narrative */}
+            <div className="mb-4">
+              <div className="text-xs text-text-muted uppercase mb-1">Latest Analysis</div>
+              <p className="text-text-secondary text-sm leading-relaxed">
+                {stock?.trade_rationale || stock?.edge || 'No analysis available. Run Deep DD to generate.'}
+              </p>
+            </div>
+
+            {/* Inflection Point Status */}
+            <div className="mb-4 p-3 bg-surface-hover/50 rounded-lg">
+              <div className="text-xs text-text-muted uppercase mb-1">Inflection Point</div>
+              <div className="flex items-center gap-2">
+                <span className={`w-3 h-3 rounded-full ${
+                  position.inflection_status === 'ACHIEVED' ? 'bg-positive' :
+                  position.inflection_status === 'UPCOMING' ? 'bg-warning animate-pulse' :
+                  'bg-slate-500'
+                }`} />
+                <span className="font-semibold text-text-primary">
+                  {position.inflection_status || 'PENDING'}
+                </span>
+              </div>
+            </div>
+
+            {/* Milestones */}
+            <div className="mb-4">
+              <div className="text-xs text-text-muted uppercase mb-2">Key Milestones</div>
+              <div className="space-y-2">
+                {stock?.catalysts?.split(',').slice(0, 3).map((catalyst, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <Check className="w-4 h-4 text-positive" />
+                    <span className="text-text-secondary">{catalyst.trim()}</span>
+                  </div>
+                )) || (
+                  <div className="text-text-muted text-sm">No milestones defined</div>
+                )}
+              </div>
+            </div>
+
+            {/* Catalysts */}
+            <div>
+              <div className="text-xs text-text-muted uppercase mb-2">Upcoming Catalysts</div>
+              <div className="flex flex-wrap gap-2">
+                {stock?.catalysts?.split(',').map((c, i) => (
+                  <span key={i} className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded">
+                    {c.trim()}
+                  </span>
+                )) || (
+                  <span className="text-text-muted text-sm">None identified</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: Valuation & Exit */}
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" /> Valuation & Exit
+            </h3>
+
+            {/* Price Axis Visualization */}
+            <div className="mb-6">
+              <div className="relative pt-8 pb-4">
+                {/* Labels */}
+                <div className="absolute top-0 left-0 text-xs text-text-muted">Floor</div>
+                <div className="absolute top-0 right-0 text-xs text-text-muted">Moon</div>
+                
+                {/* The Bar */}
+                <div className="h-4 bg-gradient-to-r from-positive via-warning to-negative rounded-full relative">
+                  {/* Current Price Marker */}
+                  <div 
+                    className="absolute top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded shadow-lg shadow-white/50"
+                    style={{ left: `${Math.max(0, Math.min(100, pricePosition))}%` }}
+                  >
+                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-bold text-text-primary bg-surface-base px-2 py-1 rounded">
+                      ${currentPrice.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Price Labels */}
+                <div className="flex justify-between mt-2 text-xs">
+                  <span className="text-positive">${greenLine.toFixed(2)}</span>
+                  <span className="text-warning">${redLine.toFixed(2)}</span>
+                  <span className="text-negative">${moonTarget.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-[10px] text-text-muted">
+                  <span>Conservative</span>
+                  <span>Base Case</span>
+                  <span>Optimistic</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Gomes Gap Analysis Recommendation */}
+            <div className="mb-4 p-3 bg-positive/10 border border-positive/30 rounded-lg">
+              <div className="text-xs text-text-muted uppercase mb-2">Gap Analysis - Tento měsíc</div>
+              
+              {/* Target vs Current Weight */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-text-secondary text-sm">Cílová váha:</span>
+                <span className="font-mono text-text-primary">{position.max_allocation_cap.toFixed(1)}%</span>
+              </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-text-secondary text-sm">Aktuální váha:</span>
+                <span className={`font-mono ${position.is_underweight ? 'text-warning' : position.is_overweight ? 'text-negative' : 'text-positive'}`}>
+                  {position.weight_in_portfolio.toFixed(1)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
+                <span className="text-text-secondary text-sm">Mezera (Gap):</span>
+                <span className={`font-mono font-bold ${position.gap_czk > 0 ? 'text-warning' : position.gap_czk < 0 ? 'text-negative' : 'text-positive'}`}>
+                  {position.gap_czk > 0 ? '+' : ''}{formatCurrency(position.gap_czk)}
+                </span>
+              </div>
+              
+              {/* Optimal Size */}
+              <div className="flex items-center justify-between">
+                <span className="text-text-secondary font-semibold">Doporučený vklad:</span>
+                {position.action_signal === 'SELL' ? (
+                  <span className="text-xl font-bold text-negative">PRODAT</span>
+                ) : (
+                  <span className={`text-xl font-bold ${position.optimal_size > 0 ? 'text-positive' : 'text-text-muted'}`}>
+                    {formatCurrency(position.optimal_size)}
+                  </span>
+                )}
+              </div>
+              
+              {position.action_signal === 'SNIPER' && (
+                <div className="mt-2 text-xs text-warning flex items-center gap-1">
+                  Sniper příležitost! Vysoké skóre + velká mezera.
+                </div>
+              )}
+              {position.optimal_size === 0 && position.gap_czk > MIN_INVESTMENT_CZK && position.action_signal !== 'SELL' && (
+                <div className="mt-2 text-xs text-text-muted">
+                  Nízká priorita - tento měsíc mají přednost lepší příležitosti
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2">
+              <button className="w-full py-2 bg-positive/20 hover:bg-positive/30 text-positive font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
+                <PlusCircle className="w-4 h-4" />
+                Add to Position
+              </button>
+              {position.unrealized_pl_percent >= 100 && (
+                <button className="w-full py-2 bg-warning/20 hover:bg-warning/30 text-warning font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
+                  <TrendingUp className="w-4 h-4" />
+                  Take Partial Profits (House Money)
+                </button>
+              )}
+              {position.is_deteriorated && (
+                <button className="w-full py-2 bg-negative/20 hover:bg-negative/30 text-negative font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  Close Entire Position
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom: Thesis Drift Log */}
+        <div className="p-4 border-t border-border">
+          <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Clock className="w-4 h-4" /> Score History (Thesis Drift)
+          </h3>
+          <div className="flex gap-4 overflow-x-auto pb-2">
+            {/* Mock history - should come from score_history API */}
+            {[
+              { date: '2026-01-20', score: 8, status: 'IMPROVED' },
+              { date: '2026-01-10', score: 7, status: 'STABLE' },
+              { date: '2025-12-15', score: 6, status: 'DETERIORATED' },
+            ].map((entry, i) => (
+              <div key={i} className="flex-shrink-0 p-3 bg-surface-raised rounded-lg border border-border min-w-[120px]">
+                <div className="text-xs text-text-muted">{entry.date}</div>
+                <div className={`text-2xl font-black ${
+                  entry.score >= 7 ? 'text-positive' : 
+                  entry.score >= 5 ? 'text-warning' : 
+                  'text-negative'
+                }`}>
+                  {entry.score}/10
+                </div>
+                <div className={`text-xs ${
+                  entry.status === 'IMPROVED' ? 'text-positive' :
+                  entry.status === 'DETERIORATED' ? 'text-negative' :
+                  'text-text-secondary'
+                }`}>
+                  {entry.status}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// WATCHLIST DETAIL MODAL (for stocks not owned)
+// ============================================================================
+
+interface WatchlistDetailModalProps {
+  stock: Stock;
+  onClose: () => void;
+  onUpdate: () => void;
+}
+
+const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onClose, onUpdate }) => {
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [updateText, setUpdateText] = useState('');
+  const [sourceType, setSourceType] = useState<'earnings' | 'news' | 'chat' | 'transcript' | 'manual'>('manual');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateResult, setUpdateResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const scoreColor = stock.conviction_score 
+    ? stock.conviction_score >= 7 ? 'bg-positive/20 text-positive' 
+      : stock.conviction_score >= 5 ? 'bg-warning/20 text-warning' 
+      : 'bg-negative/20 text-negative'
+    : 'bg-surface-hover text-text-muted';
+
+  const handleUpdate = async () => {
+    if (!updateText.trim() || updateText.length < 50) {
+      setUpdateResult({ success: false, message: 'Text must be at least 50 characters.' });
+      return;
+    }
+    
+    setIsUpdating(true);
+    setUpdateResult(null);
+    
+    try {
+      const result = await apiClient.updateStockAnalysis(stock.ticker, updateText, sourceType);
+      
+      if (result.success) {
+        const driftLabel = result.thesis_drift === 'IMPROVED' ? '[UP]' : 
+                          result.thesis_drift === 'DETERIORATED' ? '[DOWN]' : '[STABLE]';
+        setUpdateResult({ 
+          success: true, 
+          message: `${driftLabel} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
+        });
+        setTimeout(() => {
+          onUpdate();
+          setShowUpdateForm(false);
+          setUpdateText('');
+        }, 2000);
+      }
+    } catch {
+      setUpdateResult({ success: false, message: 'Update failed. Please try again.' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-surface-base border border-info/50 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-surface-base border-b border-info/50 p-4 flex items-center justify-between z-10">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-2xl ${scoreColor}`}>
+              {stock.conviction_score ?? '?'}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-black text-text-primary">{stock.ticker}</h2>
+                <span className="px-2 py-0.5 bg-info/20 text-info text-xs font-bold rounded">
+                  WATCHLIST
+                </span>
+              </div>
+              <p className="text-text-secondary">{stock.company_name || 'Unknown Company'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setShowUpdateForm(!showUpdateForm)}
+              className="px-3 py-2 bg-info hover:bg-info/80 text-text-primary rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Update Analysis
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+              <X className="w-6 h-6 text-text-secondary" />
+            </button>
+          </div>
+        </div>
+
+        {/* Update Form */}
+        {showUpdateForm && (
+          <div className="p-4 bg-info/10 border-b border-info/30">
+            <h3 className="text-lg font-bold text-info mb-3 flex items-center gap-2">
+              <PlusCircle className="w-5 h-5" />
+              Add New Intelligence for {stock.ticker}
+            </h3>
+            
+            <div className="flex gap-2 mb-3">
+              {[
+                { value: 'earnings', label: 'Earnings Call' },
+                { value: 'news', label: 'News/PR' },
+                { value: 'transcript', label: 'Video Transcript' },
+                { value: 'chat', label: 'Research Note' },
+                { value: 'manual', label: 'Manual Entry' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSourceType(opt.value as typeof sourceType)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    sourceType === opt.value
+                      ? 'bg-info text-text-primary'
+                      : 'bg-surface-hover text-text-secondary hover:bg-slate-600'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            
+            <textarea
+              value={updateText}
+              onChange={(e) => setUpdateText(e.target.value)}
+              placeholder="Paste new information about this stock..."
+              rows={4}
+              className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-info resize-none mb-3"
+            />
+            
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-text-muted">{updateText.length} characters (min. 50)</div>
+              <div className="flex items-center gap-3">
+                {updateResult && (
+                  <span className={`text-sm ${updateResult.success ? 'text-positive' : 'text-negative'}`}>
+                    {updateResult.message}
+                  </span>
+                )}
+                <button
+                  onClick={handleUpdate}
+                  disabled={isUpdating || updateText.length < 50}
+                  className="px-4 py-2 bg-info hover:bg-info/80 disabled:bg-slate-600 text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
+                >
+                  {isUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                  {isUpdating ? 'Processing...' : 'Run Analysis'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Left: Analysis */}
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4">Investment Thesis</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <div className="text-xs text-text-muted uppercase mb-1">Trade Rationale</div>
+                <p className="text-text-secondary text-sm">
+                  {stock.trade_rationale || stock.edge || 'No analysis available.'}
+                </p>
+              </div>
+              
+              <div>
+                <div className="text-xs text-text-muted uppercase mb-1">Catalysts</div>
+                <p className="text-text-secondary text-sm">
+                  {stock.catalysts || 'No catalysts identified.'}
+                </p>
+              </div>
+              
+              <div>
+                <div className="text-xs text-text-muted uppercase mb-1">Risks</div>
+                <p className="text-negative/80 text-sm">
+                  {stock.risks || 'No risks documented.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Valuation */}
+          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
+            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4">Valuation & Targets</h3>
+            
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Verdict</span>
+                <span className={`font-bold px-2 py-0.5 rounded text-sm ${
+                  stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
+                  stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
+                  stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-accent' :
+                  'bg-surface-hover text-text-secondary'
+                }`}>
+                  {stock.action_verdict || 'N/A'}
+                </span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Current Price</span>
+                <span className="font-mono text-text-primary">${stock.current_price?.toFixed(2) || 'N/A'}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Entry Zone (Green)</span>
+                <span className="font-mono text-positive">${stock.green_line?.toFixed(2) || 'N/A'}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Target (Red)</span>
+                <span className="font-mono text-negative">${stock.red_line?.toFixed(2) || 'N/A'}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Price Zone</span>
+                <span className={`font-bold px-2 py-0.5 rounded text-sm ${
+                  stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
+                  stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
+                  stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-accent' :
+                  stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
+                  'bg-surface-hover text-text-secondary'
+                }`}>
+                  {stock.price_zone || 'N/A'}
+                </span>
+              </div>
+              
+              {stock.price_target && (
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Price Target</span>
+                  <span className="font-mono text-text-primary">{stock.price_target}</span>
+                </div>
+              )}
+              
+              {stock.moat_rating && (
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Moat Rating</span>
+                  <span className="font-bold text-warning">{stock.moat_rating}/5</span>
+                </div>
+              )}
+            </div>
+            
+            {/* Buy Signal */}
+            {stock.conviction_score && stock.conviction_score >= 7 && stock.price_zone && ['DEEP_VALUE', 'BUY_ZONE', 'ACCUMULATE'].includes(stock.price_zone) && (
+              <div className="mt-4 p-3 bg-positive/20 border border-positive/50 rounded-lg">
+                <div className="flex items-center gap-2 text-positive font-bold">
+                  <Target className="w-4 h-4" />
+                  Strong Buy Signal
+                </div>
+                <p className="text-positive/90 text-sm mt-1">
+                  High score ({stock.conviction_score}/10) + undervalued zone. Consider initiating position.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// IMPORT CSV MODAL
+// ============================================================================
+
+interface ImportCSVModalProps {
+  onClose: () => void;
+  onSuccess: () => void;
+  portfolios: PortfolioSummary[];
+}
+
+const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, portfolios }) => {
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(
+    portfolios.length > 0 ? portfolios[0].portfolio.id : null
+  );
+  const [broker, setBroker] = useState<BrokerType>('DEGIRO');
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [showNewPortfolio, setShowNewPortfolio] = useState(portfolios.length === 0);
+  const [newPortfolioName, setNewPortfolioName] = useState('');
+  const [newPortfolioOwner, setNewPortfolioOwner] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setError(null);
+    }
+  };
+
+  const handleCreatePortfolio = async () => {
+    if (!newPortfolioName.trim()) {
+      setError('Portfolio name is required');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const portfolio = await apiClient.createPortfolio(
+        newPortfolioName,
+        newPortfolioOwner || 'Me',
+        broker
+      );
+      setSelectedPortfolioId(portfolio.id);
+      setShowNewPortfolio(false);
+      
+      // If file is already selected, upload it immediately
+      if (file) {
+        setSuccess(`Portfolio "${portfolio.name}" created! Uploading CSV...`);
+        try {
+          const result = await apiClient.uploadCSV(portfolio.id, broker, file);
+          setSuccess(`Imported ${result.positions_created} positions successfully!`);
+          onSuccess();
+          setTimeout(() => onClose(), 1500);
+        } catch (uploadErr) {
+          setError('Portfolio created, but CSV upload failed. Try importing again.');
+          onSuccess(); // Still refresh to show new portfolio
+        }
+      } else {
+        setSuccess(`Portfolio "${portfolio.name}" created! Now select a CSV file.`);
+        onSuccess();
+      }
+    } catch (err) {
+      setError('Failed to create portfolio');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError('Please select a CSV file');
+      return;
+    }
+    if (!selectedPortfolioId) {
+      setError('Please select or create a portfolio first');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const result = await apiClient.uploadCSV(selectedPortfolioId, broker, file);
+      
+      if (result.success) {
+        setSuccess(`Imported ${result.positions_created} new, updated ${result.positions_updated} positions`);
+        setTimeout(() => {
+          onSuccess();
+          onClose();
+        }, 1500);
+      } else {
+        setError(result.message || 'Import failed');
+      }
+    } catch (err) {
+      setError('Upload failed. Check file format.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-surface-base border border-positive/50 rounded-2xl w-full max-w-lg">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5 text-positive" />
+            Import Portfolio CSV
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+            <X className="w-5 h-5 text-text-secondary" />
+          </button>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {/* Broker Selection */}
+          <div>
+            <label className="text-sm text-text-secondary block mb-2">Broker</label>
+            <div className="flex gap-2">
+              {[
+                { value: 'DEGIRO', label: 'DEGIRO' },
+                { value: 'T212', label: 'Trading 212' },
+                { value: 'XTB', label: 'XTB' },
+              ].map((b) => (
+                <button
+                  key={b.value}
+                  onClick={() => setBroker(b.value as BrokerType)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    broker === b.value
+                      ? 'bg-positive text-text-primary'
+                      : 'bg-surface-hover text-text-secondary hover:bg-slate-600'
+                  }`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Portfolio Selection */}
+          {!showNewPortfolio && portfolios.length > 0 ? (
+            <div>
+              <label className="text-sm text-text-secondary block mb-2">Target Portfolio</label>
+              <div className="flex gap-2">
+                <select
+                  value={selectedPortfolioId || ''}
+                  onChange={(e) => setSelectedPortfolioId(Number(e.target.value))}
+                  className="flex-1 px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary focus:outline-none focus:border-positive"
+                >
+                  {portfolios.map((p) => (
+                    <option key={p.portfolio.id} value={p.portfolio.id}>
+                      {p.portfolio.name} ({p.portfolio.owner})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setShowNewPortfolio(true)}
+                  className="px-3 py-2 bg-surface-hover hover:bg-slate-600 rounded-lg text-text-secondary"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 p-3 bg-surface-raised/50 rounded-lg border border-border">
+              <div className="text-sm text-text-secondary font-medium">Create New Portfolio</div>
+              <input
+                type="text"
+                value={newPortfolioName}
+                onChange={(e) => setNewPortfolioName(e.target.value)}
+                placeholder="Portfolio name (e.g., Main, Wife, Kids)"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-positive"
+              />
+              <input
+                type="text"
+                value={newPortfolioOwner}
+                onChange={(e) => setNewPortfolioOwner(e.target.value)}
+                placeholder="Owner name (optional)"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-positive"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCreatePortfolio}
+                  disabled={loading || !newPortfolioName.trim()}
+                  className="flex-1 px-4 py-2 bg-positive hover:bg-positive/80 disabled:bg-slate-600 text-text-primary rounded-lg font-medium"
+                >
+                  Create Portfolio
+                </button>
+                {portfolios.length > 0 && (
+                  <button
+                    onClick={() => setShowNewPortfolio(false)}
+                    className="px-4 py-2 bg-surface-hover text-text-secondary rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* File Upload */}
+          <div>
+            <label className="text-sm text-text-secondary block mb-2">CSV File</label>
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                file 
+                  ? 'border-positive bg-positive/10' 
+                  : 'border-border hover:border-slate-500 bg-surface-raised/50'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              {file ? (
+                <div className="flex items-center justify-center gap-2 text-positive">
+                  <FileSpreadsheet className="w-6 h-6" />
+                  <span className="font-medium">{file.name}</span>
+                </div>
+              ) : (
+                <div className="text-text-secondary">
+                  <Upload className="w-8 h-8 mx-auto mb-2" />
+                  <p>Click to select CSV file</p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Export from {broker === 'DEGIRO' ? 'DEGIRO' : broker === 'T212' ? 'Trading 212' : 'XTB'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Error/Success Messages */}
+          {error && (
+            <div className="p-3 bg-negative/10 border border-negative/50 rounded-lg text-negative text-sm">
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="p-3 bg-positive/10 border border-positive/50 rounded-lg text-positive text-sm">
+              {success}
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-border flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={!file || !selectedPortfolioId || loading}
+            className="px-6 py-2 bg-positive hover:bg-positive/80 disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+          >
+            {loading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            Import
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// ADD POSITION MODAL (Manual Entry)
+// ============================================================================
+
+interface AddPositionModalProps {
+  onClose: () => void;
+  onSuccess: () => void;
+  portfolios: PortfolioSummary[];
+}
+
+const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess, portfolios }) => {
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(
+    portfolios.length > 0 ? portfolios[0].portfolio.id : null
+  );
+  const [ticker, setTicker] = useState('');
+  const [shares, setShares] = useState('');
+  const [avgCost, setAvgCost] = useState('');
+  const [currentPrice, setCurrentPrice] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!ticker.trim() || !shares || !avgCost) {
+      setError('Ticker, shares, and average cost are required');
+      return;
+    }
+    if (!selectedPortfolioId) {
+      setError('Please select a portfolio or import CSV first');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Use the positions API to add position
+      await apiClient.addPosition(selectedPortfolioId, {
+        ticker: ticker.toUpperCase(),
+        shares_count: parseFloat(shares),
+        avg_cost: parseFloat(avgCost),
+        current_price: currentPrice ? parseFloat(currentPrice) : parseFloat(avgCost),
+      });
+      
+      setSuccess(`Position ${ticker.toUpperCase()} added!`);
+      setTimeout(() => {
+        onSuccess();
+        onClose();
+      }, 1000);
+    } catch (err) {
+      setError('Failed to add position');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-surface-base border border-border rounded-2xl w-full max-w-md">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <Plus className="w-5 h-5 text-accent" />
+            Add Position Manually
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+            <X className="w-5 h-5 text-text-secondary" />
+          </button>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {portfolios.length === 0 ? (
+            <div className="p-4 bg-warning/10 border border-warning/50 rounded-lg text-warning text-sm">
+              <AlertTriangle className="w-5 h-5 inline mr-2" />
+              No portfolios yet. Import a CSV first to create a portfolio.
+            </div>
+          ) : (
+            <>
+              {/* Portfolio Selection */}
+              <div>
+                <label className="text-sm text-text-secondary block mb-2">Portfolio</label>
+                <select
+                  value={selectedPortfolioId || ''}
+                  onChange={(e) => setSelectedPortfolioId(Number(e.target.value))}
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+                >
+                  {portfolios.map((p) => (
+                    <option key={p.portfolio.id} value={p.portfolio.id}>
+                      {p.portfolio.name} ({p.portfolio.owner})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Ticker */}
+              <div>
+                <label className="text-sm text-text-secondary block mb-2">Ticker Symbol</label>
+                <input
+                  type="text"
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                  placeholder="e.g., GKPRF"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                />
+              </div>
+
+              {/* Shares & Cost */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-text-secondary block mb-2">Shares</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={shares}
+                    onChange={(e) => setShares(e.target.value)}
+                    placeholder="100"
+                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-text-secondary block mb-2">Avg. Cost ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={avgCost}
+                    onChange={(e) => setAvgCost(e.target.value)}
+                    placeholder="1.50"
+                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              {/* Current Price (Optional) */}
+              <div>
+                <label className="text-sm text-text-secondary block mb-2">Current Price (optional)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={currentPrice}
+                  onChange={(e) => setCurrentPrice(e.target.value)}
+                  placeholder="Leave empty to use avg. cost"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Error/Success Messages */}
+          {error && (
+            <div className="p-3 bg-negative/10 border border-negative/50 rounded-lg text-negative text-sm">
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="p-3 bg-positive/10 border border-positive/50 rounded-lg text-positive text-sm">
+              {success}
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-border flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading || portfolios.length === 0}
+            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+          >
+            {loading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+            Add Position
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// NEW ANALYSIS MODAL
+// ============================================================================
+
+interface NewAnalysisModalProps {
+  onClose: () => void;
+  onSubmit: (transcript: string, ticker?: string, sourceType?: 'text' | 'youtube' | 'google-docs', url?: string) => void;
+}
+
+const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }) => {
+  const [inputType, setInputType] = useState<'text' | 'youtube' | 'google-docs'>('text');
+  const [transcript, setTranscript] = useState('');
+  const [url, setUrl] = useState('');
+  const [ticker, setTicker] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    setError(null);
+    
+    if (inputType === 'text' && !transcript.trim()) {
+      setError('Please enter transcript text');
+      return;
+    }
+    if ((inputType === 'youtube' || inputType === 'google-docs') && !url.trim()) {
+      setError('Please enter a URL');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      await onSubmit(transcript, ticker || undefined, inputType, url || undefined);
+      onClose();
+    } catch (err) {
+      setError('Analysis failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-surface-base border border-border rounded-2xl w-full max-w-2xl">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <Zap className="w-5 h-5 text-warning" />
+            New Deep Due Diligence
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
+            <X className="w-5 h-5 text-text-secondary" />
+          </button>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {/* Input Type Selector */}
+          <div className="flex gap-2 p-1 bg-surface-raised rounded-lg">
+            <button
+              onClick={() => setInputType('text')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'text' 
+                  ? 'bg-accent text-text-primary' 
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              Text / Transcript
+            </button>
+            <button
+              onClick={() => setInputType('youtube')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'youtube' 
+                  ? 'bg-red-600 text-text-primary' 
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              YouTube
+            </button>
+            <button
+              onClick={() => setInputType('google-docs')}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                inputType === 'google-docs' 
+                  ? 'bg-blue-600 text-text-primary' 
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              Google Docs
+            </button>
+          </div>
+          
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-negative/20 border border-negative/50 rounded-lg text-negative/80 text-sm">
+              {error}
+            </div>
+          )}
+          
+          {/* Ticker (optional for all types) */}
+          <div>
+            <label className="text-sm text-text-secondary block mb-2">Ticker Symbol (optional - auto-detected)</label>
+            <input
+              type="text"
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value.toUpperCase())}
+              placeholder="e.g. GKPRF"
+              className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+            />
+          </div>
+          
+          {/* URL Input for YouTube / Google Docs */}
+          {(inputType === 'youtube' || inputType === 'google-docs') && (
+            <div>
+              <label className="text-sm text-text-secondary block mb-2">
+                {inputType === 'youtube' ? 'YouTube Video URL' : 'Google Docs URL'}
+              </label>
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder={
+                  inputType === 'youtube' 
+                    ? 'https://www.youtube.com/watch?v=...' 
+                    : 'https://docs.google.com/document/d/...'
+                }
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+              />
+              <p className="mt-2 text-xs text-text-muted">
+                {inputType === 'youtube' 
+                  ? 'AI will automatically transcribe the video and extract stock analysis.' 
+                  : 'Make sure the document is shared with "Anyone with the link can view".'}
+              </p>
+            </div>
+          )}
+          
+          {/* Text Input */}
+          {inputType === 'text' && (
+            <div>
+              <label className="text-sm text-text-secondary block mb-2">Transcript / Research Notes</label>
+              <textarea
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                placeholder="Paste earnings call transcript, video notes, or research analysis..."
+                rows={10}
+                className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent resize-none"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-border flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+          >
+            {loading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Target className="w-4 h-4" />
+            )}
+            {loading ? 'Analyzing...' : 'Run Analysis'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// GOMES LOGIC - Max Allocation Calculator (Frontend Implementation)
+// ============================================================================
+
+/**
+ * Calculate max allocation cap using Gomes Logic rules.
+ * 
+ * Base Caps by Asset Class:
+ * - ANCHOR: 12%
+ * - HIGH_BETA_ROCKET: 8%
+ * - BIOTECH_BINARY: 3%
+ * - TURNAROUND: 2%
+ * - VALUE_TRAP: 0%
+ * 
+ * Safety Multipliers:
+ * - Score < 7: 0.5x
+ * - Cash Runway < 6 months: 0.0x (STOP)
+ * - Cash Runway < 12 months: 0.7x
+ * - Inflection Status = ACTIVE_GOLD_MINE: 1.2x
+ */
+function calculateMaxAllocationCap(
+  stock: Stock | undefined,
+  gomesScore: number | null,
+  fallbackTarget: number
+): number {
+  // If stock has pre-calculated cap from backend, use it
+  if (stock?.max_allocation_cap) {
+    return stock.max_allocation_cap;
+  }
+
+  // Determine asset class
+  const assetClass = stock?.asset_class?.toUpperCase();
+  
+  // Base caps by asset class
+  let baseCap: number;
+  switch (assetClass) {
+    case 'ANCHOR':
+      baseCap = 12.0;
+      break;
+    case 'HIGH_BETA_ROCKET':
+      baseCap = 8.0;
+      break;
+    case 'BIOTECH_BINARY':
+      baseCap = 3.0;
+      break;
+    case 'TURNAROUND':
+      baseCap = 2.0;
+      break;
+    case 'VALUE_TRAP':
+      baseCap = 0.0;
+      break;
+    default:
+      // Unknown asset class: use score-based fallback
+      if (gomesScore !== null && gomesScore >= 9) {
+        baseCap = 8.0; // Treat as High Beta Rocket
+      } else if (gomesScore !== null && gomesScore >= 7) {
+        baseCap = 12.0; // Treat as Anchor
+      } else {
+        return fallbackTarget; // Use old logic
+      }
+  }
+
+  // Start with base cap
+  let finalCap = baseCap;
+
+  // Safety Multiplier 1: Conviction Score
+  if (gomesScore !== null && gomesScore < 7) {
+    finalCap *= 0.5; // Reduce by half if low quality
+  }
+
+  // Safety Multiplier 2: Cash Runway
+  const cashRunway = stock?.cash_runway_months;
+  if (cashRunway !== null && cashRunway !== undefined) {
+    if (cashRunway < 6) {
+      finalCap = 0.0; // HARD STOP - insolvency risk
+    } else if (cashRunway < 12) {
+      finalCap *= 0.7; // Reduce allocation
+    }
+  }
+
+  // Safety Multiplier 3: Inflection Status
+  const inflectionStatus = stock?.inflection_status?.toUpperCase();
+  if (inflectionStatus === 'ACTIVE_GOLD_MINE') {
+    finalCap *= 1.2; // Increase allocation for active inflection
+  }
+
+  return Math.max(0, finalCap);
+}
+
+// ============================================================================
+// MAIN DASHBOARD COMPONENT
+// ============================================================================
+
+export const InvestmentTerminal: React.FC = () => {
+  const [loading, setLoading] = useState(true);
+  const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
+  const [stocks, setStocks] = useState<Stock[]>([]);
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ EUR: 25, USD: 24 });
+  const [familyGaps, setFamilyGaps] = useState<FamilyAuditResponse | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<EnrichedPosition | null>(null);
+  const [selectedWatchlistStock, setSelectedWatchlistStock] = useState<Stock | null>(null);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showAddPositionModal, setShowAddPositionModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'weight' | 'score' | 'pl'>('score');
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'freedom'>('portfolio');
+  
+  // Cash editing state
+  const [isEditingCash, setIsEditingCash] = useState(false);
+  const [editCashValue, setEditCashValue] = useState('');
+  const [editCashCurrency, setEditCashCurrency] = useState('CZK');
+  const [isSavingCash, setIsSavingCash] = useState(false);
+  
+  // Monthly contribution editing state
+  const [isEditingContribution, setIsEditingContribution] = useState(false);
+  const [editContributionValue, setEditContributionValue] = useState('');
+  const [editContributionPortfolioId, setEditContributionPortfolioId] = useState<number | null>(null);
+  const [isSavingContribution, setIsSavingContribution] = useState(false);
+  
+  // Available currencies for cash
+  const CASH_CURRENCIES = ['CZK', 'EUR', 'USD', 'CAD', 'GBP'];
+  
+  // Refresh portfolios helper
+  const refreshPortfolios = async () => {
+    const portfolioList = await apiClient.getPortfolios();
+    const summaries: PortfolioSummary[] = [];
+    for (const p of portfolioList) {
+      try {
+        const summary = await apiClient.getPortfolioSummary(p.id);
+        summaries.push(summary);
+      } catch { /* skip */ }
+    }
+    setPortfolios(summaries);
+  };
+
+  // Fetch all data
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // Fetch exchange rates from CNB
+        try {
+          const ratesData = await apiClient.getExchangeRates();
+          setExchangeRates(ratesData.rates);
+        } catch {
+          console.warn('Failed to fetch exchange rates, using fallback');
+        }
+        
+        // Fetch portfolios
+        const portfolioList = await apiClient.getPortfolios();
+        const summaries: PortfolioSummary[] = [];
+        
+        for (const p of portfolioList) {
+          try {
+            const summary = await apiClient.getPortfolioSummary(p.id);
+            summaries.push(summary);
+          } catch {
+            // Skip failed portfolio
+          }
+        }
+        setPortfolios(summaries);
+
+        // Fetch stocks for Gomes data
+        const stocksData = await apiClient.getStocks();
+        setStocks(stocksData.stocks);
+
+        // Fetch family gaps
+        try {
+          const gaps = await apiClient.getFamilyAudit();
+          setFamilyGaps(gaps);
+        } catch {
+          // No family audit available
+        }
+      } catch (err) {
+        console.error('Failed to fetch data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Calculate family portfolio data
+  const familyData: FamilyPortfolioData = useMemo(() => {
+    let totalValue = 0;
+    let totalCash = 0;
+    const allPositions: EnrichedPosition[] = [];
+    let rocketCount = 0;      // Score >= 7 (Growth)
+    let anchorCount = 0;      // Score 5-6 (Core)
+    let waitTimeCount = 0;    // Score 1-4 (Wait Time/Avoid)
+    let unanalyzedCount = 0;  // No score yet (needs Deep DD)
+
+    // First pass: calculate total value and monthly contribution
+    let totalMonthlyContribution = 0;
+    for (const portfolio of portfolios) {
+      totalValue += portfolio.total_market_value || 0;
+      totalCash += portfolio.cash_balance || 0;
+      // Sum up monthly contributions from all portfolios
+      totalMonthlyContribution += portfolio.portfolio.monthly_contribution ?? DEFAULT_MONTHLY_CONTRIBUTION;
+    }
+    
+    // Include cash in total
+    const grandTotal = totalValue + totalCash;
+    
+    // EUR equivalent using live CNB rates
+    const eurRate = exchangeRates.EUR || 25;
+    const totalValueEUR = grandTotal / eurRate;
+
+    // ========================================================================
+    // GOMES GAP ANALYSIS - Výpočet mezer a optimal size
+    // ========================================================================
+    
+    // Temporary array to collect positions before priority sorting
+    const tempPositions: EnrichedPosition[] = [];
+    
+    for (const portfolio of portfolios) {
+      for (const pos of portfolio.positions) {
+        // Find matching stock from Gomes analysis (may not exist)
+        const stock = stocks.find(s => s.ticker.toUpperCase() === pos.ticker.toUpperCase());
+        const gomesScore = stock?.conviction_score ?? null;
+        
+        // 1. Cílová váha podle skóre (Target Weight)
+        const targetWeightPct = getTargetWeight(gomesScore);
+        
+        // 2. Aktuální váha v portfoliu
+        const positionValueOriginal = pos.market_value > 0 ? pos.market_value : pos.cost_basis;
+        const positionCurrency = pos.currency || 'CZK';
+        const currencyRate = exchangeRates[positionCurrency] || 1;
+        const positionValueCZK = positionValueOriginal * currencyRate;
+        const currentWeightPct = grandTotal > 0 ? (positionValueCZK / grandTotal) * 100 : 0;
+        
+        // Calculate max_allocation_cap using Gomes Logic
+        const maxAllocationCap = calculateMaxAllocationCap(stock, gomesScore, targetWeightPct);
+        
+        // 3. GAP ANALYSIS - Kolik CZK chybí/přebývá
+        // Gap = (Total_AUM * Max_Allocation_Cap) - Current_Value
+        // Uses max_allocation_cap (dynamic from Gomes Logic) instead of targetWeightPct
+        const targetValueCZK = (grandTotal * maxAllocationCap) / 100;
+        const gapCZK = targetValueCZK - positionValueCZK;
+        
+        // 4. Action signal based on score and gap
+        const actionSignal = getActionSignal(gomesScore, currentWeightPct, maxAllocationCap);
+        
+        // 5. Classify for risk meter
+        if (gomesScore !== null && gomesScore >= 9) {
+          rocketCount++;
+        } else if (gomesScore !== null && gomesScore >= 7) {
+          anchorCount++;
+        } else if (gomesScore !== null && gomesScore >= 5) {
+          waitTimeCount++;
+        } else if (gomesScore !== null) {
+          waitTimeCount++; // 1-4 = sell candidates
+        } else {
+          unanalyzedCount++;
+        }
+
+        // Calculate optimal_size for OVERWEIGHT positions (how much to SELL)
+        let initialOptimalSize = 0;
+        if (currentWeightPct > maxAllocationCap && gapCZK < 0) {
+          // OVERWEIGHT: optimal_size = negative (amount to SELL in CZK)
+          initialOptimalSize = Math.round(gapCZK); // gapCZK is already negative
+        }
+
+        const enriched: EnrichedPosition = {
+          ...pos,
+          stock,
+          conviction_score: gomesScore,
+          max_allocation_cap: maxAllocationCap,
+          weight_in_portfolio: currentWeightPct,
+          gap_czk: gapCZK,
+          optimal_size: initialOptimalSize, // Negative for OVERWEIGHT, will be recalculated for UNDERWEIGHT
+          allocation_priority: 999, // Will be set after sorting
+          trend_status: getTrendStatus(stock),
+          is_deteriorated: gomesScore !== null && gomesScore < 4,
+          is_overweight: currentWeightPct > maxAllocationCap,
+          is_underweight: currentWeightPct < maxAllocationCap && gapCZK > MIN_INVESTMENT_CZK,
+          action_signal: actionSignal,
+          inflection_status: 'UPCOMING',
+          next_catalyst: stock?.next_catalyst ?? undefined,
+        };
+
+        tempPositions.push(enriched);
+      }
+    }
+    
+    // ========================================================================
+    // PRIORITIZACE A DISTRIBUCE MĚSÍČNÍHO VKLADU
+    // ========================================================================
+    
+    // Sort by: 1) Score (highest first), 2) Gap (largest positive first)
+    // Only positions with score >= 5 and positive gap get allocation
+    const sortedForAllocation = [...tempPositions]
+      .filter(p => p.conviction_score !== null && p.conviction_score >= 5 && p.gap_czk > 0)
+      .sort((a, b) => {
+        // Primary: Higher score = higher priority
+        const scoreDiff = (b.conviction_score ?? 0) - (a.conviction_score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        // Secondary: Larger gap = higher priority
+        return b.gap_czk - a.gap_czk;
+      });
+    
+    // Distribute monthly contribution according to priority
+    let remainingBudget = totalMonthlyContribution;
+    
+    for (let i = 0; i < sortedForAllocation.length; i++) {
+      const pos = sortedForAllocation[i];
+      pos.allocation_priority = i + 1;
+      
+      if (remainingBudget <= 0) {
+        pos.optimal_size = 0;
+        continue;
+      }
+      
+      // Calculate how much to allocate (min of gap and remaining budget)
+      let allocation = Math.min(pos.gap_czk, remainingBudget);
+      
+      // Apply hard caps
+      // 1. Don't exceed max_allocation_cap (dynamic from Gomes Logic: 3-15%)
+      const currentValueCZK = (grandTotal * pos.weight_in_portfolio) / 100;
+      const maxAllowedValue = (grandTotal * pos.max_allocation_cap) / 100;
+      const maxAllocation = maxAllowedValue - currentValueCZK;
+      allocation = Math.min(allocation, Math.max(0, maxAllocation));
+      
+      // 2. If allocation < MIN_INVESTMENT, skip (not worth the fees)
+      if (allocation < MIN_INVESTMENT_CZK) {
+        allocation = 0;
+      }
+      
+      pos.optimal_size = Math.round(allocation);
+      remainingBudget -= pos.optimal_size;
+    }
+    
+    // Set priority=0 and optimal_size=0 for positions not in allocation list
+    // (score < 5 or negative gap or no score)
+    for (const pos of tempPositions) {
+      if (!sortedForAllocation.includes(pos)) {
+        pos.allocation_priority = 0;
+        pos.optimal_size = 0;
+      }
+    }
+    
+    // Copy to final array
+    allPositions.push(...tempPositions);
+
+    // Calculate risk score (only from analyzed positions)
+    const analyzedTotal = rocketCount + anchorCount + waitTimeCount;
+    const riskScore = analyzedTotal > 0 ? Math.round((rocketCount / analyzedTotal) * 100) : 0;
+
+    return {
+      totalValue: grandTotal,
+      totalValueEUR,
+      totalCash,
+      monthlyContribution: totalMonthlyContribution,
+      portfolios,
+      allPositions,
+      rocketCount,
+      anchorCount,
+      waitTimeCount,
+      unanalyzedCount,
+      riskScore,
+    };
+  }, [portfolios, stocks, exchangeRates]);
+
+  // Get tickers that are in portfolio (owned)
+  const ownedTickers = useMemo(() => {
+    return new Set(familyData.allPositions.map(p => p.ticker.toUpperCase()));
+  }, [familyData.allPositions]);
+
+  // Watchlist: stocks with analysis but NOT owned
+  const watchlistStocks = useMemo(() => {
+    return stocks.filter(s => !ownedTickers.has(s.ticker.toUpperCase()) && s.conviction_score !== null);
+  }, [stocks, ownedTickers]);
+
+  // Filter and sort positions
+  const displayedPositions = useMemo(() => {
+    let filtered = [...familyData.allPositions];
+
+    // Search filter
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.ticker.toLowerCase().includes(q) ||
+        p.stock?.company_name?.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'weight':
+          return b.weight_in_portfolio - a.weight_in_portfolio;
+        case 'score':
+          return (b.conviction_score ?? 0) - (a.conviction_score ?? 0);
+        case 'pl':
+          return b.unrealized_pl_percent - a.unrealized_pl_percent;
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [familyData.allPositions, searchQuery, sortBy]);
+
+  // Filter and sort watchlist
+  const displayedWatchlist = useMemo(() => {
+    let filtered = [...watchlistStocks];
+
+    // Search filter
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(s => 
+        s.ticker.toLowerCase().includes(q) ||
+        s.company_name?.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort by score
+    filtered.sort((a, b) => (b.conviction_score ?? 0) - (a.conviction_score ?? 0));
+
+    return filtered;
+  }, [watchlistStocks, searchQuery]);
+
+  // Handle new analysis
+  const handleNewAnalysis = async (
+    transcript: string, 
+    ticker?: string, 
+    sourceType?: 'text' | 'youtube' | 'google-docs',
+    url?: string
+  ) => {
+    try {
+      if (sourceType === 'youtube' && url) {
+        // YouTube analysis
+        await apiClient.analyzeYouTube({ url, speaker: 'Mark Gomes' });
+      } else if (sourceType === 'google-docs' && url) {
+        // Google Docs analysis
+        await apiClient.analyzeGoogleDocs({ url, speaker: 'Mark Gomes' });
+      } else {
+        // Text/transcript analysis
+        await apiClient.runDeepDD(transcript, ticker);
+      }
+      // Refresh data
+      const stocksData = await apiClient.getStocks();
+      setStocks(stocksData.stocks);
+    } catch (err) {
+      console.error('Analysis failed:', err);
+      throw err; // Re-throw to show error in modal
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-12 h-12 text-accent animate-spin mx-auto mb-4" />
+          <p className="text-text-secondary">Loading portfolio data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-text-primary">
+      {/* HEADER */}
+      <header className="bg-surface-base/80 backdrop-blur-sm border-b border-slate-800 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Shield className="w-8 h-8 text-accent" />
+              <h1 className="text-2xl font-black tracking-tight">AKCION</h1>
+            </div>
+            
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              {/* Notification Bell */}
+              <NotificationBell 
+                onNotificationClick={(notification) => {
+                  if (notification.ticker) {
+                    // Open stock detail modal
+                    const position = familyData.allPositions.find(
+                      (p: EnrichedPosition) => p.ticker === notification.ticker
+                    );
+                    if (position) {
+                      setSelectedPosition(position);
+                    }
+                  }
+                }}
+              />
+              
+              {/* Import Portfolio */}
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="btn-secondary text-sm"
+              >
+                <Upload className="w-4 h-4" />
+                Import CSV
+              </button>
+              
+              {/* Add Position Manually */}
+              <button
+                onClick={() => setShowAddPositionModal(true)}
+                className="btn-secondary text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Add Position
+              </button>
+              
+              {/* New Analysis */}
+              <button
+                onClick={() => setShowAnalysisModal(true)}
+                className="btn-primary text-sm"
+              >
+                <PlusCircle className="w-5 h-5" />
+                New Analysis
+              </button>
+            </div>
+          </div>
+
+          {/* Stats Row */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Total Value with Target Progress */}
+            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
+              <div className="text-xs text-text-secondary uppercase tracking-wider">Total AUM</div>
+              <div className="text-2xl font-black text-text-primary mt-1">
+                {formatCurrency(familyData.totalValue)}
+              </div>
+              <div className="text-xs text-text-muted mt-0.5">
+                ≈ €{familyData.totalValueEUR.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
+              </div>
+              {/* Target Progress Bar - Goal: 500,000 CZK */}
+              <div className="mt-2">
+                <div className="flex justify-between items-center text-[10px] text-text-muted mb-1">
+                  <span>Target: 500k Kč</span>
+                  <span className="font-mono">{Math.min(100, (familyData.totalValue / 500000 * 100)).toFixed(0)}%</span>
+                </div>
+                <div className="h-1.5 bg-surface-hover rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-accent to-info transition-all duration-500"
+                    style={{ width: `${Math.min(100, familyData.totalValue / 500000 * 100)}%` }}
+                  />
+                </div>
+                {/* Estimated time to target */}
+                {(() => {
+                  const months = calculateMonthsToTarget(familyData.totalValue, 500000, 20000, 0.15);
+                  const years = Math.floor(months / 12);
+                  const remainingMonths = months % 12;
+                  return months > 0 ? (
+                    <div className="text-[10px] text-accent mt-1 flex items-center justify-center gap-1">
+                      <span>
+                        {years > 0 ? `${years}y ` : ''}{remainingMonths}m to target
+                        {' '}(15% return + 20k/mo)
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-positive mt-1">Target reached!</div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Cash (Munice) - Editable */}
+            <div className="bg-surface-raised/50 rounded-xl p-4 border border-positive/30 text-center">
+              <div className="flex items-center justify-center gap-2">
+                <div className="text-xs text-text-secondary uppercase tracking-wider">Available Cash</div>
+                {!isEditingCash && (
+                  <button
+                    onClick={() => {
+                      setEditCashValue(familyData.totalCash.toString());
+                      setEditCashCurrency('CZK');
+                      setIsEditingCash(true);
+                    }}
+                    className="p-1 text-text-muted hover:text-positive transition-colors"
+                    title="Edit cash balance"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              {isEditingCash ? (
+                <div className="mt-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={editCashValue}
+                      onChange={(e) => setEditCashValue(e.target.value)}
+                      className="flex-1 px-2 py-1 bg-surface-hover border border-positive/50 rounded text-text-primary font-mono text-lg focus:outline-none focus:border-positive"
+                      placeholder="0"
+                      autoFocus
+                    />
+                    <select
+                      value={editCashCurrency}
+                      onChange={(e) => setEditCashCurrency(e.target.value)}
+                      className="px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-sm focus:outline-none focus:border-positive"
+                    >
+                      {CASH_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={async () => {
+                        const amount = parseFloat(editCashValue);
+                        if (isNaN(amount) || amount < 0) return;
+                        setIsSavingCash(true);
+                        try {
+                          // Convert to CZK if different currency
+                          let amountInCZK = amount;
+                          if (editCashCurrency !== 'CZK') {
+                            const rate = exchangeRates[editCashCurrency] || 1;
+                            amountInCZK = amount * rate;
+                          }
+                          // Update cash for first portfolio
+                          if (portfolios.length > 0) {
+                            const portfolioId = portfolios[0].portfolio.id;
+                            console.log('Updating cash for portfolio', portfolioId, 'amount:', amountInCZK);
+                            await apiClient.updateCashBalance(portfolioId, amountInCZK);
+                            await refreshPortfolios();
+                          } else {
+                            console.error('No portfolios found!');
+                          }
+                          setIsEditingCash(false);
+                        } catch (err) {
+                          console.error('Failed to update cash:', err);
+                        } finally {
+                          setIsSavingCash(false);
+                        }
+                      }}
+                      disabled={isSavingCash}
+                      className="flex-1 py-1 bg-positive/20 hover:bg-positive/80/30 text-positive text-sm font-bold rounded transition-colors flex items-center justify-center gap-1"
+                    >
+                      {isSavingCash ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setIsEditingCash(false)}
+                      className="px-3 py-1 bg-slate-600 hover:bg-slate-500 text-text-secondary text-sm rounded transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="text-2xl font-black text-positive mt-1">
+                    {formatCurrency(familyData.totalCash)}
+                  </div>
+                  <div className="text-xs text-text-muted mt-0.5">
+                    ≈ €{(familyData.totalCash / (exchangeRates.EUR || 25)).toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
+                  </div>
+                  <div className="text-xs text-text-muted mt-1">
+                    {familyData.totalValue > 0 ? ((familyData.totalCash / familyData.totalValue) * 100).toFixed(1) : 0}% of portfolio
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Position Count */}
+            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
+              <div className="text-xs text-text-secondary uppercase tracking-wider">Positions</div>
+              <div className="text-2xl font-black text-text-primary mt-1">
+                {familyData.allPositions.length}
+              </div>
+              <div className="text-xs text-text-muted mt-1">
+                {familyData.allPositions.filter(p => p.is_deteriorated).length} require attention
+              </div>
+            </div>
+
+            {/* Risk Meter */}
+            <RiskMeter 
+              rocketCount={familyData.rocketCount}
+              anchorCount={familyData.anchorCount}
+              waitTimeCount={familyData.waitTimeCount}
+              unanalyzedCount={familyData.unanalyzedCount}
+              riskScore={familyData.riskScore}
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* MAIN CONTENT */}
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={() => setActiveTab('portfolio')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors ${
+              activeTab === 'portfolio'
+                ? 'bg-accent text-text-primary'
+                : 'bg-surface-raised text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+            }`}
+          >
+            <Briefcase className="w-5 h-5" />
+            Portfolio
+            <span className="ml-1 px-2 py-0.5 bg-black/20 rounded text-xs">
+              {familyData.allPositions.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('watchlist')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors ${
+              activeTab === 'watchlist'
+                ? 'bg-accent text-text-primary'
+                : 'bg-surface-raised text-text-muted hover:bg-surface-hover hover:text-text-primary'
+            }`}
+          >
+            <Eye className="w-5 h-5" />
+            Watchlist
+            <span className="ml-1 px-2 py-0.5 bg-black/20 rounded text-xs">
+              {watchlistStocks.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('freedom')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors ${
+              activeTab === 'freedom'
+                ? 'bg-warning text-text-primary'
+                : 'bg-surface-raised text-text-muted hover:bg-surface-hover hover:text-text-primary'
+            }`}
+          >
+            <Target className="w-5 h-5" />
+            Freedom
+            <span className="ml-1 text-lg">🏰</span>
+          </button>
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input
+              type="text"
+              placeholder={activeTab === 'portfolio' ? "Search positions..." : "Search watchlist..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent w-64"
+            />
+          </div>
+          
+          {activeTab === 'portfolio' && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Sort by:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
+                className="px-3 py-2 bg-surface-raised border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent"
+              >
+                <option value="score">Score</option>
+                <option value="weight">Weight</option>
+                <option value="pl">P/L %</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Portfolio Summary Stats */}
+        {activeTab === 'portfolio' && portfolios.length > 0 && (
+          <div className="grid grid-cols-4 gap-4 mb-4">
+            {(() => {
+              // Calculate totals across all portfolios
+              const totals = portfolios.reduce((acc, p) => ({
+                costBasis: acc.costBasis + (p.total_cost_basis || 0),
+                marketValue: acc.marketValue + (p.total_market_value || 0),
+                unrealizedPL: acc.unrealizedPL + (p.total_unrealized_pl || 0),
+                cash: acc.cash + (p.cash_balance || 0),
+              }), { costBasis: 0, marketValue: 0, unrealizedPL: 0, cash: 0 });
+              
+              const totalValue = totals.marketValue + totals.cash;
+              const plPercent = totals.costBasis > 0 
+                ? ((totals.marketValue / totals.costBasis) - 1) * 100 
+                : 0;
+              
+              return (
+                <>
+                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Total Value</div>
+                    <div className="text-2xl font-bold text-text-primary">
+                      {totalValue.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Cost Basis</div>
+                    <div className="text-2xl font-bold text-text-secondary">
+                      {totals.costBasis.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Unrealized P/L</div>
+                    <div className={`text-2xl font-bold ${totals.unrealizedPL >= 0 ? 'text-positive' : 'text-negative'}`}>
+                      {totals.unrealizedPL >= 0 ? '+' : ''}{totals.unrealizedPL.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
+                      <span className="text-sm ml-2">
+                        ({plPercent >= 0 ? '+' : ''}{plPercent.toFixed(2)}%)
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Cash Balance</div>
+                    <div className="text-2xl font-bold text-accent">
+                      {totals.cash.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Gomes Allocation Plan - Monthly Summary */}
+        {activeTab === 'portfolio' && (
+          <div className="mb-4 p-4 bg-surface-raised rounded-xl border border-positive/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-positive/10 rounded-lg">
+                  <Target className="w-5 h-5 text-positive" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-positive uppercase tracking-wider">
+                    Měsíční alokační plán
+                  </h3>
+                  {isEditingContribution ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-text-secondary">Rozpočet:</span>
+                      <input
+                        type="number"
+                        value={editContributionValue}
+                        onChange={(e) => setEditContributionValue(e.target.value)}
+                        className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-sm font-mono focus:outline-none focus:border-positive"
+                        placeholder="20000"
+                      />
+                      <span className="text-xs text-text-secondary">Kč</span>
+                      <button
+                        onClick={async () => {
+                          const amount = parseFloat(editContributionValue);
+                          if (isNaN(amount) || amount < 0) return;
+                          setIsSavingContribution(true);
+                          try {
+                            // Update monthly contribution for all portfolios proportionally
+                            // For simplicity, update first portfolio with total amount
+                            if (portfolios.length > 0) {
+                              const perPortfolio = amount / portfolios.length;
+                              for (const p of portfolios) {
+                                await apiClient.updateMonthlyContribution(p.portfolio.id, perPortfolio);
+                              }
+                              await refreshPortfolios();
+                            }
+                            setIsEditingContribution(false);
+                          } catch (err) {
+                            console.error('Failed to update contribution:', err);
+                          } finally {
+                            setIsSavingContribution(false);
+                          }
+                        }}
+                        disabled={isSavingContribution}
+                        className="p-1 bg-positive/20 hover:bg-positive/80/30 text-positive rounded transition-colors"
+                      >
+                        {isSavingContribution ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      </button>
+                      <button
+                        onClick={() => setIsEditingContribution(false)}
+                        className="p-1 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-text-secondary flex items-center gap-2">
+                      <span>
+                        Rozpočet: <span className="font-bold text-positive">{formatCurrency(familyData.monthlyContribution)}</span>
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEditContributionValue(familyData.monthlyContribution.toString());
+                          setIsEditingContribution(true);
+                        }}
+                        className="p-0.5 hover:bg-surface-hover rounded transition-colors"
+                        title="Upravit měsíční rozpočet"
+                      >
+                        <Edit3 className="w-3 h-3 text-text-muted hover:text-positive" />
+                      </button>
+                      <span className="text-slate-600">|</span>
+                      <span>Alokováno: {formatCurrency(familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
+                      <span className="text-slate-600">|</span>
+                      <span>Zbývá: {formatCurrency(familyData.monthlyContribution - familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+              
+              {/* Top 3 recommendations */}
+              <div className="flex items-center gap-2">
+                {familyData.allPositions
+                  .filter(p => p.optimal_size > 0)
+                  .sort((a, b) => a.allocation_priority - b.allocation_priority)
+                  .slice(0, 3)
+                  .map((pos, i) => (
+                    <div 
+                      key={pos.ticker}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                        i === 0 ? 'bg-positive/20 text-positive border border-positive/50' :
+                        'bg-surface-hover/50 text-text-secondary'
+                      }`}
+                    >
+                      {pos.action_signal === 'SNIPER' && '[S] '}
+                      {pos.ticker}: {formatCurrency(pos.optimal_size)}
+                    </div>
+                  ))
+                }
+                {familyData.allPositions.filter(p => p.action_signal === 'SELL').length > 0 && (
+                  <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-negative/20 text-negative border border-negative/50">
+                    {familyData.allPositions.filter(p => p.action_signal === 'SELL').length}x PRODAT
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Portfolio Table */}
+        {activeTab === 'portfolio' && (
+        <div className="bg-surface-base/50 rounded-xl border border-slate-800 overflow-hidden">
+          <table className="w-full table-fixed">
+            <thead>
+              <tr className="border-b border-border bg-surface-raised/50">
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">Symbol</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">Action</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">
+                  <div>Váha</div>
+                  <div className="text-[9px] text-text-muted font-normal">Aktuální / Cíl</div>
+                </th>
+                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[70px]">Score</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">
+                  <div>Price</div>
+                  <div className="text-[9px] text-text-muted font-normal">Current</div>
+                </th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">
+                  <div>Optimal Size</div>
+                  <div className="text-[9px] text-text-muted font-normal">Tento měsíc</div>
+                </th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Catalyst</th>
+                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">Trend</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Strategy</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">P/L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayedPositions.map((pos) => (
+                <PortfolioRow
+                  key={`${pos.portfolio_id}-${pos.ticker}`}
+                  position={pos}
+                  onClick={() => setSelectedPosition(pos)}
+                />
+              ))}
+              {displayedPositions.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="text-center py-12 text-text-muted">
+                    {searchQuery ? 'No positions found' : 'No positions in portfolio. Import your DEGIRO CSV to get started.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        )}
+
+        {/* Watchlist Table */}
+        {activeTab === 'watchlist' && (
+          <div className="bg-surface-raised rounded-xl border border-border overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border bg-surface-overlay">
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Symbol</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Company</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Score</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Verdict</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Price Zone</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayedWatchlist.map((stock) => {
+                  const scoreColor = stock.conviction_score 
+                    ? stock.conviction_score >= 7 ? 'text-positive' 
+                      : stock.conviction_score >= 5 ? 'text-warning' 
+                      : 'text-negative'
+                    : 'text-text-muted';
+                  
+                  const zoneColor = stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
+                                    stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
+                                    stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-accent' :
+                                    stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
+                                    stock.price_zone === 'SELL_ZONE' ? 'bg-warning/20 text-warning' :
+                                    stock.price_zone === 'OVERVALUED' ? 'bg-negative/20 text-negative' :
+                                    'bg-surface-hover text-text-secondary';
+
+                  return (
+                    <tr 
+                      key={stock.id}
+                      onClick={() => setSelectedWatchlistStock(stock)}
+                      className="border-b border-border-subtle cursor-pointer transition-all hover:bg-surface-hover"
+                    >
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-text-primary text-lg">{stock.ticker}</div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="text-text-secondary text-sm truncate max-w-[200px]">
+                          {stock.company_name || 'Unknown'}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className={`text-2xl font-black ${scoreColor}`}>
+                          {stock.conviction_score ?? '-'}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                          stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
+                          stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
+                          stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-accent' :
+                          stock.action_verdict === 'TRIM' ? 'bg-warning/20 text-warning' :
+                          stock.action_verdict === 'SELL' ? 'bg-negative/20 text-negative' :
+                          stock.action_verdict === 'AVOID' ? 'bg-red-800/30 text-negative' :
+                          'bg-surface-hover text-text-secondary'
+                        }`}>
+                          {stock.action_verdict || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${zoneColor}`}>
+                          {stock.price_zone || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button className="px-3 py-1 bg-accent hover:bg-accent/80 text-text-primary text-xs font-bold rounded transition-colors">
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {displayedWatchlist.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center py-12 text-text-muted">
+                      {searchQuery 
+                        ? 'No stocks found in watchlist' 
+                        : 'No analyzed stocks yet. Click "New Analysis" to add stocks to your watchlist.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Family Gaps Alert */}
+        {activeTab === 'portfolio' && familyGaps && familyGaps.gaps.length > 0 && (
+          <div className="mt-6 p-4 bg-info/10 border border-info/30 rounded-xl">
+            <h3 className="text-lg font-bold text-info flex items-center gap-2 mb-3">
+              <Users className="w-5 h-5" />
+              Cross-Account Discrepancies ({familyGaps.gaps.length})
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {familyGaps.gaps.slice(0, 6).map((gap, i) => (
+                <div key={i} className="p-3 bg-surface-raised/50 rounded-lg">
+                  <div className="font-bold text-text-primary">{gap.ticker}</div>
+                  <div className="text-sm text-text-secondary">
+                    <span className="text-info">{gap.holder}</span> holds, 
+                    <span className="text-warning"> {gap.missing_from}</span> does not
+                  </div>
+                  <div className="text-xs text-text-muted mt-1">
+                    Score: {gap.conviction_score}/10 • {gap.action}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* FREEDOM TAB - Dopamine Dashboard */}
+        {activeTab === 'freedom' && (
+          <div className="space-y-6">
+            {/* Hero: Freedom Countdown */}
+            <FreedomCountdown
+              currentValue={familyData.totalValue}
+              targetValue={30000000} // 30M CZK
+              monthlyContribution={20000}
+              annualReturn={0.15}
+              targetAge={50}
+              currentAge={35} // TODO: Make configurable
+            />
+            
+            {/* Two column layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Compound Snowball */}
+              <CompoundSnowball
+                currentValue={familyData.totalValue}
+                monthlyContribution={20000}
+                annualReturn={0.15}
+                years={15}
+              />
+              
+              {/* Merit Badges */}
+              <MeritBadges 
+                positions={familyData.allPositions}
+                totalValue={familyData.totalValue}
+              />
+            </div>
+            
+            {/* Family Wealth Empire Preview */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-positive/10 rounded-xl p-5 border border-positive/30">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-positive" />
+                  <span className="text-sm font-bold text-positive uppercase tracking-wider">Family Wealth Empire</span>
+                </div>
+                <div className="text-xs text-text-secondary">
+                  Společná mise
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="bg-surface-raised/50 rounded-lg p-4 text-center">
+                  <div className="text-3xl mb-2">🏰</div>
+                  <div className="text-lg font-bold text-text-primary">{formatCurrency(familyData.totalValue)}</div>
+                  <div className="text-xs text-text-secondary">Rodinný hrad</div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4 text-center">
+                  <div className="text-3xl mb-2">💰</div>
+                  <div className="text-lg font-bold text-positive">{formatCurrency(familyData.totalCash)}</div>
+                  <div className="text-xs text-text-secondary">Válečná pokladna</div>
+                </div>
+              </div>
+              
+              {/* Monthly discipline tracker */}
+              <div className="bg-positive/10 border border-positive/30 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-positive">Měsíční disciplína</span>
+                  <span className="text-xs text-text-secondary">Leden 2026</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="h-2 bg-surface-hover rounded-full overflow-hidden">
+                      <div className="h-full bg-positive w-1/2" /> {/* TODO: Track actual deposits */}
+                    </div>
+                  </div>
+                  <div className="text-xs text-positive font-bold">20k / 40k</div>
+                </div>
+                <div className="text-xs text-text-secondary mt-2">
+                  💪 Přítelkyně: ✅ 20k posláno • Ty: ⏳ Čeká na vklad
+                </div>
+              </div>
+            </div>
+            
+            {/* Ghost of Mistakes Past - Placeholder */}
+            <div className="bg-surface-raised/50 rounded-xl p-5 border border-negative/20">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-negative" />
+                  <span className="text-sm font-bold text-negative/80 uppercase tracking-wider">Ghost of Mistakes Past</span>
+                </div>
+                <div className="text-xs text-text-secondary">
+                  Hřbitov chyb
+                </div>
+              </div>
+              
+              <div className="text-center py-8 text-text-muted">
+                <div className="text-4xl mb-3">👻</div>
+                <div className="text-sm">Zatím žádné záznamy</div>
+                <div className="text-xs mt-1">
+                  Tady se budou zobrazovat "Co by se stalo, kdybych..."
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* MODALS */}
+      {selectedPosition && (
+        <StockDetail
+          position={selectedPosition}
+          onClose={() => setSelectedPosition(null)}
+          onUpdate={async () => {
+            // Refresh portfolio data after position update
+            await refreshPortfolios();
+            // Also refresh stocks data for conviction scores
+            const stocksData = await apiClient.getStocks();
+            setStocks(stocksData.stocks);
+          }}
+        />
+      )}
+
+      {/* Watchlist Stock Detail Modal */}
+      {selectedWatchlistStock && (
+        <WatchlistDetailModal
+          stock={selectedWatchlistStock}
+          onClose={() => setSelectedWatchlistStock(null)}
+          onUpdate={async () => {
+            const stocksData = await apiClient.getStocks();
+            setStocks(stocksData.stocks);
+          }}
+        />
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <ImportCSVModal
+          portfolios={portfolios}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={async () => {
+            // Refresh all data
+            const portfolioList = await apiClient.getPortfolios();
+            const summaries: PortfolioSummary[] = [];
+            for (const p of portfolioList) {
+              try {
+                const summary = await apiClient.getPortfolioSummary(p.id);
+                summaries.push(summary);
+              } catch { /* skip */ }
+            }
+            setPortfolios(summaries);
+          }}
+        />
+      )}
+
+      {/* Add Position Modal */}
+      {showAddPositionModal && (
+        <AddPositionModal
+          portfolios={portfolios}
+          onClose={() => setShowAddPositionModal(false)}
+          onSuccess={async () => {
+            // Refresh portfolios
+            const portfolioList = await apiClient.getPortfolios();
+            const summaries: PortfolioSummary[] = [];
+            for (const p of portfolioList) {
+              try {
+                const summary = await apiClient.getPortfolioSummary(p.id);
+                summaries.push(summary);
+              } catch { /* skip */ }
+            }
+            setPortfolios(summaries);
+          }}
+        />
+      )}
+
+      {showAnalysisModal && (
+        <NewAnalysisModal
+          onClose={() => setShowAnalysisModal(false)}
+          onSubmit={handleNewAnalysis}
+        />
+      )}
+    </div>
+  );
+};
+
+export default InvestmentTerminal;
+
+

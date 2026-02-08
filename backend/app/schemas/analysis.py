@@ -128,7 +128,7 @@ class SWOTWithContext(BaseModel):
     confidence_score: Optional[float]
     ai_model_version: str
     generated_at: datetime
-    gomes_score: Optional[float]
+    conviction_score: Optional[float]
     action_verdict: Optional[str]
     transcript_source: Optional[str]
     transcript_date: Optional[date_type]
@@ -140,7 +140,7 @@ class SWOTWithContext(BaseModel):
 
 class WatchlistAnalysisUpdate(BaseModel):
     """Update watchlist with analysis fields"""
-    gomes_score: Optional[float] = Field(None, ge=0, le=10, description="Gomes score 0-10")
+    conviction_score: Optional[float] = Field(None, ge=0, le=10, description="Conviction Score 0-10")
     investment_thesis: Optional[str] = Field(None, description="Investment thesis")
     risks: Optional[str] = Field(None, description="Identified risks")
 
@@ -152,7 +152,7 @@ class WatchlistAnalysisResponse(BaseModel):
     company_name: Optional[str]
     action_verdict: Optional[str]
     confidence_score: Optional[float]
-    gomes_score: Optional[float]
+    conviction_score: Optional[float]
     investment_thesis: Optional[str]
     risks: Optional[str]
     last_updated: datetime
@@ -207,15 +207,15 @@ class AnalysisStats(BaseModel):
     processed_transcripts: int
     total_swots: int
     active_swots: int
-    tickers_with_gomes_score: int
-    avg_gomes_score: Optional[float]
+    tickers_with_conviction_score: int
+    avg_conviction_score: Optional[float]
     top_sources: List[Dict[str, Any]]
 
 
 class TopGomesPick(BaseModel):
-    """Top Gomes score ticker"""
+    """Top Conviction Score ticker"""
     ticker: str
-    gomes_score: float
+    conviction_score: float
     company_name: Optional[str]
     action_verdict: Optional[str]
     investment_thesis: Optional[str]

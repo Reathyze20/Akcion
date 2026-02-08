@@ -1,15 +1,20 @@
 """
-Data Fetcher - Retrieves OHLCV data from Massive.com API
+Data Fetcher - Retrieves OHLCV data from Polygon.io API
 """
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import time
+import requests
 
 from app.config.settings import Settings
-from app.services.market_data import MarketDataService
 from app.models.trading import OHLCVData, DataSyncLog
 from loguru import logger
+
+
+# Constants
+POLYGON_API_BASE = "https://api.polygon.io/v2"
+REQUEST_TIMEOUT = 10
 
 
 class DataFetcher:
@@ -19,14 +24,61 @@ class DataFetcher:
         self.db = db
         self.settings = settings
     
+    def _fetch_from_polygon(self, ticker: str, from_date: str, to_date: str) -> Optional[Dict]:
+        """
+        Fetch historical candle data from Polygon.io API.
+        
+        Args:
+            ticker: Stock ticker symbol
+            from_date: Start date (YYYY-MM-DD)
+            to_date: End date (YYYY-MM-DD)
+            
+        Returns:
+            Dict with results array or None
+        """
+        api_key = self.settings.massive_api_key
+        if not api_key:
+            logger.warning("Polygon.io API key not configured")
+            return None
+        
+        url = f"{POLYGON_API_BASE}/aggs/ticker/{ticker}/range/1/day/{from_date}/{to_date}"
+        params = {
+            "adjusted": "true",
+            "sort": "asc",
+            "apiKey": api_key
+        }
+        
+        try:
+            response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+            
+            if response.status_code == 200:
+                data = response.json()
+                # Accept both OK and DELAYED status (DELAYED still has data)
+                if data.get("status") in ("OK", "DELAYED") and data.get("results"):
+                    return data
+                else:
+                    logger.warning(f"No Polygon data for {ticker}: {data.get('status')}")
+                    return None
+            elif response.status_code == 429:
+                logger.warning("Polygon rate limit hit")
+                time.sleep(1)
+                return None
+            else:
+                logger.warning(f"Polygon returned {response.status_code} for {ticker}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Polygon API error: {e}")
+            return None
+    
     async def fetch_historical_data(
         self,
         ticker: str,
-        days: int = 60,
+        days: int = 120,
         sync_type: str = 'manual'
     ) -> Dict[str, any]:
         """
-        Fetch historical OHLCV data for a ticker
+        Fetch historical OHLCV data for a ticker from Polygon.io.
         
         Args:
             ticker: Stock ticker symbol
@@ -37,43 +89,43 @@ class DataFetcher:
             Dict with status and records synced
         """
         start_time = time.time()
-        from_date = datetime.now() - timedelta(days=days)
-        to_date = datetime.now()
+        from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        to_date = datetime.now().strftime('%Y-%m-%d')
         
-        logger.info(f"Fetching {days} days of data for {ticker}")
+        logger.info(f"Fetching {days} days of data for {ticker} from Polygon.io")
         
         try:
-            # Use yfinance for historical data (Massive.com Starter doesn't have historical endpoint)
-            import yfinance as yf
+            # Fetch from Polygon
+            data = self._fetch_from_polygon(ticker, from_date, to_date)
             
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period=f"{days}d")
-            
-            if hist.empty:
+            if not data:
                 raise ValueError(f"No data returned for {ticker}")
             
             records_synced = 0
+            results = data.get('results', [])
             
-            # Store each day's OHLCV data
-            for date, row in hist.iterrows():
-                ohlcv = OHLCVData(
-                    time=date.to_pydatetime().replace(tzinfo=None),
-                    ticker=ticker,
-                    open=float(row['Open']),
-                    high=float(row['High']),
-                    low=float(row['Low']),
-                    close=float(row['Close']),
-                    volume=int(row['Volume']),
-                    vwap=float((row['High'] + row['Low'] + row['Close']) / 3)  # Approximation
-                )
+            # Parse Polygon response format
+            # Each result: {'v': volume, 'vw': vwap, 'o': open, 'c': close, 'h': high, 'l': low, 't': timestamp_ms}
+            for r in results:
+                dt = datetime.fromtimestamp(r['t'] / 1000)  # Polygon uses milliseconds
                 
-                # Use merge to avoid duplicates
+                # Check for existing record
                 existing = self.db.query(OHLCVData).filter(
-                    OHLCVData.time == ohlcv.time,
+                    OHLCVData.time == dt,
                     OHLCVData.ticker == ticker
                 ).first()
                 
                 if not existing:
+                    ohlcv = OHLCVData(
+                        time=dt,
+                        ticker=ticker,
+                        open=float(r['o']),
+                        high=float(r['h']),
+                        low=float(r['l']),
+                        close=float(r['c']),
+                        volume=int(r['v']),
+                        vwap=float(r.get('vw', (r['h'] + r['l'] + r['c']) / 3))
+                    )
                     self.db.add(ohlcv)
                     records_synced += 1
             
@@ -81,12 +133,14 @@ class DataFetcher:
             
             # Log successful sync
             duration = int(time.time() - start_time)
+            from_dt = datetime.strptime(from_date, '%Y-%m-%d').date()
+            to_dt = datetime.strptime(to_date, '%Y-%m-%d').date()
             log_entry = DataSyncLog(
                 ticker=ticker,
                 sync_type=sync_type,
                 records_synced=records_synced,
-                from_date=from_date.date(),
-                to_date=to_date.date(),
+                from_date=from_dt,
+                to_date=to_dt,
                 status='success',
                 duration_seconds=duration
             )
@@ -105,12 +159,14 @@ class DataFetcher:
         except Exception as e:
             # Log failed sync
             duration = int(time.time() - start_time)
+            from_dt = datetime.strptime(from_date, '%Y-%m-%d').date()
+            to_dt = datetime.strptime(to_date, '%Y-%m-%d').date()
             log_entry = DataSyncLog(
                 ticker=ticker,
                 sync_type=sync_type,
                 records_synced=0,
-                from_date=from_date.date(),
-                to_date=to_date.date(),
+                from_date=from_dt,
+                to_date=to_dt,
                 status='failed',
                 error_message=str(e),
                 duration_seconds=duration

@@ -21,7 +21,7 @@ from .connection import (
 from .repositories import (
     StockRepository,
     save_analysis,
-    DEFAULT_GOMES_SCORE,
+    DEFAULT_conviction_score,
     MAX_VERSIONS_TO_KEEP,
 )
 
@@ -39,6 +39,6 @@ __all__ = [
     # Repositories
     "StockRepository",
     "save_analysis",
-    "DEFAULT_GOMES_SCORE",
+    "DEFAULT_conviction_score",
     "MAX_VERSIONS_TO_KEEP",
 ]

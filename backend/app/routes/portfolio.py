@@ -26,6 +26,8 @@ from ..models.portfolio import (
     MarketStatusEnum,
     Portfolio,
     Position,
+    InvestmentLog,
+    InvestmentLogType,
 )
 from ..schemas.portfolio import (
     CSVUploadResponse,
@@ -43,6 +45,7 @@ from ..schemas.portfolio import (
 from ..services.currency import CurrencyService
 from ..services.importer import BrokerCSVParser, validate_position_data
 from ..services.market_data import MarketDataService
+from ..services.portfolio_reconciliation import PortfolioReconciliationService
 
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,7 @@ def get_portfolios(
             **portfolio.__dict__,
             "position_count": len(positions),
             "total_value": total_value,
+            "monthly_contribution": portfolio.monthly_contribution or 20000.0,
         })
     
     return result
@@ -178,6 +182,177 @@ def delete_portfolio(
     return {"success": True, "message": "Portfolio deleted"}
 
 
+# ==============================================================================
+# Manual Position Management
+# ==============================================================================
+
+from pydantic import BaseModel, Field
+
+class AddPositionRequest(BaseModel):
+    """Request model for manually adding a position."""
+    ticker: str = Field(..., min_length=1, max_length=20)
+    shares_count: float = Field(..., gt=0)
+    avg_cost: float = Field(..., gt=0)
+    current_price: float | None = Field(None, gt=0)
+    company_name: str | None = None
+
+
+@router.post("/portfolios/{portfolio_id}/positions")
+def add_position(
+    portfolio_id: int,
+    position_data: AddPositionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Manually add a position to a portfolio.
+    
+    If position with same ticker exists, it will be updated (averaged).
+    """
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    
+    ticker = position_data.ticker.upper()
+    current_price = position_data.current_price or position_data.avg_cost
+    
+    # Check if position already exists
+    existing = db.query(Position).filter(
+        Position.portfolio_id == portfolio_id,
+        Position.ticker == ticker
+    ).first()
+    
+    if existing:
+        # Update existing - average the cost
+        total_shares = existing.shares_count + position_data.shares_count
+        total_cost = (existing.shares_count * existing.avg_cost) + (position_data.shares_count * position_data.avg_cost)
+        existing.shares_count = total_shares
+        existing.avg_cost = total_cost / total_shares
+        existing.current_price = current_price
+        existing.cost_basis = existing.shares_count * existing.avg_cost
+        existing.market_value = existing.shares_count * current_price
+        existing.unrealized_pl = existing.market_value - existing.cost_basis
+        existing.unrealized_pl_percent = ((existing.market_value / existing.cost_basis) - 1) * 100 if existing.cost_basis > 0 else 0
+        
+        db.commit()
+        db.refresh(existing)
+        
+        return {
+            "success": True,
+            "action": "updated",
+            "position": {
+                "id": existing.id,
+                "ticker": existing.ticker,
+                "shares_count": existing.shares_count,
+                "avg_cost": existing.avg_cost,
+                "current_price": existing.current_price,
+                "market_value": existing.market_value,
+            }
+        }
+    else:
+        # Create new position
+        cost_basis = position_data.shares_count * position_data.avg_cost
+        market_value = position_data.shares_count * current_price
+        unrealized_pl = market_value - cost_basis
+        unrealized_pl_percent = ((market_value / cost_basis) - 1) * 100 if cost_basis > 0 else 0
+        
+        new_position = Position(
+            portfolio_id=portfolio_id,
+            ticker=ticker,
+            company_name=position_data.company_name,
+            shares_count=position_data.shares_count,
+            avg_cost=position_data.avg_cost,
+            current_price=current_price,
+            cost_basis=cost_basis,
+            market_value=market_value,
+            unrealized_pl=unrealized_pl,
+            unrealized_pl_percent=unrealized_pl_percent,
+            currency='USD',
+        )
+        
+        db.add(new_position)
+        db.commit()
+        db.refresh(new_position)
+        
+        return {
+            "success": True,
+            "action": "created",
+            "position": {
+                "id": new_position.id,
+                "ticker": new_position.ticker,
+                "shares_count": new_position.shares_count,
+                "avg_cost": new_position.avg_cost,
+                "current_price": new_position.current_price,
+                "market_value": new_position.market_value,
+            }
+        }
+
+
+@router.delete("/portfolios/{portfolio_id}/positions/{ticker}")
+def delete_position(
+    portfolio_id: int,
+    ticker: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a position from portfolio.
+    
+    Automatically adds ticker to watchlist if not already present,
+    allowing continued monitoring after sale.
+    """
+    position = db.query(Position).filter(
+        Position.portfolio_id == portfolio_id,
+        Position.ticker == ticker.upper()
+    ).first()
+    
+    if not position:
+        raise HTTPException(status_code=404, detail="Position not found")
+    
+    ticker_upper = ticker.upper()
+    
+    # Check if ticker is in watchlist
+    from ..models.trading import ActiveWatchlist
+    from ..models.stock import Stock
+    
+    watchlist_item = db.query(ActiveWatchlist).filter(
+        ActiveWatchlist.ticker == ticker_upper
+    ).first()
+    
+    # If not in watchlist, add it
+    if not watchlist_item:
+        # Get latest stock data
+        stock = db.query(Stock).filter(
+            Stock.ticker == ticker_upper,
+            Stock.is_latest == True
+        ).first()
+        
+        new_watchlist = ActiveWatchlist(
+            ticker=ticker_upper,
+            stock_id=stock.id if stock else None,
+            action_verdict=stock.action_verdict if stock else "WATCH",
+            conviction_score=stock.conviction_score if stock else None,
+            investment_thesis=stock.edge if stock else None,
+            risks=stock.risks if stock else None,
+            is_active=True,
+            notes=f"Auto-added after selling position from portfolio {portfolio_id}"
+        )
+        db.add(new_watchlist)
+    else:
+        # Ensure watchlist item is active
+        watchlist_item.is_active = True
+        watchlist_item.notes = f"Position sold, continuing to monitor (portfolio {portfolio_id})"
+    
+    # Delete the position
+    db.delete(position)
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Position {ticker_upper} deleted",
+        "added_to_watchlist": watchlist_item is None
+    }
+
+
 @router.put("/portfolios/{portfolio_id}/cash-balance")
 def update_cash_balance(
     portfolio_id: int,
@@ -198,6 +373,31 @@ def update_cash_balance(
     db.refresh(portfolio)
     
     return {"success": True, "cash_balance": portfolio.cash_balance}
+
+
+@router.put("/portfolios/{portfolio_id}/monthly-contribution")
+def update_monthly_contribution(
+    portfolio_id: int,
+    monthly_contribution: float,
+    db: Session = Depends(get_db)
+):
+    """Update monthly contribution amount for a portfolio's allocation planning"""
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    
+    if monthly_contribution < 0:
+        raise HTTPException(status_code=400, detail="Monthly contribution cannot be negative")
+    
+    portfolio.monthly_contribution = monthly_contribution
+    db.commit()
+    db.refresh(portfolio)
+    
+    return {
+        "success": True, 
+        "monthly_contribution": portfolio.monthly_contribution
+    }
 
 
 @router.post("/upload-csv", response_model=CSVUploadResponse)
@@ -278,9 +478,12 @@ async def upload_csv(
         updated_count = 0
         errors = []
         
+        logger.info(f"Processing {len(positions_data)} positions for portfolio {portfolio_id}")
+        
         # Upsert positions
         for pos_data in positions_data:
             try:
+                logger.debug(f"Processing position: {pos_data}")
                 # Check if position already exists
                 existing_pos = db.query(Position).filter(
                     Position.portfolio_id == portfolio_id,
@@ -293,32 +496,49 @@ async def upload_csv(
                     existing_pos.avg_cost = pos_data['avg_cost']
                     if 'currency' in pos_data:
                         existing_pos.currency = pos_data['currency']
+                    # Update company name if provided and not already set
+                    if pos_data.get('company_name') and not existing_pos.company_name:
+                        existing_pos.company_name = pos_data['company_name']
                     updated_count += 1
                 else:
-                    # Create new position and try to get company name
-                    company_name = None
-                    try:
-                        stock_info = MarketDataService.get_stock_info(pos_data['ticker'])
-                        if stock_info:
-                            company_name = stock_info.get('company_name')
-                    except Exception as e:
-                        print(f"⚠️ Could not fetch company name for {pos_data['ticker']}: {e}")
+                    # Get company name from CSV data first, fallback to API
+                    company_name = pos_data.get('company_name')
+                    if not company_name:
+                        try:
+                            stock_info = MarketDataService.get_stock_info(pos_data['ticker'])
+                            if stock_info:
+                                company_name = stock_info.get('company_name')
+                        except Exception as e:
+                            logger.debug(f"Could not fetch company name for {pos_data['ticker']}: {e}")
                     
+                    # Calculate values
+                    avg_cost = pos_data['avg_cost']
+                    shares = pos_data['shares_count']
+                    # For DEGIRO, avg_cost from CSV is actually current price (Uzavírací)
+                    # We use it as current_price and avg_cost (no purchase price in DEGIRO export)
+                    current_price = avg_cost
+                    
+                    # Note: cost_basis, market_value, unrealized_pl are computed properties
+                    # in Position model - we only set the base values
                     new_pos = Position(
                         portfolio_id=portfolio_id,
                         ticker=pos_data['ticker'],
                         company_name=company_name,
-                        shares_count=pos_data['shares_count'],
-                        avg_cost=pos_data['avg_cost'],
+                        shares_count=shares,
+                        avg_cost=avg_cost,
+                        current_price=current_price,
                         currency=pos_data.get('currency', 'USD')
                     )
                     db.add(new_pos)
                     created_count += 1
+                    logger.info(f"Created position: {pos_data['ticker']}")
                     
             except Exception as e:
+                logger.error(f"Error processing {pos_data.get('ticker', 'unknown')}: {str(e)}")
                 errors.append(f"Error processing {pos_data.get('ticker', 'unknown')}: {str(e)}")
         
         db.commit()
+        logger.info(f"Committed {created_count} new, {updated_count} updated positions")
         
         # Automatically refresh prices after successful upload
         refresh_result = {"updated_count": 0, "failed_count": 0}
@@ -326,7 +546,7 @@ async def upload_csv(
             refresh_result = MarketDataService.refresh_portfolio_prices(db, portfolio_id)
             print(f"🔄 Auto-refreshed prices: {refresh_result['updated_count']} updated, {refresh_result['failed_count']} failed")
         except Exception as e:
-            print(f"⚠️ Warning: Could not auto-refresh prices: {e}")
+            print(f"Warning: Could not auto-refresh prices: {e}")
             # Don't fail the upload if price refresh fails
         
         return CSVUploadResponse(
@@ -339,6 +559,119 @@ async def upload_csv(
         
     except Exception as e:
         db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload-csv-smart")
+async def upload_csv_with_reconciliation(
+    portfolio_id: int = Form(...),
+    broker: BrokerType = Form(...),
+    file: UploadFile = File(...),
+    detect_sales: bool = Form(default=True),
+):
+    """
+    Smart CSV upload with automatic reconciliation.
+    
+    This endpoint implements the "Sync Logic":
+    - Detects sold positions when they're missing in new import
+    - Automatically moves sold positions to Active Watchlist
+    - Preserves all thesis data and history
+    - Tracks changes in investment log
+    - Returns detailed notifications about changes
+    
+    Args:
+        portfolio_id: Target portfolio ID
+        broker: Broker type for CSV parsing
+        file: CSV file from broker
+        detect_sales: If True, missing positions are marked as sold
+    """
+    db = next(get_db())
+    
+    try:
+        # Check if portfolio exists
+        portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+        if not portfolio:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+        
+        # Read and decode CSV content
+        content = await file.read()
+        csv_content = None
+        for encoding in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2', 'latin-1']:
+            try:
+                csv_content = content.decode(encoding)
+                break
+            except:
+                continue
+        
+        if csv_content is None:
+            raise HTTPException(
+                status_code=400, 
+                detail="Could not decode CSV file with any supported encoding"
+            )
+        
+        # Parse CSV based on broker type
+        try:
+            positions_data = BrokerCSVParser.parse_broker_csv(csv_content, broker)
+            positions_data = validate_position_data(positions_data)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        if not positions_data:
+            raise HTTPException(
+                status_code=400, 
+                detail="No valid positions found in CSV file"
+            )
+        
+        logger.info(f"Smart upload: {len(positions_data)} positions for portfolio {portfolio_id}")
+        
+        # Use reconciliation service
+        reconciliation_service = PortfolioReconciliationService(db)
+        
+        # Preview what will happen
+        preview = reconciliation_service.preview_reconciliation(
+            portfolio_id=portfolio_id,
+            new_positions=positions_data
+        )
+        
+        # Execute reconciliation
+        result = reconciliation_service.reconcile_import(
+            portfolio_id=portfolio_id,
+            new_positions=positions_data,
+            broker_type=broker
+        )
+        
+        # Automatically refresh prices after successful upload
+        refresh_result = {"updated_count": 0, "failed_count": 0}
+        try:
+            refresh_result = MarketDataService.refresh_portfolio_prices(db, portfolio_id)
+            logger.info(f"Auto-refreshed prices: {refresh_result['updated_count']} updated")
+        except Exception as e:
+            logger.warning(f"Could not auto-refresh prices: {e}")
+        
+        return {
+            "success": True,
+            "portfolio": result.portfolio_name,
+            "summary": result.summary(),
+            "positions_before": result.total_positions_before,
+            "positions_after": result.total_positions_after,
+            "changes": {
+                "added": result.new_positions,
+                "updated": result.updated_positions,
+                "sold": result.sales_detected,
+            },
+            "notifications": result.notifications,
+            "price_refresh": {
+                "updated": refresh_result.get('updated_count', 0),
+                "failed": refresh_result.get('failed_count', 0)
+            }
+        }
+        
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Smart CSV upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -525,3 +858,265 @@ def update_market_status(
     db.refresh(status)
     
     return status
+
+
+# ============================================================================
+# KELLY ALLOCATOR ENDPOINTS
+# ============================================================================
+
+@router.post("/allocate/{portfolio_id}")
+def calculate_allocation(
+    portfolio_id: int,
+    available_eur: float = 0,
+    additional_czk: float = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    Calculate optimal allocation using Kelly Criterion.
+    
+    Based on Gomes scores and current portfolio weights, returns
+    recommendations for where to deploy available capital.
+    
+    Args:
+        portfolio_id: Target portfolio
+        available_eur: Available EUR to invest
+        additional_czk: Additional CZK to invest (e.g., new deposit)
+        
+    Returns:
+        Allocation plan with prioritized recommendations
+    """
+    from app.services.kelly_allocator import KellyAllocatorService
+    
+    try:
+        allocator = KellyAllocatorService(db)
+        plan = allocator.calculate_allocation(
+            portfolio_id=portfolio_id,
+            available_cash_eur=available_eur,
+            additional_cash_czk=additional_czk
+        )
+        
+        return {
+            "available_capital_eur": plan.available_capital,
+            "available_capital_czk": plan.available_capital_czk,
+            "recommendations": [
+                {
+                    "ticker": r.ticker,
+                    "company_name": r.company_name,
+                    "conviction_score": r.conviction_score,
+                    "current_weight_pct": r.current_weight_pct,
+                    "recommended_weight_pct": r.recommended_weight_pct,
+                    "recommended_amount_eur": r.recommended_amount,
+                    "recommended_amount_czk": r.recommended_amount_czk,
+                    "priority": r.priority,
+                    "reasoning": r.reasoning,
+                }
+                for r in plan.recommendations
+            ],
+            "total_allocated_eur": plan.total_allocated,
+            "remaining_cash_eur": plan.remaining_cash,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Allocation calculation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Allocation failed: {e}")
+
+
+@router.get("/family-audit")
+def family_audit(db: Session = Depends(get_db)):
+    """
+    Detect gaps between family member portfolios.
+    
+    Compares portfolios of different owners and identifies positions
+    that one member has but another doesn't (potential "family gap").
+    
+    Returns:
+        List of family gaps with priority and recommendations
+    """
+    from app.services.kelly_allocator import KellyAllocatorService
+    
+    try:
+        # Get all portfolios grouped by owner
+        portfolios = db.query(Portfolio).all()
+        
+        if len(portfolios) < 2:
+            return {
+                "message": "Need at least 2 portfolios for family audit",
+                "gaps": []
+            }
+        
+        # Build owner -> portfolio_id mapping (use first portfolio per owner)
+        owner_portfolios = {}
+        for p in portfolios:
+            if p.owner not in owner_portfolios:
+                owner_portfolios[p.owner] = p.id
+        
+        if len(owner_portfolios) < 2:
+            return {
+                "message": "Need portfolios from different owners for family audit",
+                "gaps": []
+            }
+        
+        allocator = KellyAllocatorService(db)
+        gaps = allocator.detect_family_gaps(owner_portfolios)
+        
+        return {
+            "owners_analyzed": list(owner_portfolios.keys()),
+            "gaps_found": len(gaps),
+            "gaps": [
+                {
+                    "ticker": g.ticker,
+                    "company_name": g.company_name,
+                    "conviction_score": g.conviction_score,
+                    "owner_with_position": g.owner_with_position,
+                    "owner_weight_pct": g.owner_weight_pct,
+                    "missing_owner": g.missing_owner,
+                    "priority": g.priority,
+                    "message": g.message,
+                }
+                for g in gaps
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Family audit failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Family audit failed: {e}")
+
+
+# ==============================================================================
+# Investment Logs Endpoints (Gamification)
+# ==============================================================================
+
+@router.post("/logs")
+def create_investment_log(
+    log_type: str,
+    amount: float = None,
+    ticker: str = None,
+    shares: float = None,
+    price: float = None,
+    emotion_tag: str = None,
+    note: str = None,
+    badge_id: str = None,
+    portfolio_id: int = None,
+    db: Session = Depends(get_db)
+):
+    """Create a new investment log entry for gamification/journaling."""
+    try:
+        log_type_enum = InvestmentLogType(log_type)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid log type: {log_type}")
+    
+    log = InvestmentLog(
+        portfolio_id=portfolio_id,
+        log_type=log_type_enum,
+        ticker=ticker,
+        amount=amount,
+        shares=shares,
+        price=price,
+        emotion_tag=emotion_tag,
+        note=note,
+        badge_id=badge_id
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    
+    return {
+        "success": True,
+        "log_id": log.id,
+        "message": f"Investment log created: {log_type}"
+    }
+
+
+@router.get("/logs")
+def get_investment_logs(
+    portfolio_id: int = None,
+    log_type: str = None,
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    """Get investment logs with optional filtering."""
+    query = db.query(InvestmentLog)
+    
+    if portfolio_id:
+        query = query.filter(InvestmentLog.portfolio_id == portfolio_id)
+    if log_type:
+        try:
+            log_type_enum = InvestmentLogType(log_type)
+            query = query.filter(InvestmentLog.log_type == log_type_enum)
+        except ValueError:
+            pass
+    
+    logs = query.order_by(InvestmentLog.created_at.desc()).limit(limit).all()
+    
+    return {
+        "logs": [
+            {
+                "id": log.id,
+                "portfolio_id": log.portfolio_id,
+                "log_type": log.log_type.value,
+                "ticker": log.ticker,
+                "amount": log.amount,
+                "shares": log.shares,
+                "price": log.price,
+                "emotion_tag": log.emotion_tag,
+                "note": log.note,
+                "badge_id": log.badge_id,
+                "created_at": log.created_at.isoformat() if log.created_at else None
+            }
+            for log in logs
+        ],
+        "count": len(logs)
+    }
+
+
+@router.get("/logs/monthly-summary")
+def get_monthly_summary(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db)
+):
+    """Get monthly investment summary for AI journaling."""
+    from datetime import datetime
+    from calendar import monthrange
+    
+    start_date = datetime(year, month, 1)
+    _, last_day = monthrange(year, month)
+    end_date = datetime(year, month, last_day, 23, 59, 59)
+    
+    logs = db.query(InvestmentLog).filter(
+        InvestmentLog.created_at >= start_date,
+        InvestmentLog.created_at <= end_date
+    ).order_by(InvestmentLog.created_at).all()
+    
+    # Aggregate stats
+    total_deposits = sum(log.amount or 0 for log in logs if log.log_type == InvestmentLogType.DEPOSIT)
+    total_buys = sum(log.amount or 0 for log in logs if log.log_type == InvestmentLogType.BUY)
+    total_sells = sum(log.amount or 0 for log in logs if log.log_type == InvestmentLogType.SELL)
+    badges_earned = [log.badge_id for log in logs if log.log_type == InvestmentLogType.BADGE and log.badge_id]
+    tickers_traded = list(set(log.ticker for log in logs if log.ticker))
+    
+    return {
+        "year": year,
+        "month": month,
+        "total_deposits": total_deposits,
+        "total_buys": total_buys,
+        "total_sells": total_sells,
+        "net_investment": total_deposits + total_sells - total_buys,
+        "badges_earned": badges_earned,
+        "tickers_traded": tickers_traded,
+        "activity_count": len(logs),
+        "logs": [
+            {
+                "id": log.id,
+                "log_type": log.log_type.value,
+                "ticker": log.ticker,
+                "amount": log.amount,
+                "emotion_tag": log.emotion_tag,
+                "note": log.note,
+                "created_at": log.created_at.isoformat() if log.created_at else None
+            }
+            for log in logs
+        ]
+    }
+
+

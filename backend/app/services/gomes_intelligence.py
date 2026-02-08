@@ -361,7 +361,7 @@ class GomesIntelligenceService:
     def generate_verdict(
         self,
         ticker: str,
-        gomes_score: int | None = None,
+        conviction_score: int | None = None,
         current_price: float | None = None,
         earnings_date: datetime | None = None,
         transcript_text: str | None = None,
@@ -374,7 +374,7 @@ class GomesIntelligenceService:
         
         Args:
             ticker: Stock ticker
-            gomes_score: Base Gomes score (or fetch from DB)
+            conviction_score: Base Conviction Score (or fetch from DB)
             current_price: Current price (or fetch from market data)
             earnings_date: Next earnings date
             transcript_text: Optional transcript for lifecycle detection
@@ -410,16 +410,16 @@ class GomesIntelligenceService:
         red_line = float(price_lines.red_line) if price_lines and price_lines.red_line else None
         
         # =====================================================================
-        # 4. GET GOMES SCORE FROM DB IF NOT PROVIDED
+        # 4. GET Conviction Score FROM DB IF NOT PROVIDED
         # =====================================================================
-        if gomes_score is None:
+        if conviction_score is None:
             stock = (
                 self.db.query(Stock)
                 .filter(Stock.ticker == ticker)
                 .filter(Stock.is_latest == True)
                 .first()
             )
-            gomes_score = stock.gomes_score if stock else 5
+            conviction_score = stock.conviction_score if stock else 5
         
         # =====================================================================
         # 5. GET ML PREDICTION
@@ -464,7 +464,7 @@ class GomesIntelligenceService:
         
         verdict = gatekeeper.evaluate(
             ticker=ticker,
-            gomes_score=gomes_score,
+            conviction_score=conviction_score,
             lifecycle_phase=lifecycle_phase,
             current_price=current_price,
             green_line=green_line,
@@ -502,7 +502,7 @@ class GomesIntelligenceService:
             verdict=verdict.verdict.value,
             passed_gomes_filter=verdict.passed_gomes_filter,
             blocked_reason=verdict.blocked_reason,
-            gomes_score=verdict.gomes_score,
+            conviction_score=verdict.conviction_score,
             ml_prediction_score=Decimal(str(verdict.ml_prediction_score)) if verdict.ml_prediction_score else None,
             ml_prediction_direction=verdict.ml_direction,
             lifecycle_phase=verdict.lifecycle_phase.value if verdict.lifecycle_phase else None,
@@ -557,17 +557,17 @@ class GomesIntelligenceService:
             try:
                 verdict = self.generate_verdict(
                     ticker=item.ticker,
-                    gomes_score=int(item.gomes_score) if item.gomes_score else 5
+                    conviction_score=int(item.conviction_score) if item.conviction_score else 5
                 )
                 
-                if verdict.gomes_score >= min_score:
+                if verdict.conviction_score >= min_score:
                     verdicts.append(verdict)
                     
             except Exception as e:
                 self.logger.error(f"Error analyzing {item.ticker}: {e}")
         
         # Sort by score (highest first)
-        verdicts.sort(key=lambda v: v.gomes_score, reverse=True)
+        verdicts.sort(key=lambda v: v.conviction_score, reverse=True)
         
         return verdicts[:limit]
     
@@ -586,7 +586,7 @@ class GomesIntelligenceService:
                 "verdict": v.verdict,
                 "blocked_reason": v.blocked_reason,
                 "lifecycle_phase": v.lifecycle_phase,
-                "gomes_score": v.gomes_score
+                "conviction_score": v.conviction_score
             }
             for v in blocked
         ]
@@ -598,7 +598,7 @@ class GomesIntelligenceService:
             .filter(InvestmentVerdictModel.passed_gomes_filter == True)
             .filter(InvestmentVerdictModel.valid_until.is_(None))
             .filter(InvestmentVerdictModel.verdict.in_(["STRONG_BUY", "BUY", "ACCUMULATE"]))
-            .order_by(desc(InvestmentVerdictModel.gomes_score))
+            .order_by(desc(InvestmentVerdictModel.conviction_score))
             .limit(limit)
             .all()
         )
@@ -607,7 +607,7 @@ class GomesIntelligenceService:
             {
                 "ticker": v.ticker,
                 "verdict": v.verdict,
-                "gomes_score": v.gomes_score,
+                "conviction_score": v.conviction_score,
                 "lifecycle_phase": v.lifecycle_phase,
                 "position_tier": v.position_tier,
                 "max_position_size": float(v.max_position_size) if v.max_position_size else None,
@@ -618,3 +618,78 @@ class GomesIntelligenceService:
             }
             for v in opportunities
         ]
+
+    def get_gomes_stocks_with_lines(self) -> list[dict[str, Any]]:
+        """
+        Get all stocks from Gomes videos with price lines.
+        
+        Returns stocks from ActiveWatchlist joined with PriceLines for ML page.
+        """
+        from app.models.trading import MLPrediction
+        from sqlalchemy import func
+        
+        # Get all active watchlist items
+        watchlist = (
+            self.db.query(ActiveWatchlist)
+            .filter(ActiveWatchlist.is_active == True)
+            .all()
+        )
+        
+        result = []
+        
+        for item in watchlist:
+            ticker = item.ticker
+            
+            # Get price lines
+            lines = self.get_price_lines(ticker)
+            
+            # Get lifecycle
+            lifecycle = self.get_stock_lifecycle(ticker)
+            
+            # Get stock info
+            stock = item.stock
+            
+            # Get latest ML prediction
+            ml_pred = (
+                self.db.query(MLPrediction)
+                .filter(MLPrediction.ticker == ticker)
+                .order_by(desc(MLPrediction.created_at))
+                .first()
+            )
+            
+            # Calculate price zone
+            current_price = float(lines.current_price) if lines and lines.current_price else None
+            green_line = float(lines.green_line) if lines and lines.green_line else None
+            red_line = float(lines.red_line) if lines and lines.red_line else None
+            
+            price_zone = None
+            price_position_pct = None
+            
+            if current_price and (green_line or red_line):
+                price_zone, price_position_pct = RiskRewardCalculator.get_action_zone(
+                    current_price, green_line, red_line
+                )
+            
+            result.append({
+                "ticker": ticker,
+                "company_name": stock.company_name if stock else None,
+                "conviction_score": int(item.conviction_score) if item.conviction_score else None,
+                "sentiment": stock.sentiment if stock else None,
+                "action_verdict": item.action_verdict,
+                "lifecycle_phase": lifecycle.phase if lifecycle else None,
+                "green_line": green_line,
+                "red_line": red_line,
+                "current_price": current_price,
+                "price_zone": price_zone,
+                "price_position_pct": price_position_pct,
+                "has_ml_prediction": ml_pred is not None,
+                "ml_direction": ml_pred.prediction_type if ml_pred else None,
+                "ml_confidence": float(ml_pred.confidence) if ml_pred and ml_pred.confidence else None,
+                "video_date": stock.created_at.isoformat() if stock and stock.created_at else None,
+                "notes": item.notes,
+            })
+        
+        # Sort by conviction_score descending
+        result.sort(key=lambda x: (x.get("conviction_score") or 0), reverse=True)
+        
+        return result

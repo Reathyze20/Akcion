@@ -2,18 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ================================================================
+   AKCION PRO - Professional Investment Terminal
+   Design Philosophy: Bloomberg meets Linear
+   - Minimal color, maximum clarity
+   - Data-first, not decoration-first
+   - Monochrome with semantic accents only
+================================================================ */
+
 :root {
-  /* Používáme systémové fonty pro maximální ostrost a rychlost */
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  /* System fonts for maximum rendering quality */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  
+  /* Semantic colors as CSS variables - ONLY for indicators */
+  --color-positive: #22c55e;
+  --color-negative: #ef4444;
+  --color-warning: #f59e0b;
+  /* Accent for interactive elements */
+  --color-accent: #3b82f6;
 }
 
 body {
-  /* Místo gradientu použijeme solidní, velmi tmavou barvu (ne úplně černou) */
-  /* Toto snižuje únavu očí a působí stabilněji */
-  @apply bg-[#0b0e14] text-slate-300 antialiased;
+  /* Deep, near-black background - easy on the eyes */
+  background-color: #0a0c10;
+  color: #e8ecf4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Minimalistický scrollbar, který neruší */
+/* Minimal scrollbar that doesn't distract */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -22,30 +39,140 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-800 rounded hover:bg-slate-700;
+  background-color: #2a3140;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #3a4355;
 }
 
 @layer components {
-  /* PRO CARD: Žádné sklo, žádné stíny. Jen precizní ohraničení. */
+  /* ================================================================
+     PROFESSIONAL CARD SYSTEM
+     - Subtle borders, no heavy shadows
+     - Consistent elevation hierarchy
+  ================================================================ */
   .pro-card {
-    @apply bg-[#11141c] border border-slate-800 rounded-md transition-colors duration-200;
+    @apply bg-[#12151a] border border-[#1e2430] rounded-lg;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
   }
   .pro-card:hover {
-    @apply border-slate-700 bg-[#161a23];
+    @apply border-[#2a3140] bg-[#181c24];
+  }
+  .pro-card-elevated {
+    @apply bg-[#181c24] border border-[#2a3140] rounded-lg;
   }
 
-  /* GRID DATA: Styl pro tabulková data */
+  /* ================================================================
+     DATA DISPLAY COMPONENTS
+     - Optimized for financial data readability
+  ================================================================ */
   .data-label {
-    @apply text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1;
+    @apply text-[11px] font-medium text-[#6b7280] uppercase tracking-wider;
   }
   .data-value {
-    @apply text-[13px] font-semibold text-slate-200;
+    @apply text-sm font-semibold text-[#e8ecf4] font-mono;
+  }
+  .data-value-positive {
+    @apply text-sm font-semibold text-[#22c55e] font-mono;
+  }
+  .data-value-negative {
+    @apply text-sm font-semibold text-[#ef4444] font-mono;
   }
 
-  /* BADGES: Ploché, matné barvy pro statusy */
-  .badge-pro {
-    @apply px-2 py-0.5 text-[11px] font-bold rounded-sm border;
+  /* ================================================================
+     BADGE SYSTEM
+     - Flat, muted colors
+     - Clear semantic meaning
+  ================================================================ */
+  .badge {
+    @apply px-2 py-0.5 text-[11px] font-semibold rounded;
+  }
+  .badge-positive {
+    @apply bg-[rgba(34,197,94,0.12)] text-[#22c55e] border border-[rgba(34,197,94,0.2)];
+  }
+  .badge-negative {
+    @apply bg-[rgba(239,68,68,0.12)] text-[#ef4444] border border-[rgba(239,68,68,0.2)];
+  }
+  .badge-warning {
+    @apply bg-[rgba(245,158,11,0.12)] text-[#f59e0b] border border-[rgba(245,158,11,0.2)];
+  }
+  .badge-info {
+    @apply bg-[rgba(99,102,241,0.12)] text-[#6366f1] border border-[rgba(99,102,241,0.2)];
+  }
+  .badge-neutral {
+    @apply bg-[#1e232d] text-[#9ca3b0] border border-[#2a3140];
+  }
+
+  /* ================================================================
+     BUTTON SYSTEM
+     - Primary: Solid accent (main CTA)
+     - Secondary: Subtle surface (secondary actions)
+     - Ghost: Minimal (tertiary actions)
+     - Danger: Red semantic (destructive actions)
+  ================================================================ */
+  .btn-primary {
+    @apply px-4 py-2 bg-accent hover:bg-accent-hover text-white font-semibold rounded-md transition-colors flex items-center gap-2;
+  }
+  .btn-secondary {
+    @apply px-4 py-2 bg-surface-hover hover:bg-surface-active text-text-primary border border-border font-semibold rounded-md transition-colors flex items-center gap-2;
+  }
+  .btn-danger {
+    @apply px-4 py-2 bg-negative-bg hover:bg-negative/20 text-negative font-semibold rounded-md transition-colors flex items-center gap-2;
+  }
+  .btn-ghost {
+    @apply px-4 py-2 bg-transparent hover:bg-surface-hover text-text-muted hover:text-text-primary font-medium rounded-md transition-colors flex items-center gap-2;
+  }
+
+  /* ================================================================
+     TABLE STYLES
+     - Clean, minimal borders
+     - Alternating row subtle distinction
+  ================================================================ */
+  .table-pro {
+    @apply w-full text-sm;
+  }
+  .table-pro thead th {
+    @apply px-4 py-3 text-left text-[11px] font-medium text-[#6b7280] uppercase tracking-wider border-b border-[#1e2430];
+  }
+  .table-pro tbody tr {
+    @apply border-b border-[#1e2430] hover:bg-[#12151a] transition-colors cursor-pointer;
+  }
+  .table-pro tbody td {
+    @apply px-4 py-3;
+  }
+
+  /* ================================================================
+     SCORE INDICATOR
+     - Monochrome base with semantic color for value
+  ================================================================ */
+  .score-high {
+    @apply text-[#22c55e];
+  }
+  .score-medium {
+    @apply text-[#f59e0b];
+  }
+  .score-low {
+    @apply text-[#ef4444];
+  }
+  .score-neutral {
+    @apply text-[#6b7280];
+  }
+
+  /* ================================================================
+     INPUT STYLES
+     - Minimal, functional
+  ================================================================ */
+  .input-pro {
+    @apply w-full px-3 py-2 bg-surface-raised border border-border rounded text-text-primary placeholder-text-muted;
+    @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30;
   }
 }
 
-/* Odstranění všech animací, které zdržují. Profesionál chce data hned. */
+/* Disable all unnecessary animations for professional feel */
+@media (prefers-reduced-motion: no-preference) {
+  /* Keep only essential transitions */
+  .transition-colors {
+    transition-duration: 0.15s;
+  }
+}

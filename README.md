@@ -10,12 +10,14 @@ Akcion je fiduciární investiční platforma využívající AI (Google Gemini)
 
 ### Klíčové funkce
 
-- **AI Analýza** - Gemini Pro s Google Search pro real-time data
+- **Universal Intelligence Unit** - Multi-source analýza (Official Filings 100%, Chat Discussion 30%, Analyst Reports 60%)
+- **AI Analýza** - Gemini 2.0 Flash s Deep Due Diligence
+- **Logical Validation** - Automatická detekce chyb (Score 9+ vyžaduje Catalyst)
 - **The Gomes Rules** - Information Arbitrage, Catalysts, Risk Assessment
 - **Fiduciární standard** - Agresivní extrakce se scoring systémem 1-10
 - **Multi-Portfolio** - Správa portfolií pro více majitelů
 - **Multi-Broker** - Import z Degiro, Trading212, XTB
-- **Real-Time ceny** - Massive.com API + yfinance fallback
+- **Kelly Allocator** - Doporučení velikosti pozice podle skóre
 
 ### Technologie
 
@@ -24,8 +26,8 @@ Akcion je fiduciární investiční platforma využívající AI (Google Gemini)
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | Backend | FastAPI, Python 3.12, SQLAlchemy 2.0 |
 | Databáze | PostgreSQL (Neon.tech) |
-| AI | Google Gemini Pro |
-| Market Data | Massive.com API, yfinance |
+| AI | Google Gemini 2.0 Flash Exp |
+| Market Data | DB + Deep DD Analysis |
 
 ---
 
@@ -279,7 +281,24 @@ SQL skripty v `backend/migrations/`:
 
 ### Leden 2026
 
-- ✅ Clean Code refaktoring celého backendu
+#### 🆕 Universal Intelligence Unit (25.1.2026)
+- ✅ Multi-source prompt s auto-detekci typu vstupu
+- ✅ Source-specific logic: Official (100%), Chat (30%), Analyst (60%)
+- ✅ Nested JSON structure s meta_info, inflection_updates, financial_updates
+- ✅ Context-aware extraction (Chat → sentiment/rumors, Official → hard numbers)
+
+#### 🛡️ Logical Validation System (25.1.2026)
+- ✅ Backend validace: Score 9+ vyžaduje konkrétní Catalyst
+- ✅ Žluté varování ve frontendu při logické chybě
+- ✅ Ochrana před AI blind spots (domýšlení burzovního kalendáře)
+
+#### 🎨 UI Improvements
+- ✅ Trading Deck větší fonty (text-xs místo text-[9px])
+- ✅ + ANALÝZA tlačítko přesunuto do header
+- ✅ Trading Deck Legend (3-column vysvětlivky)
+- ✅ Gomes Guardian Intelligence Unit modal
+
+#### 🧹 Clean Code Refactoring
 - ✅ Přechod na `from __future__ import annotations`
 - ✅ Type hints: `str | None` místo `Optional[str]`
 - ✅ Logging místo print()

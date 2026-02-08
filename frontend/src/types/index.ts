@@ -12,12 +12,13 @@ export interface Stock {
   source_type: string;
   speaker: string;
   sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | null;
-  gomes_score: number | null;
+  conviction_score: number | null;
   conviction_score: number | null;
   price_target: string | null;
   time_horizon: string | null;
   edge: string | null; // Information Arbitrage
   catalysts: string | null;
+  next_catalyst: string | null; // Next catalyst: "Q1 EARNINGS / MAY 26"
   risks: string | null;
   raw_notes: string | null;
   
@@ -31,20 +32,50 @@ export interface Stock {
   trade_rationale: string | null;
   chart_setup: string | null;
   
-  // Price Lines data (from Gomes Intelligence)
+  // Price Lines data (from Investment Intelligence)
   current_price: number | null;
   green_line: number | null;
   red_line: number | null;
   grey_line: number | null;
   price_position_pct: number | null; // 0-100%, where 0=at green, 100=at red
   price_zone: 'DEEP_VALUE' | 'BUY_ZONE' | 'ACCUMULATE' | 'FAIR_VALUE' | 'SELL_ZONE' | 'OVERVALUED' | null;
+  
+  // Master Conviction Table (2026-01-25)
+  asset_class?: string | null;
+  cash_runway_months?: number | null;
+  insider_ownership_pct?: number | null;
+  fully_diluted_market_cap?: number | null;
+  enterprise_value?: number | null;
+  quarterly_burn_rate?: number | null;
+  total_cash?: number | null;
+  inflection_status?: 'WAIT_TIME' | 'UPCOMING' | 'ACTIVE_GOLD_MINE' | null;
+  primary_catalyst?: string | null;
+  catalyst_date?: string | null;
+  thesis_narrative?: string | null;
+  price_floor?: number | null;
+  price_target_24m?: number | null;
+  current_valuation_stage?: 'UNDERVALUED' | 'FAIR' | 'OVERVALUED' | 'BUBBLE' | null;
+  price_base?: number | null;
+  price_moon?: number | null;
+  forward_pe_2027?: number | null;
+  max_allocation_cap?: number | null;
+  stop_loss_price?: number | null;
+  insider_activity?: 'BUYING' | 'HOLDING' | 'SELLING' | null;
+  market_cap?: number | null;
+  
+  // Trading Zones (Calculated from Price Lines)
+  max_buy_price?: number | null;
+  start_sell_price?: number | null;
+  risk_to_floor_pct?: number | null;
+  upside_to_ceiling_pct?: number | null;
+  trading_zone_signal?: 'AGGRESSIVE_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | null;
 }
 
 export interface StockAnalysisResult {
   ticker: string;
   company_name: string | null;
   sentiment: string;
-  gomes_score: number;
+  conviction_score: number;
   price_target: string | null;
   edge: string | null;
   catalysts: string | null;
@@ -94,7 +125,7 @@ export interface PortfolioStats {
     neutral: number;
   };
   high_conviction_count: number;
-  average_gomes_score: number;
+  average_conviction_score: number;
   average_conviction_score: number;
 }
 
@@ -127,6 +158,7 @@ export interface Portfolio {
   created_at: string;
   updated_at: string;
   cash_balance?: number;
+  monthly_contribution?: number; // Měsíční vklad v CZK
   position_count?: number;
   total_value?: number;
 }
@@ -135,6 +167,7 @@ export interface Position {
   id: number;
   portfolio_id: number;
   ticker: string;
+  company_name?: string | null;
   shares_count: number;
   avg_cost: number;
   current_price: number | null;
@@ -143,6 +176,7 @@ export interface Position {
   market_value: number;
   unrealized_pl: number;
   unrealized_pl_percent: number;
+  currency?: string;
   created_at: string;
   updated_at: string;
 }
@@ -203,16 +237,16 @@ export interface MarketStatusData {
   note: string | null;
 }
 
-// Gomes Analyzer Types
+// Conviction Analyzer Types
 
-export type GomesRating = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'AVOID' | 'HIGH_RISK';
+export type ConvictionRating = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'AVOID' | 'HIGH_RISK';
 export type LifecyclePhase = 'GREAT_FIND' | 'WAIT_TIME' | 'GOLD_MINE' | 'UNKNOWN';
 export type MarketAlert = 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED';
 
-export interface GomesScoreResponse {
+export interface ConvictionScoreResponse {
   ticker: string;
   total_score: number;
-  rating: GomesRating;
+  rating: ConvictionRating;
   
   // Score components
   story_score: number;
@@ -234,7 +268,7 @@ export interface GomesScoreResponse {
   has_ml_prediction: boolean;
   earnings_date: string | null;
   
-  // Extended Gomes fields (from AI analysis)
+  // Extended analysis fields (from AI analysis)
   lifecycle_phase?: LifecyclePhase;
   green_line?: number | null;
   red_line?: number | null;
@@ -249,7 +283,7 @@ export interface GomesScoreResponse {
 export interface WatchlistRanking {
   ticker: string;
   score: number;
-  rating: GomesRating;
+  rating: ConvictionRating;
   confidence: string;
   reasoning: string;
   last_analyzed: string;
@@ -262,7 +296,7 @@ export interface WatchlistRankingResponse {
   timestamp: string;
 }
 
-export interface GomesAnalyzeRequest {
+export interface AnalyzeRequest {
   ticker: string;
   transcript_text?: string;
   market_data?: {
@@ -276,7 +310,7 @@ export interface BatchAnalyzeResponse {
   total_requested: number;
   successful: number;
   failed: number;
-  results: GomesScoreResponse[];
+  results: ConvictionScoreResponse[];
   errors: Array<{ ticker: string; error: string }>;
 }
 
@@ -334,4 +368,194 @@ export interface TranscriptSummary {
   is_processed: boolean;
   quality: string;
   created_at: string | null;
+}
+
+// ==================== Gomes ML Stocks Types ====================
+
+export interface ScoredStockItem {
+  ticker: string;
+  company_name: string | null;
+  conviction_score: number | null;
+  sentiment: string | null;
+  action_verdict: string | null;
+  lifecycle_phase: string | null;
+  
+  // Price lines from analysis
+  green_line: number | null;
+  red_line: number | null;
+  current_price: number | null;
+  price_zone: string | null;
+  price_position_pct: number | null;
+  
+  // ML prediction
+  has_ml_prediction: boolean;
+  ml_direction: 'UP' | 'DOWN' | 'NEUTRAL' | null;
+  ml_confidence: number | null;
+  
+  // Context
+  video_date: string | null;
+  notes: string | null;
+}
+
+export interface ScoredStocksResponse {
+  stocks: ScoredStockItem[];
+  total_count: number;
+  stocks_with_lines: number;
+  stocks_with_ml: number;
+  market_alert: string;
+}
+
+// ==================== Price Lines History Types ====================
+
+export interface PriceLinesHistoryItem {
+  id: number;
+  ticker: string;
+  green_line: number | null;
+  red_line: number | null;
+  effective_from: string;
+  valid_until: string | null;
+  source: string | null;
+  source_reference: string | null;
+}
+
+export interface PriceLinesHistoryResponse {
+  ticker: string;
+  total_records: number;
+  current_green_line: number | null;
+  current_red_line: number | null;
+  history: PriceLinesHistoryItem[];
+}
+
+// ==================== Thesis Drift & Score History Types ====================
+
+export type ThesisStatus = 'IMPROVED' | 'STABLE' | 'DETERIORATED' | 'BROKEN';
+export type AlertSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+export type DriftAlertType = 'HYPE_AHEAD_OF_FUNDAMENTALS' | 'THESIS_BREAKING' | 'ACCUMULATE_SIGNAL';
+
+export interface ScoreHistoryPoint {
+  id: number;
+  ticker: string;
+  conviction_score: number;
+  thesis_status: ThesisStatus | null;
+  action_signal: string | null;
+  price_at_analysis: number | null;
+  recorded_at: string;
+  analysis_source: string | null;
+}
+
+export interface ScoreHistoryResponse {
+  ticker: string;
+  total_records: number;
+  latest_score: number | null;
+  score_trend: 'UP' | 'DOWN' | 'STABLE';
+  history: ScoreHistoryPoint[];
+}
+
+export interface ThesisDriftAlert {
+  id: number;
+  ticker: string;
+  alert_type: DriftAlertType;
+  severity: AlertSeverity;
+  old_score: number | null;
+  new_score: number | null;
+  price_change_pct: number | null;
+  message: string;
+  is_acknowledged: boolean;
+  created_at: string;
+}
+
+export interface DriftAlertsResponse {
+  total_alerts: number;
+  unacknowledged: number;
+  alerts: ThesisDriftAlert[];
+}
+
+// ==================== Kelly Allocator Types ====================
+
+export interface AllocationRecommendation {
+  ticker: string;
+  conviction_score: number;
+  kelly_weight_pct: number;
+  recommended_amount: number;
+  currency: string;
+  reasoning: string;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+}
+
+export interface FamilyGap {
+  ticker: string;
+  holder: string;
+  missing_from: string;
+  conviction_score: number;
+  action: string;
+}
+
+export interface AllocationPlanRequest {
+  available_capital_czk: number;
+  available_capital_eur: number;
+}
+
+export interface AllocationPlanResponse {
+  total_available_czk: number;
+  total_available_eur: number;
+  recommendations: AllocationRecommendation[];
+  total_allocated_czk: number;
+  remaining_czk: number;
+}
+
+export interface FamilyAuditResponse {
+  portfolios_compared: string[];
+  gaps: FamilyGap[];
+  summary: string;
+}
+
+// ==================== Deep Due Diligence Types ====================
+
+export interface DeepDDData {
+  ticker: string;
+  company_name: string | null;
+  conviction_score: number;
+  thesis_status: 'IMPROVED' | 'STABLE' | 'DETERIORATED' | 'UNKNOWN';
+  action_signal: 'BUY_NOW' | 'ACCUMULATE' | 'HOLD' | 'SELL' | 'AVOID';
+  kelly_criterion_hint: number;
+  inflection_status: string;
+  green_line: number | null;
+  red_line: number | null;
+  current_price: number | null;
+  catalysts: string[];
+  risks: string[];
+  edge: string | null;
+  cash_runway_months: number | null;
+  management_ownership_pct: number | null;
+}
+
+export interface DeepDDResponse {
+  analysis_text: string;
+  data: DeepDDData;
+  thesis_drift: 'IMPROVED' | 'STABLE' | 'DETERIORATED';
+  score_change: number;
+}
+
+export interface StockUpdateResponse {
+  success: boolean;
+  ticker: string;
+  previous_score: number | null;
+  new_score: number;
+  score_change: number | null;
+  thesis_drift: 'IMPROVED' | 'STABLE' | 'DETERIORATED' | null;
+  action_signal: string;
+  source_type: string;
+  analysis_summary: string;
+}
+
+// Price Update Response (manual price update)
+export interface PriceUpdateResponse {
+  success: boolean;
+  ticker: string;
+  current_price: number;
+  green_line: number | null;
+  red_line: number | null;
+  price_position_pct: number | null;
+  price_zone: string | null;
+  message: string;
 }

@@ -92,7 +92,7 @@ class ActiveWatchlist(Base):
     notes = Column(Text)
     
     # Enhanced analysis fields (added via migration)
-    gomes_score = Column(Numeric(4, 2))
+    conviction_score = Column(Numeric(4, 2))
     investment_thesis = Column(Text)
     risks = Column(Text)
     
@@ -103,9 +103,9 @@ class ActiveWatchlist(Base):
     
     __table_args__ = (
         CheckConstraint('confidence_score >= 0 AND confidence_score <= 1', name='check_confidence_range'),
-        CheckConstraint('gomes_score >= 0 AND gomes_score <= 10', name='check_gomes_score_range'),
+        CheckConstraint('conviction_score >= 0 AND conviction_score <= 10', name='check_conviction_score_range'),
         Index('idx_watchlist_active', 'is_active', 'last_updated'),
-        Index('idx_watchlist_gomes_score', 'gomes_score', postgresql_where="gomes_score IS NOT NULL"),
+        Index('idx_watchlist_conviction_score', 'conviction_score', postgresql_where="conviction_score IS NOT NULL"),
     )
     
     def __repr__(self):

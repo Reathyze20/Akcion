@@ -19,10 +19,14 @@ from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
 from app.schemas.gomes import (
+    AnalyzeTickerRequest,
+    AnalyzeTickerResponse,
     CalculatePositionRequest,
     ClassifyLifecycleRequest,
     GenerateVerdictRequest,
     GomesDashboardResponse,
+    GomesStockItem,
+    GomesStocksListResponse,
     GomesVerdictResponse,
     ImageLinesImportResponse,
     LifecyclePhaseResponse,
@@ -35,12 +39,16 @@ from app.schemas.gomes import (
     WatchlistScanResponse,
 )
 from app.services.gomes_intelligence import GomesIntelligenceService
+from app.models.stock import Stock
 from app.trading.gomes_logic import (
     MarketAlert,
     MarketAlertSystem,
     PositionSizingEngine,
     RiskRewardCalculator,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -74,7 +82,7 @@ def _verdict_to_response(verdict) -> GomesVerdictResponse:
         verdict=verdict.verdict.value if hasattr(verdict.verdict, 'value') else verdict.verdict,
         passed_gomes_filter=verdict.passed_gomes_filter,
         blocked_reason=verdict.blocked_reason,
-        gomes_score=verdict.gomes_score,
+        conviction_score=verdict.conviction_score,
         ml_prediction_score=verdict.ml_prediction_score,
         ml_direction=verdict.ml_direction,
         lifecycle_phase=verdict.lifecycle_phase.value if hasattr(verdict.lifecycle_phase, 'value') else verdict.lifecycle_phase,
@@ -108,10 +116,10 @@ def get_market_alert(db: Session = Depends(get_db)):
     Get current market alert level and portfolio allocation.
     
     **Alert Levels:**
-    - 🟢 GREEN ALERT (OFFENSE): Aggressively deploying capital - Good time to buy
-    - 🟡 YELLOW ALERT (SELECTIVE): Only best setups
-    - 🟠 ORANGE ALERT (DEFENSE): Reducing exposure
-    - 🔴 RED ALERT (CASH IS KING): Preserve capital
+    - GREEN ALERT (OFFENSE): Aggressively deploying capital - Good time to buy
+    - YELLOW ALERT (SELECTIVE): Only best setups
+    - ORANGE ALERT (DEFENSE): Reducing exposure
+    - RED ALERT (CASH IS KING): Preserve capital
     
     **Ref:** Minute 15:00-18:00 - Market Alert System
     """
@@ -141,7 +149,7 @@ def set_market_alert(
     """
     Set new market alert level.
     
-    ⚠️ This affects ALL investment decisions!
+    WARNING: This affects ALL investment decisions!
     
     **Impact:**
     - YELLOW (SELECTIVE): Speculative positions blocked
@@ -188,9 +196,9 @@ def get_lifecycle_phase(
     Get current lifecycle phase for a stock.
     
     **Phases:**
-    - 🌟 GREAT_FIND: Early opportunity, unknown gem
-    - ⏳ WAIT_TIME: Dead money - DO NOT INVEST
-    - 💰 GOLD_MINE: Proven execution, safe buy
+    - GREAT_FIND: Early opportunity, unknown gem
+    - WAIT_TIME: Dead money - DO NOT INVEST
+    - GOLD_MINE: Proven execution, safe buy
     
     **Ref:** Minute 25:00-31:28 - Stock Life Phases
     """
@@ -263,9 +271,9 @@ def get_price_lines(
     Get price target lines for a stock.
     
     **Lines:**
-    - 🟢 Green Line: Buy zone (undervalued)
-    - 🔴 Red Line: Sell zone (overvalued)
-    - ⚪ Grey Line: Neutral zone
+    - Green Line: Buy zone (undervalued)
+    - Red Line: Sell zone (overvalued)
+    - Grey Line: Neutral zone
     
     **Ref:** Minute 35:00 - Price Target Lines
     """
@@ -394,20 +402,20 @@ def generate_verdict(
     6. ML prediction integration
     
     **Verdict Types:**
-    - ✅ STRONG_BUY: Score 9-10, all filters pass
-    - ✅ BUY: Score 7-8
-    - 📊 ACCUMULATE: Buy on dips
-    - ⏸️ HOLD: Keep position
-    - ✂️ TRIM: Reduce position
-    - 🚫 SELL: Exit
-    - ❌ AVOID: Don't enter
-    - 🔒 BLOCKED: Failed Gomes filter
+    - STRONG_BUY: Score 9-10, all filters pass
+    - BUY: Score 7-8
+    - ACCUMULATE: Buy on dips
+    - HOLD: Keep position
+    - TRIM: Reduce position
+    - SELL: Exit
+    - AVOID: Don't enter
+    - BLOCKED: Failed Gomes filter
     """
     try:
         service = GomesIntelligenceService(db)
         verdict = service.generate_verdict(
             ticker=request.ticker,
-            gomes_score=request.gomes_score,
+            conviction_score=request.conviction_score,
             current_price=request.current_price,
             earnings_date=request.earnings_date,
             transcript_text=request.transcript_text,
@@ -561,20 +569,19 @@ def calculate_position_size(
             from app.trading.gomes_logic import LifecyclePhase
             lifecycle_phase = LifecyclePhase(lifecycle.phase)
         
-        # Get stock score
-        from app.models.stock import Stock
+        # Get stock score (Stock already imported at top)
         stock = (
             service.db.query(Stock)
             .filter(Stock.ticker == request.ticker.upper())
             .filter(Stock.is_latest == True)
             .first()
         )
-        gomes_score = stock.gomes_score if stock else 5
+        conviction_score = stock.conviction_score if stock else 5
         
         # Calculate tier and limits
         tier = PositionSizingEngine.determine_tier(
             lifecycle_phase=lifecycle_phase or LifecyclePhase.UNKNOWN,
-            gomes_score=gomes_score
+            conviction_score=conviction_score
         )
         
         limit = PositionSizingEngine.get_position_limit(tier, request.ticker)
@@ -588,6 +595,67 @@ def calculate_position_size(
             allowed_at_current_alert=limit.max_portfolio_pct > 0,
             current_alert=market_alert.value,
             reasoning=limit.reasoning
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# ML STOCKS LIST ENDPOINT
+# ============================================================================
+
+@router.get("/ml-stocks", response_model=GomesStocksListResponse)
+def get_ml_stocks_list(db: Session = Depends(get_db)):
+    """
+    Get all Gomes stocks with price lines for ML prediction page.
+    
+    Returns list of stocks from Gomes videos with:
+    - Gomes score and sentiment
+    - Green/Red price lines
+    - Current ML prediction status
+    - Lifecycle phase
+    
+    **Use Case:** ML Prediction page with stock list and chart detail.
+    """
+    try:
+        service = GomesIntelligenceService(db)
+        
+        # Get market alert
+        market_alert = service.get_current_market_alert()
+        
+        # Get stocks with lines
+        stocks_data = service.get_gomes_stocks_with_lines()
+        
+        # Convert to response models
+        stocks = [
+            GomesStockItem(
+                ticker=s["ticker"],
+                company_name=s.get("company_name"),
+                conviction_score=s.get("conviction_score"),
+                sentiment=s.get("sentiment"),
+                action_verdict=s.get("action_verdict"),
+                lifecycle_phase=s.get("lifecycle_phase"),
+                green_line=s.get("green_line"),
+                red_line=s.get("red_line"),
+                current_price=s.get("current_price"),
+                price_zone=s.get("price_zone"),
+                price_position_pct=s.get("price_position_pct"),
+                has_ml_prediction=s.get("has_ml_prediction", False),
+                ml_direction=s.get("ml_direction"),
+                ml_confidence=s.get("ml_confidence"),
+                video_date=s.get("video_date"),
+                notes=s.get("notes"),
+            )
+            for s in stocks_data
+        ]
+        
+        return GomesStocksListResponse(
+            stocks=stocks,
+            total_count=len(stocks),
+            stocks_with_lines=len([s for s in stocks if s.green_line or s.red_line]),
+            stocks_with_ml=len([s for s in stocks if s.has_ml_prediction]),
+            market_alert=market_alert.value
         )
         
     except Exception as e:
@@ -627,7 +695,7 @@ def get_dashboard(db: Session = Depends(get_db)):
         from sqlalchemy import func
         
         total = service.db.query(func.count(ActiveWatchlist.id)).filter(ActiveWatchlist.is_active == True).scalar() or 0
-        avg_score = service.db.query(func.avg(ActiveWatchlist.gomes_score)).filter(ActiveWatchlist.is_active == True).scalar() or 0
+        avg_score = service.db.query(func.avg(ActiveWatchlist.conviction_score)).filter(ActiveWatchlist.is_active == True).scalar() or 0
         
         return GomesDashboardResponse(
             market_alert=MarketAlertResponse(
@@ -649,9 +717,276 @@ def get_dashboard(db: Session = Depends(get_db)):
             blocked_stocks=blocked,
             total_watchlist=total,
             investable_count=total - len(blocked),
-            avg_gomes_score=float(avg_score),
+            avg_conviction_score=float(avg_score),
             last_updated=datetime.now()
         )
         
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# TICKER-SPECIFIC ANALYSIS
+# ============================================================================
+
+@router.post("/analyze-ticker", response_model=AnalyzeTickerResponse)
+async def analyze_ticker_from_transcript(
+    request: AnalyzeTickerRequest,
+    db: Session = Depends(get_db),
+    use_universal_prompt: bool = Query(True, description="Use Universal Intelligence Unit (multi-source support)")
+):
+    """
+    Analyze specific ticker from transcript/video with intelligent source detection.
+    
+    Supports TWO MODES:
+    1. **Universal Intelligence** (use_universal_prompt=True, DEFAULT):
+       - Auto-detects source type (OFFICIAL_FILING, CHAT_DISCUSSION, ANALYST_REPORT)
+       - Applies different logic per source (100% reliability for filings, 30% for chat)
+       - Returns meta_info, sentiment shifts, rumor flags
+    
+    2. **Legacy Aggressive Mode** (use_universal_prompt=False):
+       - Original "Nejasnost = Riziko" prompt
+       - Missing Cash → Score capped at 5
+       - Missing Catalyst → -2 points
+    
+    Updates existing stock data in database (not creates new).
+    """
+    try:
+        logger.info(f"=== ANALYZE TICKER START: {request.ticker} ===")
+        logger.info(f"Source: {request.source_type}, Universal: {use_universal_prompt}")
+        
+        if use_universal_prompt:
+            from app.core.prompts_universal_intelligence import (
+                UNIVERSAL_INTELLIGENCE_PROMPT,
+                get_sentiment_alert_level
+            )
+            prompt_template = UNIVERSAL_INTELLIGENCE_PROMPT
+        else:
+            from app.core.prompts_ticker_analysis import (
+                TICKER_ANALYSIS_PROMPT,
+                get_warning_level
+            )
+            prompt_template = TICKER_ANALYSIS_PROMPT
+        
+        from app.config.settings import Settings
+        import google.generativeai as genai
+        import json
+        from decimal import Decimal
+        from app.models.portfolio import Position
+        
+        settings = Settings()
+        
+        # 1. Get existing stock data from database OR create new
+        stock = db.query(Stock).filter(Stock.ticker == request.ticker.upper()).first()
+        if not stock:
+            # Create new stock record for watchlist/new tickers
+            logger.info(f"Stock {request.ticker} not found - creating new record")
+            stock = Stock(
+                ticker=request.ticker.upper(),
+                company_name=request.ticker.upper(),  # Will be updated by AI
+                conviction_score=5,  # Default neutral score
+                sentiment="NEUTRAL",
+                source_type=request.source_type,
+            )
+            db.add(stock)
+            db.flush()  # Get ID without committing
+            logger.info(f"Created new stock record for {request.ticker}")
+        else:
+            logger.info(f"Stock found: {stock.ticker}, current score: {stock.conviction_score}")
+        
+        # Get portfolio position for shares count and weight (if exists)
+        position = db.query(Position).filter(Position.ticker == request.ticker).first()
+        logger.info(f"Position found: {position is not None}")
+        
+        # 2. Prepare template variables
+        current_price = float(stock.current_price or 0)
+        shares_count = float(position.shares_count if position else 0)
+        
+        # Calculate portfolio weight if position exists
+        current_weight = 0.0
+        if position and position.portfolio:
+            # Get all positions in the portfolio
+            all_positions = db.query(Position).filter(Position.portfolio_id == position.portfolio_id).all()
+            total_portfolio_value = sum(p.market_value for p in all_positions if p.current_price)
+            if total_portfolio_value > 0:
+                current_weight = (position.market_value / total_portfolio_value) * 100
+        
+        last_score = stock.conviction_score or 0
+        
+        # 3. Format prompt with actual data
+        prompt = prompt_template.format(
+            ticker=request.ticker,
+            input_text=request.input_text[:30000],  # Limit to avoid token overflow
+            current_price=current_price,
+            shares_count=shares_count,
+            current_weight=current_weight,
+            last_score=last_score
+        )
+        
+        # 4. Call Gemini API
+        logger.info("Calling Gemini API...")
+        genai.configure(api_key=settings.gemini_api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        logger.info(f"Gemini response received, length: {len(response_text)}")
+        logger.debug(f"Response preview: {response_text[:500]}")
+        
+        # Extract JSON from markdown code blocks if present
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        
+        # 5. Parse JSON response
+        try:
+            logger.info("Parsing JSON response...")
+            data = json.loads(response_text)
+            logger.info(f"JSON parsed successfully, keys: {list(data.keys())}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini response: {response_text[:500]}")
+            raise HTTPException(status_code=500, detail=f"AI returned invalid JSON: {str(e)}")
+        
+        # 6. Validate and process response based on prompt mode
+        if use_universal_prompt:
+            # Universal mode - different JSON structure
+            required_fields = ["ticker", "meta_info", "inflection_updates", "financial_updates", "score_impact_recommendation"]
+            for field in required_fields:
+                if field not in data:
+                    raise HTTPException(status_code=500, detail=f"AI response missing required field: {field}")
+            
+            # Extract from nested structure
+            meta = data["meta_info"]
+            inflection = data["inflection_updates"]
+            financial = data["financial_updates"]
+            score_data = data["score_impact_recommendation"]
+            
+            conviction_score = score_data["conviction_score"]
+            inflection_status = data.get("inflection_status", "WAIT_TIME")
+            thesis_narrative = data.get("thesis_narrative", stock.thesis_narrative or "")
+            next_catalyst = inflection.get("potential_catalyst", "NO CATALYST DETECTED")
+            cash_runway_status = financial.get("cash_runway_status", "UNCHANGED")
+            recommendation = data.get("recommendation", "HOLD")
+            
+            # Build warning messages based on source type and findings
+            warning_msgs = []
+            source_type = meta.get("detected_source_type", "UNKNOWN")
+            reliability = meta.get("source_reliability", "0%")
+            
+            if source_type == "CHAT_DISCUSSION":
+                warning_msgs.append(f"📢 CHAT DISKUZE - Spolehlivost {reliability}")
+                if inflection.get("management_credibility_alert") != "NO_ISSUES":
+                    warning_msgs.append(f"⚠️ Management: {inflection['management_credibility_alert']}")
+                if "RUMOR" in next_catalyst.upper() or "UNCONFIRMED" in next_catalyst.upper():
+                    warning_msgs.append("🔮 RUMOR: Catalyst datum není potvrzený")
+            
+            if "UNKNOWN - DATA GAP" in cash_runway_status:
+                warning_msgs.append("🚨 CHYBÍ FINANČNÍ DATA - Ochranný mechanismus aktivován")
+            
+            sentiment = inflection.get("thesis_sentiment_shift", "Neutral")
+            if sentiment in ["Negative", "Critical Warning"]:
+                warning_msgs.append(f"📉 Sentiment shift: {sentiment}")
+            
+            # LOGICAL VALIDATION: High Score requires Catalyst
+            if conviction_score >= 9 and ("NO CATALYST" in next_catalyst.upper() or not next_catalyst.strip()):
+                warning_msgs.append("⚠️ LOGICAL ERROR: High Score (9+) but No Catalyst. Score není obhajitelné bez konkrétního katalyzátoru. Doplň ručně (např. 'Q1 High-Grade Sales').")
+                logger.warning(f"Logical error detected for {request.ticker}: Score {conviction_score} but catalyst: {next_catalyst}")
+            
+            # Store meta info in stock raw_notes field
+            meta_notes = f"Source: {source_type} ({reliability})\n" + "\n".join(inflection.get("key_takeaways_bullets", []))
+            stock.raw_notes = meta_notes[:500]  # Limit length
+            
+        else:
+            # Legacy mode - original flat structure
+            required_fields = [
+                "ticker", "conviction_score", "inflection_status", "thesis_narrative",
+                "next_catalyst", "cash_runway_status", "recommendation"
+            ]
+            for field in required_fields:
+                if field not in data:
+                    raise HTTPException(status_code=500, detail=f"AI response missing required field: {field}")
+            
+            conviction_score = data["conviction_score"]
+            inflection_status = data["inflection_status"]
+            thesis_narrative = data["thesis_narrative"]
+            next_catalyst = data["next_catalyst"]
+            cash_runway_status = data["cash_runway_status"]
+            recommendation = data["recommendation"]
+            
+            # Legacy warning messages
+            from app.core.prompts_ticker_analysis import WARNING_MESSAGES
+            warning_msgs = []
+            if "UNKNOWN - DATA GAP" in cash_runway_status:
+                warning_msgs.append(WARNING_MESSAGES["UNKNOWN_CASH"])
+            if "NO CATALYST DETECTED" in next_catalyst:
+                warning_msgs.append(WARNING_MESSAGES["NO_CATALYST"])
+            if conviction_score <= 4:
+                warning_msgs.append(WARNING_MESSAGES["LOW_SCORE"])
+            
+            # LOGICAL VALIDATION: High Score requires Catalyst
+            if conviction_score >= 9 and ("NO CATALYST" in next_catalyst.upper() or not next_catalyst.strip()):
+                warning_msgs.append("⚠️ LOGICAL ERROR: High Score (9+) but No Catalyst. Score není obhajitelné bez konkrétního katalyzátoru. Doplň ručně (např. 'Q1 High-Grade Sales').")
+                logger.warning(f"Logical error detected for {request.ticker}: Score {conviction_score} but catalyst: {next_catalyst}")
+        
+        # 7. Update stock record in database (common for both modes)
+        stock.conviction_score = conviction_score
+        stock.inflection_status = inflection_status
+        stock.thesis_narrative = thesis_narrative
+        stock.next_catalyst = next_catalyst
+        stock.cash_runway_months = data.get("financial_updates", data).get("cash_runway_months") if use_universal_prompt else data.get("cash_runway_months")
+        stock.cash_runway_status = cash_runway_status
+        
+        # Validate insider_activity - DB constraint allows only BUYING, HOLDING, SELLING
+        raw_insider = data.get("financial_updates", data).get("insider_activity", "HOLDING") if use_universal_prompt else data.get("insider_activity", "HOLDING")
+        valid_insider_values = {"BUYING", "HOLDING", "SELLING"}
+        # Map NEUTRAL/UNKNOWN to HOLDING
+        insider_mapping = {"NEUTRAL": "HOLDING", "UNKNOWN": "HOLDING", "N/A": "HOLDING", "": "HOLDING", None: "HOLDING"}
+        stock.insider_activity = raw_insider if raw_insider in valid_insider_values else insider_mapping.get(raw_insider, "HOLDING")
+        
+        # Update price lines if provided
+        price_targets = data.get("price_targets", {}) if use_universal_prompt else data
+        if price_targets.get("price_floor"):
+            stock.price_floor = Decimal(str(price_targets["price_floor"]))
+        if price_targets.get("price_base"):
+            stock.price_base = Decimal(str(price_targets["price_base"]))
+        if price_targets.get("price_moon"):
+            stock.price_moon = Decimal(str(price_targets["price_moon"]))
+        if price_targets.get("stop_loss_price"):
+            stock.stop_loss_price = Decimal(str(price_targets["stop_loss_price"]))
+        
+        stock.max_allocation_cap = data.get("max_allocation_cap", 10.0)
+        stock.last_updated = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(stock)
+        
+        # 8. Calculate warning level (mode-dependent)
+        if use_universal_prompt:
+            from app.core.prompts_universal_intelligence import get_sentiment_alert_level
+            sentiment = data["inflection_updates"].get("thesis_sentiment_shift", "Neutral")
+            source_type = data["meta_info"].get("detected_source_type", "UNKNOWN")
+            warning_level = get_sentiment_alert_level(sentiment, source_type)
+        else:
+            from app.core.prompts_ticker_analysis import get_warning_level
+            warning_level = get_warning_level(data)
+        
+        # 9. Return response (warning_msgs already built above)
+        return AnalyzeTickerResponse(
+            ticker=stock.ticker,
+            warning_level=warning_level,
+            conviction_score=stock.conviction_score,
+            inflection_status=stock.inflection_status,
+            thesis_narrative=stock.thesis_narrative,
+            next_catalyst=stock.next_catalyst,
+            cash_runway_status=stock.cash_runway_status,
+            recommendation=recommendation,
+            updated_at=stock.last_updated,
+            warning_messages=warning_msgs
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ticker analysis error for {request.ticker}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -29,6 +29,7 @@ class PortfolioBase(BaseModel):
     owner: str = Field(..., description="Portfolio owner (e.g., 'Já', 'Přítelkyně')")
     broker: BrokerType = Field(..., description="Broker type")
     cash_balance: float = Field(default=0.0, description="Available cash for investments")
+    monthly_contribution: float = Field(default=20000.0, description="Monthly contribution amount in CZK")
 
 
 class PortfolioCreate(PortfolioBase):
@@ -73,8 +74,10 @@ class PositionUpdate(BaseModel):
     
     shares_count: float | None = None
     avg_cost: float | None = None
+    current_price: float | None = None
     currency: str | None = None
     company_name: str | None = None
+    ticker: str | None = None
 
 
 class PositionResponse(PositionBase):
@@ -180,7 +183,7 @@ class EnrichedStockResponse(BaseModel):
     price_target_long: str | None
     stop_loss_risk: str | None
     moat_rating: int | None
-    gomes_score: int | None
+    conviction_score: int | None
     sentiment: str | None
     edge: str | None
     risks: str | None
@@ -233,4 +236,5 @@ class PortfolioSummaryResponse(BaseModel):
     total_market_value: float
     total_unrealized_pl: float
     total_unrealized_pl_percent: float
+    cash_balance: float = 0.0
     last_price_update: datetime | None

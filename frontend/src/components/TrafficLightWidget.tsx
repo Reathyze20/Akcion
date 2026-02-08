@@ -48,22 +48,22 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
         return {
           icon: CheckCircle,
           label: 'OFFENSE',
-          color: 'text-green-500',
-          bgColor: 'bg-green-500/10',
-          borderColor: 'border-green-500/30',
-          hoverBg: 'hover:bg-green-500/20',
-          dotColor: 'bg-green-500',
+          color: 'text-positive',
+          bgColor: 'bg-positive/10',
+          borderColor: 'border-positive/30',
+          hoverBg: 'hover:bg-positive/20',
+          dotColor: 'bg-positive',
           description: 'Aggressively deploying capital - Good time to buy'
         };
       case 'YELLOW':
         return {
           icon: AlertTriangle,
           label: 'SELECTIVE',
-          color: 'text-yellow-500',
-          bgColor: 'bg-yellow-500/10',
+          color: 'text-warning',
+          bgColor: 'bg-warning/10',
           borderColor: 'border-yellow-500/30',
-          hoverBg: 'hover:bg-yellow-500/20',
-          dotColor: 'bg-yellow-500',
+          hoverBg: 'hover:bg-warning/20',
+          dotColor: 'bg-warning',
           description: 'Be cautious - Only best setups'
         };
       case 'ORANGE':
@@ -71,21 +71,21 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
           icon: Shield,
           label: 'DEFENSE',
           color: 'text-orange-500',
-          bgColor: 'bg-orange-500/10',
+          bgColor: 'bg-warning/10',
           borderColor: 'border-orange-500/30',
-          hoverBg: 'hover:bg-orange-500/20',
-          dotColor: 'bg-orange-500',
+          hoverBg: 'hover:bg-warning/20',
+          dotColor: 'bg-warning',
           description: 'Reducing exposure - Protecting gains'
         };
       case 'RED':
         return {
           icon: AlertCircle,
           label: 'CASH IS KING',
-          color: 'text-red-500',
-          bgColor: 'bg-red-500/10',
-          borderColor: 'border-red-500/30',
-          hoverBg: 'hover:bg-red-500/20',
-          dotColor: 'bg-red-500',
+          color: 'text-negative',
+          bgColor: 'bg-negative/10',
+          borderColor: 'border-negative/30',
+          hoverBg: 'hover:bg-negative/20',
+          dotColor: 'bg-negative',
           description: 'Maximum defensive - Preserve capital'
         };
     }
@@ -141,13 +141,13 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
                 disabled={status === 'GREEN'}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   status === 'GREEN'
-                    ? 'bg-green-500/20 border border-green-500/30'
+                    ? 'bg-positive/20 border border-positive/30'
                     : 'hover:bg-[#22272E]'
                 }`}
               >
-                <CheckCircle size={18} className="text-green-500" />
+                <CheckCircle size={18} className="text-positive" />
                 <div className="flex-1 text-left">
-                  <div className="text-sm font-semibold text-green-500">GREEN ALERT - OFFENSE</div>
+                  <div className="text-sm font-semibold text-positive">GREEN ALERT - OFFENSE</div>
                   <div className="text-xs text-text-secondary">Aggressively deploying capital</div>
                 </div>
               </button>
@@ -157,13 +157,13 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
                 disabled={status === 'YELLOW'}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   status === 'YELLOW'
-                    ? 'bg-yellow-500/20 border border-yellow-500/30'
+                    ? 'bg-warning/20 border border-yellow-500/30'
                     : 'hover:bg-[#22272E]'
                 }`}
               >
-                <AlertTriangle size={18} className="text-yellow-500" />
+                <AlertTriangle size={18} className="text-warning" />
                 <div className="flex-1 text-left">
-                  <div className="text-sm font-semibold text-yellow-500">YELLOW ALERT - SELECTIVE</div>
+                  <div className="text-sm font-semibold text-warning">YELLOW ALERT - SELECTIVE</div>
                   <div className="text-xs text-text-secondary">Only best setups</div>
                 </div>
               </button>
@@ -173,7 +173,7 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
                 disabled={status === 'ORANGE'}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   status === 'ORANGE'
-                    ? 'bg-orange-500/20 border border-orange-500/30'
+                    ? 'bg-warning/20 border border-orange-500/30'
                     : 'hover:bg-[#22272E]'
                 }`}
               >
@@ -189,13 +189,13 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
                 disabled={status === 'RED'}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   status === 'RED'
-                    ? 'bg-red-500/20 border border-red-500/30'
+                    ? 'bg-negative/20 border border-negative/30'
                     : 'hover:bg-[#22272E]'
                 }`}
               >
-                <AlertCircle size={18} className="text-red-500" />
+                <AlertCircle size={18} className="text-negative" />
                 <div className="flex-1 text-left">
-                  <div className="text-sm font-semibold text-red-500">RED ALERT - CASH IS KING</div>
+                  <div className="text-sm font-semibold text-negative">RED ALERT - CASH IS KING</div>
                   <div className="text-xs text-text-secondary">Preserve capital</div>
                 </div>
               </button>
@@ -216,3 +216,5 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
     </div>
   );
 }
+
+
