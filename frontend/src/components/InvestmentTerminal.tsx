@@ -93,7 +93,8 @@ const formatCurrency = (amount: number, currency: string = 'CZK'): string => {
   return new Intl.NumberFormat('cs-CZ', { 
     style: 'currency', 
     currency,
-    maximumFractionDigits: 0 
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2 
   }).format(amount);
 };
 
@@ -2656,7 +2657,7 @@ export const InvestmentTerminal: React.FC = () => {
   const [showAddPositionModal, setShowAddPositionModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'weight' | 'score' | 'pl'>('score');
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'freedom'>('portfolio');
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'freedom' | 'splaceni'>('portfolio');
   
   // Cash editing state
   const [isEditingCash, setIsEditingCash] = useState(false);
@@ -2669,6 +2670,176 @@ export const InvestmentTerminal: React.FC = () => {
   const [editContributionValue, setEditContributionValue] = useState('');
   const [editContributionPortfolioId, setEditContributionPortfolioId] = useState<number | null>(null);
   const [isSavingContribution, setIsSavingContribution] = useState(false);
+  
+  // Debt management state
+  const [showAddDebtModal, setShowAddDebtModal] = useState(false);
+  const [editingDebtId, setEditingDebtId] = useState<number | null>(null);
+  const [debtForm, setDebtForm] = useState({
+    name: '',
+    amount: '',
+    date: '',
+    monthlyPayment: '',
+    creditor: '',
+    accountNumber: '',
+    variableSymbol: '',
+    note: ''
+  });
+  const [debts, setDebts] = useState<Array<{
+    id: number;
+    name: string;
+    amount: string;
+    date: string;
+    monthlyPayment: string;
+    creditor: string;
+    accountNumber: string;
+    variableSymbol: string;
+    note: string;
+  }>>(() => {
+    // Load from localStorage on init
+    const saved = localStorage.getItem('akcion_debts');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  // Šetření Míša state
+  const [showAddSavingsModal, setShowAddSavingsModal] = useState(false);
+  const [editingSavingsId, setEditingSavingsId] = useState<number | null>(null);
+  const [savingsForm, setSavingsForm] = useState({
+    name: '',
+    amount: '',
+    date: '',
+    monthlyPayment: '',
+    creditor: '',
+    accountNumber: '',
+    variableSymbol: '',
+    note: ''
+  });
+  const [savings, setSavings] = useState<Array<{
+    id: number;
+    name: string;
+    amount: string;
+    date: string;
+    monthlyPayment: string;
+    creditor: string;
+    accountNumber: string;
+    variableSymbol: string;
+    note: string;
+  }>>(() => {
+    // Load from localStorage on init
+    const saved = localStorage.getItem('akcion_savings');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  // Save debts to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('akcion_debts', JSON.stringify(debts));
+  }, [debts]);
+  
+  // Save savings to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('akcion_savings', JSON.stringify(savings));
+  }, [savings]);
+  
+  // Společné platby state
+  const [showAddSharedPaymentsModal, setShowAddSharedPaymentsModal] = useState(false);
+  const [editingSharedPaymentsId, setEditingSharedPaymentsId] = useState<number | null>(null);
+  const [sharedPaymentsForm, setSharedPaymentsForm] = useState({
+    name: '',
+    amount: '',
+    date: '',
+    monthlyPayment: '',
+    creditor: '',
+    accountNumber: '',
+    variableSymbol: '',
+    note: ''
+  });
+  const [sharedPayments, setSharedPayments] = useState<Array<{
+    id: number;
+    name: string;
+    amount: string;
+    date: string;
+    monthlyPayment: string;
+    creditor: string;
+    accountNumber: string;
+    variableSymbol: string;
+    note: string;
+  }>>(() => {
+    // Load from localStorage on init
+    const saved = localStorage.getItem('akcion_shared_payments');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  // Save shared payments to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('akcion_shared_payments', JSON.stringify(sharedPayments));
+  }, [sharedPayments]);
+  
+  // Platby Tom state
+  const [showAddTomPaymentsModal, setShowAddTomPaymentsModal] = useState(false);
+  const [editingTomPaymentsId, setEditingTomPaymentsId] = useState<number | null>(null);
+  const [tomPaymentsForm, setTomPaymentsForm] = useState({
+    name: '',
+    amount: '',
+    date: '',
+    monthlyPayment: '',
+    creditor: '',
+    accountNumber: '',
+    variableSymbol: '',
+    note: ''
+  });
+  const [tomPayments, setTomPayments] = useState<Array<{
+    id: number;
+    name: string;
+    amount: string;
+    date: string;
+    monthlyPayment: string;
+    creditor: string;
+    accountNumber: string;
+    variableSymbol: string;
+    note: string;
+  }>>(() => {
+    // Load from localStorage on init
+    const saved = localStorage.getItem('akcion_tom_payments');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  // Save Tom payments to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('akcion_tom_payments', JSON.stringify(tomPayments));
+  }, [tomPayments]);
+  
+  // Platby Míša state
+  const [showAddMisaPaymentsModal, setShowAddMisaPaymentsModal] = useState(false);
+  const [editingMisaPaymentsId, setEditingMisaPaymentsId] = useState<number | null>(null);
+  const [misaPaymentsForm, setMisaPaymentsForm] = useState({
+    name: '',
+    amount: '',
+    date: '',
+    monthlyPayment: '',
+    creditor: '',
+    accountNumber: '',
+    variableSymbol: '',
+    note: ''
+  });
+  const [misaPayments, setMisaPayments] = useState<Array<{
+    id: number;
+    name: string;
+    amount: string;
+    date: string;
+    monthlyPayment: string;
+    creditor: string;
+    accountNumber: string;
+    variableSymbol: string;
+    note: string;
+  }>>(() => {
+    // Load from localStorage on init
+    const saved = localStorage.getItem('akcion_misa_payments');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  // Save Míša payments to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('akcion_misa_payments', JSON.stringify(misaPayments));
+  }, [misaPayments]);
   
   // Available currencies for cash
   const CASH_CURRENCIES = ['CZK', 'EUR', 'USD', 'CAD', 'GBP'];
@@ -3273,36 +3444,49 @@ export const InvestmentTerminal: React.FC = () => {
             Freedom
             <span className="ml-1 text-lg">🏰</span>
           </button>
+          <button
+            onClick={() => setActiveTab('splaceni')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors ${
+              activeTab === 'splaceni'
+                ? 'bg-accent text-text-primary'
+                : 'bg-surface-raised text-text-muted hover:bg-surface-hover hover:text-text-primary'
+            }`}
+          >
+            <DollarSign className="w-5 h-5" />
+            Platby
+          </button>
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-            <input
-              type="text"
-              placeholder={activeTab === 'portfolio' ? "Search positions..." : "Search watchlist..."}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent w-64"
-            />
-          </div>
-          
-          {activeTab === 'portfolio' && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-text-muted">Sort by:</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
-                className="px-3 py-2 bg-surface-raised border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent"
-              >
-                <option value="score">Score</option>
-                <option value="weight">Weight</option>
-                <option value="pl">P/L %</option>
-              </select>
+        {activeTab !== 'splaceni' && (
+          <div className="flex items-center justify-between mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+              <input
+                type="text"
+                placeholder={activeTab === 'portfolio' ? "Search positions..." : "Search watchlist..."}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent w-64"
+              />
             </div>
-          )}
-        </div>
+            
+            {activeTab === 'portfolio' && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted">Sort by:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
+                  className="px-3 py-2 bg-surface-raised border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent"
+                >
+                  <option value="score">Score</option>
+                  <option value="weight">Weight</option>
+                  <option value="pl">P/L %</option>
+                </select>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Portfolio Summary Stats */}
         {activeTab === 'portfolio' && portfolios.length > 0 && (
@@ -3723,6 +3907,642 @@ export const InvestmentTerminal: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* PLATBY TAB - Debt Management */}
+        {activeTab === 'splaceni' && (
+          <div className="space-y-6">
+            {/* Společné splácení */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-text-primary">Společné splácení</h2>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-4 gap-4 mb-6">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Zbývá uhradit</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(debts.reduce((sum, d) => {
+                      const startDate = new Date(d.date);
+                      const now = new Date();
+                      const monthsPassed = (now.getFullYear() - startDate.getFullYear()) * 12 + 
+                                         (now.getMonth() - startDate.getMonth()) + 1;
+                      const paid = Math.max(0, monthsPassed) * parseFloat(d.monthlyPayment || '0');
+                      const remaining = Math.max(0, parseFloat(d.amount || '0') - paid);
+                      return sum + remaining;
+                    }, 0))}
+                  </div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Měsíční splátka</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(debts.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                  </div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Celkový dluh</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(debts.reduce((sum, d) => sum + parseFloat(d.amount || '0'), 0))}
+                  </div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Splaceno</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(debts.reduce((sum, d) => {
+                      const startDate = new Date(d.date);
+                      const now = new Date();
+                      const monthsPassed = Math.max(0, (now.getFullYear() - startDate.getFullYear()) * 12 + 
+                                         (now.getMonth() - startDate.getMonth()) + 1);
+                      const paid = monthsPassed * parseFloat(d.monthlyPayment || '0');
+                      return sum + paid;
+                    }, 0))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Přehled závazků */}
+              <div>
+              
+              {debts.length === 0 ? (
+                /* Empty State */
+                <div className="text-center py-6">
+                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-10 h-10 text-positive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">
+                    Žádné aktivní závazky
+                  </h3>
+                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                    Zatím nemáte evidované žádné dluhy nebo splátky. 
+                    Můžete přidat hypotéku, auto-leasing, studijní půjčku nebo jiný závazek.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddDebtModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat závazek
+                  </button>
+                </div>
+              ) : (
+                /* Debts Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Částka</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Zbývá</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splaceno</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">1. splátka</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Komu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Informace</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {debts.map((debt) => (
+                        <tr key={debt.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{debt.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(debt.amount))}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">
+                              {(() => {
+                                const startDate = new Date(debt.date);
+                                const now = new Date();
+                                const monthsPassed = (now.getFullYear() - startDate.getFullYear()) * 12 + 
+                                                   (now.getMonth() - startDate.getMonth()) + 1;
+                                const paid = Math.max(0, monthsPassed) * parseFloat(debt.monthlyPayment || '0');
+                                const remaining = Math.max(0, parseFloat(debt.amount || '0') - paid);
+                                return formatCurrency(remaining);
+                              })()}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">
+                              {(() => {
+                                const startDate = new Date(debt.date);
+                                const now = new Date();
+                                const monthsPassed = Math.max(0, (now.getFullYear() - startDate.getFullYear()) * 12 + 
+                                                   (now.getMonth() - startDate.getMonth()) + 1);
+                                const paid = monthsPassed * parseFloat(debt.monthlyPayment || '0');
+                                return formatCurrency(paid);
+                              })()}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">
+                              {new Date(debt.date).toLocaleDateString('cs-CZ')}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(debt.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{debt.creditor}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{debt.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{debt.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm max-w-xs truncate">{debt.note || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingDebtId(debt.id);
+                                setDebtForm({
+                                  name: debt.name,
+                                  amount: debt.amount,
+                                  date: debt.date,
+                                  monthlyPayment: debt.monthlyPayment,
+                                  creditor: debt.creditor,
+                                  accountNumber: debt.accountNumber,
+                                  variableSymbol: debt.variableSymbol,
+                                  note: debt.note
+                                });
+                                setShowAddDebtModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit závazek"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddDebtModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další závazek
+                    </button>
+                  </div>
+                </div>
+              )}
+              </div>
+            </div>
+
+            {/* Společné platby */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-text-primary">Společné platby</h2>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(sharedPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                  </div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Na jednoho</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(sharedPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0) / 2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Přehled */}
+              <div>
+              
+              {sharedPayments.length === 0 ? (
+                /* Empty State */
+                <div className="text-center py-6">
+                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-10 h-10 text-positive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">
+                    Žádné aktivní záznamy
+                  </h3>
+                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                    Zatím nemáte evidované žádné společné platby. 
+                    Můžete přidat novou položku.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddSharedPaymentsModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat položku
+                  </button>
+                </div>
+              ) : (
+                /* Shared Payments Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Informace</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sharedPayments.map((item) => (
+                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{item.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm max-w-xs truncate">{item.note || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingSharedPaymentsId(item.id);
+                                setSharedPaymentsForm({
+                                  name: item.name,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  monthlyPayment: item.monthlyPayment,
+                                  creditor: item.creditor,
+                                  accountNumber: item.accountNumber,
+                                  variableSymbol: item.variableSymbol,
+                                  note: item.note
+                                });
+                                setShowAddSharedPaymentsModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit položku"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddSharedPaymentsModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další položku
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+
+            {/* Grid wrapper pro Šetření Míša a Platby Míša vedle sebe */}
+            <div className="grid grid-cols-2 gap-6">
+              {/* Platby Míša */}
+              <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold text-text-primary">Platby Míša</h2>
+                </div>
+
+                {/* Summary Stats */}
+                <div className="grid grid-cols-1 gap-4 mb-6">
+                  <div className="bg-surface-raised/50 rounded-lg p-4">
+                    <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
+                    <div className="text-2xl font-bold text-text-primary">
+                      {formatCurrency(misaPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Přehled */}
+                <div>
+                
+                {misaPayments.length === 0 ? (
+                  /* Empty State */
+                  <div className="text-center py-6">
+                    <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                      <Check className="w-10 h-10 text-positive" />
+                    </div>
+                    <h3 className="text-xl font-bold text-text-primary mb-2">
+                      Žádné aktivní záznamy
+                    </h3>
+                    <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                      Zatím nemáte evidované žádné platby Míša. 
+                    Můžete přidat novou položku.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddMisaPaymentsModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat položku
+                  </button>
+                </div>
+              ) : (
+                /* Míša Payments Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {misaPayments.map((item) => (
+                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{item.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingMisaPaymentsId(item.id);
+                                setMisaPaymentsForm({
+                                  name: item.name,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  monthlyPayment: item.monthlyPayment,
+                                  creditor: item.creditor,
+                                  accountNumber: item.accountNumber,
+                                  variableSymbol: item.variableSymbol,
+                                  note: item.note
+                                });
+                                setShowAddMisaPaymentsModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit položku"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddMisaPaymentsModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další položku
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+
+            {/* Šetření Míša */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-text-primary">Šetření Míša</h2>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-1 gap-4 mb-6">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(savings.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Přehled */}
+              <div>
+              
+              {savings.length === 0 ? (
+                /* Empty State */
+                <div className="text-center py-6">
+                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-10 h-10 text-positive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">
+                    Žádné aktivní záznamy
+                  </h3>
+                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                    Zatím nemáte evidované žádné šetření. 
+                    Můžete přidat novou položku.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddSavingsModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat položku
+                  </button>
+                </div>
+              ) : (
+                /* Savings Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {savings.map((item) => (
+                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{item.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingSavingsId(item.id);
+                                setSavingsForm({
+                                  name: item.name,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  monthlyPayment: item.monthlyPayment,
+                                  creditor: item.creditor,
+                                  accountNumber: item.accountNumber,
+                                  variableSymbol: item.variableSymbol,
+                                  note: item.note
+                                });
+                                setShowAddSavingsModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit položku"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddSavingsModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další položku
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+            </div> {/* End grid wrapper pro Šetření Míša a Platby Míša */}
+
+            {/* Platby Tom */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-text-primary">Platby Tom</h2>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-1 gap-4 mb-6">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(tomPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Přehled */}
+              <div>
+              
+              {tomPayments.length === 0 ? (
+                /* Empty State */
+                <div className="text-center py-6">
+                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-10 h-10 text-positive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">
+                    Žádné aktivní záznamy
+                  </h3>
+                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                    Zatím nemáte evidované žádné platby Tom. 
+                    Můžete přidat novou položku.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddTomPaymentsModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat položku
+                  </button>
+                </div>
+              ) : (
+                /* Tom Payments Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tomPayments.map((item) => (
+                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{item.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingTomPaymentsId(item.id);
+                                setTomPaymentsForm({
+                                  name: item.name,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  monthlyPayment: item.monthlyPayment,
+                                  creditor: item.creditor,
+                                  accountNumber: item.accountNumber,
+                                  variableSymbol: item.variableSymbol,
+                                  note: item.note
+                                });
+                                setShowAddTomPaymentsModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit položku"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddTomPaymentsModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další položku
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* MODALS */}
@@ -3788,8 +4608,1037 @@ export const InvestmentTerminal: React.FC = () => {
               } catch { /* skip */ }
             }
             setPortfolios(summaries);
+            setShowAddPositionModal(false);
           }}
         />
+      )}
+
+      {/* Add Debt Modal */}
+      {showAddDebtModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+                  {editingDebtId ? <Edit3 className="w-5 h-5 text-accent" /> : <Plus className="w-5 h-5 text-accent" />}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">
+                    {editingDebtId ? 'Upravit závazek' : 'Přidat závazek'}
+                  </h2>
+                  <p className="text-sm text-text-muted">
+                    {editingDebtId ? 'Upravte údaje o závazku' : 'Evidujte nový dluh nebo splátku'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAddDebtModal(false);
+                  setEditingDebtId(null);
+                  setDebtForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="w-8 h-8 rounded-lg hover:bg-surface-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-6 space-y-4">
+              {/* Název */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Název *
+                </label>
+                <input
+                  type="text"
+                  value={debtForm.name}
+                  onChange={(e) => setDebtForm({ ...debtForm, name: e.target.value })}
+                  placeholder="Např. Hypotéka, Auto, Studijní půjčka"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Částka závazku */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Částka závazku *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={debtForm.amount}
+                  onChange={(e) => setDebtForm({ ...debtForm, amount: e.target.value })}
+                  placeholder="Např. 500000"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                  required
+                />
+              </div>
+
+              {/* První splátka */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  1. splátka *
+                </label>
+                <input
+                  type="date"
+                  value={debtForm.date}
+                  onChange={(e) => setDebtForm({ ...debtForm, date: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Splátka */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Splátka *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={debtForm.monthlyPayment}
+                  onChange={(e) => setDebtForm({ ...debtForm, monthlyPayment: e.target.value })}
+                  placeholder="Např. 8500"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Komu */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Komu *
+                </label>
+                <input
+                  type="text"
+                  value={debtForm.creditor}
+                  onChange={(e) => setDebtForm({ ...debtForm, creditor: e.target.value })}
+                  placeholder="Např. Česká spořitelna"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Číslo účtu */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Číslo účtu
+                </label>
+                <input
+                  type="text"
+                  value={debtForm.accountNumber}
+                  onChange={(e) => setDebtForm({ ...debtForm, accountNumber: e.target.value })}
+                  placeholder="Např. 123456789/0800"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+
+              {/* Variabilní symbol */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  VS
+                </label>
+                <input
+                  type="text"
+                  value={debtForm.variableSymbol}
+                  onChange={(e) => setDebtForm({ ...debtForm, variableSymbol: e.target.value })}
+                  placeholder="Např. 1234567890"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+
+              {/* Info */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Info
+                </label>
+                <textarea
+                  value={debtForm.note}
+                  onChange={(e) => setDebtForm({ ...debtForm, note: e.target.value })}
+                  placeholder="Doplňující informace..."
+                  rows={3}
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-surface-base border-t border-border px-6 py-4 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setShowAddDebtModal(false);
+                  setEditingDebtId(null);
+                  setDebtForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors font-medium"
+              >
+                Zrušit
+              </button>
+              <div className="flex items-center gap-2">
+                {editingDebtId && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Opravdu chcete odstranit tento závazek?')) {
+                        setDebts(debts.filter(d => d.id !== editingDebtId));
+                        setShowAddDebtModal(false);
+                        setEditingDebtId(null);
+                        setDebtForm({
+                          name: '',
+                          amount: '',
+                          date: '',
+                          monthlyPayment: '',
+                          creditor: '',
+                          accountNumber: '',
+                          variableSymbol: '',
+                          note: ''
+                        });
+                      }
+                    }}
+                    className="px-4 py-2 bg-negative/10 text-negative rounded-lg font-medium hover:bg-negative/20 transition-colors flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Odstranit
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (editingDebtId) {
+                      // Update existing debt
+                      setDebts(debts.map(d => 
+                        d.id === editingDebtId ? { id: d.id, ...debtForm } : d
+                      ));
+                    } else {
+                      // Add new debt
+                      const newDebt = {
+                        id: Date.now(),
+                        ...debtForm
+                      };
+                      setDebts([...debts, newDebt]);
+                    }
+                    
+                    // Close modal and reset form
+                    setShowAddDebtModal(false);
+                    setEditingDebtId(null);
+                    setDebtForm({
+                      name: '',
+                      amount: '',
+                      date: '',
+                      monthlyPayment: '',
+                      creditor: '',
+                      accountNumber: '',
+                      variableSymbol: '',
+                      note: ''
+                    });
+                  }}
+                  disabled={!debtForm.name || !debtForm.amount || !debtForm.date || !debtForm.monthlyPayment || !debtForm.creditor}
+                  className="px-6 py-2 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Uložit závazek
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Shared Payments Modal */}
+      {showAddSharedPaymentsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                  {editingSharedPaymentsId ? <Edit3 className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-blue-500" />}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">
+                    {editingSharedPaymentsId ? 'Upravit položku' : 'Přidat položku'}
+                  </h2>
+                  <p className="text-sm text-text-muted">
+                    {editingSharedPaymentsId ? 'Upravte údaje o společné platbě' : 'Evidujte novou společnou platbu'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAddSharedPaymentsModal(false);
+                  setEditingSharedPaymentsId(null);
+                  setSharedPaymentsForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="w-8 h-8 rounded-lg hover:bg-surface-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-6 space-y-4">
+              {/* Název */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Název *
+                </label>
+                <input
+                  type="text"
+                  value={sharedPaymentsForm.name}
+                  onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, name: e.target.value })}
+                  placeholder="Např. Netflix, Elektřina, Internet"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Splátka */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Splátka *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={sharedPaymentsForm.monthlyPayment}
+                  onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, monthlyPayment: e.target.value })}
+                  placeholder="Např. 500"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Číslo účtu */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Číslo účtu
+                </label>
+                <input
+                  type="text"
+                  value={sharedPaymentsForm.accountNumber}
+                  onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, accountNumber: e.target.value })}
+                  placeholder="Např. 123456789/0800"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              {/* Variabilní symbol */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  VS
+                </label>
+                <input
+                  type="text"
+                  value={sharedPaymentsForm.variableSymbol}
+                  onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, variableSymbol: e.target.value })}
+                  placeholder="Např. 1234567890"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              {/* Info */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Info
+                </label>
+                <textarea
+                  value={sharedPaymentsForm.note}
+                  onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, note: e.target.value })}
+                  placeholder="Doplňující informace..."
+                  rows={3}
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-surface-base border-t border-border px-6 py-4 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setShowAddSharedPaymentsModal(false);
+                  setEditingSharedPaymentsId(null);
+                  setSharedPaymentsForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors font-medium"
+              >
+                Zrušit
+              </button>
+              <div className="flex items-center gap-2">
+                {editingSharedPaymentsId && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Opravdu chcete odstranit tuto položku?')) {
+                        setSharedPayments(sharedPayments.filter(d => d.id !== editingSharedPaymentsId));
+                        setShowAddSharedPaymentsModal(false);
+                        setEditingSharedPaymentsId(null);
+                        setSharedPaymentsForm({
+                          name: '',
+                          amount: '',
+                          date: '',
+                          monthlyPayment: '',
+                          creditor: '',
+                          accountNumber: '',
+                          variableSymbol: '',
+                          note: ''
+                        });
+                      }
+                    }}
+                    className="px-4 py-2 bg-negative/10 text-negative rounded-lg font-medium hover:bg-negative/20 transition-colors flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Odstranit
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (editingSharedPaymentsId) {
+                      // Update existing item
+                      setSharedPayments(sharedPayments.map(d => 
+                        d.id === editingSharedPaymentsId ? { id: d.id, ...sharedPaymentsForm } : d
+                      ));
+                    } else {
+                      // Add new item
+                      const newItem = {
+                        id: Date.now(),
+                        ...sharedPaymentsForm
+                      };
+                      setSharedPayments([...sharedPayments, newItem]);
+                    }
+                    
+                    // Close modal and reset form
+                    setShowAddSharedPaymentsModal(false);
+                    setEditingSharedPaymentsId(null);
+                    setSharedPaymentsForm({
+                      name: '',
+                      amount: '',
+                      date: '',
+                      monthlyPayment: '',
+                      creditor: '',
+                      accountNumber: '',
+                      variableSymbol: '',
+                      note: ''
+                    });
+                  }}
+                  disabled={!sharedPaymentsForm.name || !sharedPaymentsForm.monthlyPayment}
+                  className="px-6 py-2 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Uložit položku
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Savings Modal */}
+      {showAddSavingsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+                  {editingSavingsId ? <Edit3 className="w-5 h-5 text-accent" /> : <Plus className="w-5 h-5 text-accent" />}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">
+                    {editingSavingsId ? 'Upravit položku' : 'Přidat položku'}
+                  </h2>
+                  <p className="text-sm text-text-muted">
+                    {editingSavingsId ? 'Upravte údaje o šetření' : 'Evidujte nové šetření'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAddSavingsModal(false);
+                  setEditingSavingsId(null);
+                  setSavingsForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="w-8 h-8 rounded-lg hover:bg-surface-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-6 space-y-4">
+              {/* Název */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Název *
+                </label>
+                <input
+                  type="text"
+                  value={savingsForm.name}
+                  onChange={(e) => setSavingsForm({ ...savingsForm, name: e.target.value })}
+                  placeholder="Např. Hypotéka, Auto, Studijní půjčka"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Splátka */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Splátka *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={savingsForm.monthlyPayment}
+                  onChange={(e) => setSavingsForm({ ...savingsForm, monthlyPayment: e.target.value })}
+                  placeholder="Např. 8500"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Číslo účtu */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Číslo účtu
+                </label>
+                <input
+                  type="text"
+                  value={savingsForm.accountNumber}
+                  onChange={(e) => setSavingsForm({ ...savingsForm, accountNumber: e.target.value })}
+                  placeholder="Např. 123456789/0800"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+
+              {/* Variabilní symbol */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  VS
+                </label>
+                <input
+                  type="text"
+                  value={savingsForm.variableSymbol}
+                  onChange={(e) => setSavingsForm({ ...savingsForm, variableSymbol: e.target.value })}
+                  placeholder="Např. 1234567890"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-surface-base border-t border-border px-6 py-4 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setShowAddSavingsModal(false);
+                  setEditingSavingsId(null);
+                  setSavingsForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors font-medium"
+              >
+                Zrušit
+              </button>
+              <div className="flex items-center gap-2">
+                {editingSavingsId && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Opravdu chcete odstranit tuto položku?')) {
+                        setSavings(savings.filter(d => d.id !== editingSavingsId));
+                        setShowAddSavingsModal(false);
+                        setEditingSavingsId(null);
+                        setSavingsForm({
+                          name: '',
+                          amount: '',
+                          date: '',
+                          monthlyPayment: '',
+                          creditor: '',
+                          accountNumber: '',
+                          variableSymbol: '',
+                          note: ''
+                        });
+                      }
+                    }}
+                    className="px-4 py-2 bg-negative/10 text-negative rounded-lg font-medium hover:bg-negative/20 transition-colors flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Odstranit
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (editingSavingsId) {
+                      // Update existing item
+                      setSavings(savings.map(d => 
+                        d.id === editingSavingsId ? { id: d.id, ...savingsForm } : d
+                      ));
+                    } else {
+                      // Add new item
+                      const newItem = {
+                        id: Date.now(),
+                        ...savingsForm
+                      };
+                      setSavings([...savings, newItem]);
+                    }
+                    
+                    // Close modal and reset form
+                    setShowAddSavingsModal(false);
+                    setEditingSavingsId(null);
+                    setSavingsForm({
+                      name: '',
+                      amount: '',
+                      date: '',
+                      monthlyPayment: '',
+                      creditor: '',
+                      accountNumber: '',
+                      variableSymbol: '',
+                      note: ''
+                    });
+                  }}
+                  disabled={!savingsForm.name || !savingsForm.monthlyPayment}
+                  className="px-6 py-2 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Uložit položku
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Tom Payments Modal */}
+      {showAddTomPaymentsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                  {editingTomPaymentsId ? <Edit3 className="w-5 h-5 text-orange-500" /> : <Plus className="w-5 h-5 text-orange-500" />}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">
+                    {editingTomPaymentsId ? 'Upravit položku' : 'Přidat položku'}
+                  </h2>
+                  <p className="text-sm text-text-muted">
+                    {editingTomPaymentsId ? 'Upravte údaje o platbě Tom' : 'Evidujte novou platbu Tom'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAddTomPaymentsModal(false);
+                  setEditingTomPaymentsId(null);
+                  setTomPaymentsForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="w-8 h-8 rounded-lg hover:bg-surface-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-6 space-y-4">
+              {/* Název */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Název *
+                </label>
+                <input
+                  type="text"
+                  value={tomPaymentsForm.name}
+                  onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, name: e.target.value })}
+                  placeholder="Např. Nájem, Auto, Telefon"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Splátka */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Splátka *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={tomPaymentsForm.monthlyPayment}
+                  onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, monthlyPayment: e.target.value })}
+                  placeholder="Např. 1500"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Číslo účtu */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Číslo účtu
+                </label>
+                <input
+                  type="text"
+                  value={tomPaymentsForm.accountNumber}
+                  onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, accountNumber: e.target.value })}
+                  placeholder="Např. 123456789/0800"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                />
+              </div>
+
+              {/* Variabilní symbol */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  VS
+                </label>
+                <input
+                  type="text"
+                  value={tomPaymentsForm.variableSymbol}
+                  onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, variableSymbol: e.target.value })}
+                  placeholder="Např. 1234567890"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-surface-base border-t border-border px-6 py-4 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setShowAddTomPaymentsModal(false);
+                  setEditingTomPaymentsId(null);
+                  setTomPaymentsForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors font-medium"
+              >
+                Zrušit
+              </button>
+              <div className="flex items-center gap-2">
+                {editingTomPaymentsId && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Opravdu chcete odstranit tuto položku?')) {
+                        setTomPayments(tomPayments.filter(d => d.id !== editingTomPaymentsId));
+                        setShowAddTomPaymentsModal(false);
+                        setEditingTomPaymentsId(null);
+                        setTomPaymentsForm({
+                          name: '',
+                          amount: '',
+                          date: '',
+                          monthlyPayment: '',
+                          creditor: '',
+                          accountNumber: '',
+                          variableSymbol: '',
+                          note: ''
+                        });
+                      }
+                    }}
+                    className="px-4 py-2 bg-negative/10 text-negative rounded-lg font-medium hover:bg-negative/20 transition-colors flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Odstranit
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (editingTomPaymentsId) {
+                      // Update existing item
+                      setTomPayments(tomPayments.map(d => 
+                        d.id === editingTomPaymentsId ? { id: d.id, ...tomPaymentsForm } : d
+                      ));
+                    } else {
+                      // Add new item
+                      const newItem = {
+                        id: Date.now(),
+                        ...tomPaymentsForm
+                      };
+                      setTomPayments([...tomPayments, newItem]);
+                    }
+                    
+                    // Close modal and reset form
+                    setShowAddTomPaymentsModal(false);
+                    setEditingTomPaymentsId(null);
+                    setTomPaymentsForm({
+                      name: '',
+                      amount: '',
+                      date: '',
+                      monthlyPayment: '',
+                      creditor: '',
+                      accountNumber: '',
+                      variableSymbol: '',
+                      note: ''
+                    });
+                  }}
+                  disabled={!tomPaymentsForm.name || !tomPaymentsForm.monthlyPayment}
+                  className="px-6 py-2 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Uložit položku
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Míša Payments Modal */}
+      {showAddMisaPaymentsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                  {editingMisaPaymentsId ? <Edit3 className="w-5 h-5 text-purple-500" /> : <Plus className="w-5 h-5 text-purple-500" />}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">
+                    {editingMisaPaymentsId ? 'Upravit položku' : 'Přidat položku'}
+                  </h2>
+                  <p className="text-sm text-text-muted">
+                    {editingMisaPaymentsId ? 'Upravte údaje o platbě Míša' : 'Evidujte novou platbu Míša'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAddMisaPaymentsModal(false);
+                  setEditingMisaPaymentsId(null);
+                  setMisaPaymentsForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="w-8 h-8 rounded-lg hover:bg-surface-hover flex items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-6 space-y-4">
+              {/* Název */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Název *
+                </label>
+                <input
+                  type="text"
+                  value={misaPaymentsForm.name}
+                  onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, name: e.target.value })}
+                  placeholder="Např. Pojištění, Kredity, Předplatné"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Splátka */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Splátka *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={misaPaymentsForm.monthlyPayment}
+                  onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, monthlyPayment: e.target.value })}
+                  placeholder="Např. 800"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  required
+                />
+              </div>
+
+              {/* Číslo účtu */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  Číslo účtu
+                </label>
+                <input
+                  type="text"
+                  value={misaPaymentsForm.accountNumber}
+                  onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, accountNumber: e.target.value })}
+                  placeholder="Např. 123456789/0800"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                />
+              </div>
+
+              {/* Variabilní symbol */}
+              <div>
+                <label className="block text-sm font-semibold text-text-primary mb-2">
+                  VS
+                </label>
+                <input
+                  type="text"
+                  value={misaPaymentsForm.variableSymbol}
+                  onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, variableSymbol: e.target.value })}
+                  placeholder="Např. 1234567890"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-surface-base border-t border-border px-6 py-4 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setShowAddMisaPaymentsModal(false);
+                  setEditingMisaPaymentsId(null);
+                  setMisaPaymentsForm({
+                    name: '',
+                    amount: '',
+                    date: '',
+                    monthlyPayment: '',
+                    creditor: '',
+                    accountNumber: '',
+                    variableSymbol: '',
+                    note: ''
+                  });
+                }}
+                className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors font-medium"
+              >
+                Zrušit
+              </button>
+              <div className="flex items-center gap-2">
+                {editingMisaPaymentsId && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Opravdu chcete odstranit tuto položku?')) {
+                        setMisaPayments(misaPayments.filter(d => d.id !== editingMisaPaymentsId));
+                        setShowAddMisaPaymentsModal(false);
+                        setEditingMisaPaymentsId(null);
+                        setMisaPaymentsForm({
+                          name: '',
+                          amount: '',
+                          date: '',
+                          monthlyPayment: '',
+                          creditor: '',
+                          accountNumber: '',
+                          variableSymbol: '',
+                          note: ''
+                        });
+                      }
+                    }}
+                    className="px-4 py-2 bg-negative/10 text-negative rounded-lg font-medium hover:bg-negative/20 transition-colors flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Odstranit
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (editingMisaPaymentsId) {
+                      // Update existing item
+                      setMisaPayments(misaPayments.map(d => 
+                        d.id === editingMisaPaymentsId ? { id: d.id, ...misaPaymentsForm } : d
+                      ));
+                    } else {
+                      // Add new item
+                      const newItem = {
+                        id: Date.now(),
+                        ...misaPaymentsForm
+                      };
+                      setMisaPayments([...misaPayments, newItem]);
+                    }
+                    
+                    // Close modal and reset form
+                    setShowAddMisaPaymentsModal(false);
+                    setEditingMisaPaymentsId(null);
+                    setMisaPaymentsForm({
+                      name: '',
+                      amount: '',
+                      date: '',
+                      monthlyPayment: '',
+                      creditor: '',
+                      accountNumber: '',
+                      variableSymbol: '',
+                      note: ''
+                    });
+                  }}
+                  disabled={!misaPaymentsForm.name || !misaPaymentsForm.monthlyPayment}
+                  className="px-6 py-2 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Uložit položku
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showAnalysisModal && (
