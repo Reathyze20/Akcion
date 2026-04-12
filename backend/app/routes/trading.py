@@ -40,6 +40,14 @@ from app.core.gomes_compliance import (
 )
 from loguru import logger
 
+# Import ML engine with graceful fallback
+try:
+    from app.trading.ml_engine import MLPredictionEngine
+    ML_ENGINE_AVAILABLE = True
+except (ImportError, AttributeError):
+    MLPredictionEngine = None
+    ML_ENGINE_AVAILABLE = False
+
 
 router = APIRouter(prefix="/api/trading", tags=["trading"])
 settings = Settings()
