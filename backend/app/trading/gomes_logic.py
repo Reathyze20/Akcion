@@ -20,6 +20,7 @@ Reference: Mark Gomes "How I Make Money On Stocks" transcript
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -496,6 +497,145 @@ class RiskRewardCalculator:
             source=source
         )
     
+    # Score points around the deserved level before flipping BUY/SELL.
+    # A deadband avoids flip-flapping when the price sits right at fair value.
+    RR_DEADBAND: float = 0.5
+
+    @classmethod
+    def calculate_rr_score(
+        cls,
+        current_price: float | None,
+        low: float | None,
+        high: float | None,
+        top_score: int = 0,
+    ) -> float | None:
+        """
+        Gomes Risk/Reward score — LOGARITHMIC.
+
+        Ref: GOMES_METHODOLOGY_CANON.md §4a. Formula verified against the live
+        riskrewardcharts.com tracker (e.g. CXDO 3.25/15.50/6.62 -> 5.45).
+
+            score = top_score + (10 - top_score) * log(high / price) / log(high / low)
+
+        `low` = Green Line (buy zone), `high` = Red Line (sell zone).
+        Returns 10 at/below the Green Line (cheapest, best buy) and `top_score`
+        (0 or 1) at/above the Red Line (full value / sell). Result is capped to
+        [top_score, 10].
+
+        Returns None on invalid input (missing/non-positive prices, or high <= low)
+        so callers fail safe instead of rendering a fabricated number.
+        """
+        if current_price is None or low is None or high is None:
+            return None
+        if current_price <= 0 or low <= 0 or high <= 0:
+            return None
+        if high <= low:
+            return None  # inverted or degenerate lines -> no meaningful score
+
+        span = math.log(high / low)
+        raw = top_score + (10 - top_score) * math.log(high / current_price) / span
+        return max(float(top_score), min(10.0, raw))
+
+    @classmethod
+    def deserved_score(cls, cylinders: int | float | None) -> float | None:
+        """
+        Deserved R/R score given operating "cylinders" (0-10 = operational health).
+
+        Ref: canon §4b. Gomes: a stock only deserves the Red Line (full value) when
+        the company fires on all 10 cylinders; at 5 cylinders it deserves the
+        midpoint, at 1 cylinder it deserves to sit near the Green Line. On the R/R
+        scale (10 = Green, 0 = Red) this is simply `10 - cylinders`.
+
+        Returns None when cylinders are unknown.
+        """
+        if cylinders is None:
+            return None
+        c = max(0.0, min(10.0, float(cylinders)))
+        return 10.0 - c
+
+    @classmethod
+    def decide_from_score(
+        cls,
+        score: float | None,
+        cylinders: int | float | None,
+    ) -> tuple[str, str]:
+        """
+        Full Gomes buy/sell decision: compare R/R score to deserved (10 - cylinders).
+
+        BUY  when score > deserved + deadband (cheap for its operational quality)
+        SELL when score < deserved - deadband (expensive for its quality)
+        HOLD otherwise.
+
+        When cylinders are unknown, refuse to emit BUY (returns WATCH) — buying on
+        price alone, without knowing operational quality, is how you fall into a
+        Wait-Time value trap.
+        """
+        if score is None:
+            return "UNKNOWN", "Chybí platná data pro R/R skóre"
+
+        if cylinders is None:
+            return "WATCH", (
+                f"R/R skóre {score:.2f}/10, ale chybí kvalita firmy (válce) "
+                f"— nekupovat naslepo"
+            )
+
+        deserved = cls.deserved_score(cylinders)
+        c = max(0, min(10, int(cylinders)))
+        detail = f"zasloužené {deserved:.1f} (10 − {c} válců)"
+
+        if score > deserved + cls.RR_DEADBAND:
+            return "BUY", f"R/R skóre {score:.2f} > {detail} — levné vzhledem ke kvalitě"
+        if score < deserved - cls.RR_DEADBAND:
+            return "SELL", f"R/R skóre {score:.2f} < {detail} — drahé vzhledem ke kvalitě"
+        return "HOLD", f"R/R skóre {score:.2f} ≈ {detail}"
+
+    @classmethod
+    def decide(
+        cls,
+        current_price: float | None,
+        low: float | None,
+        high: float | None,
+        cylinders: int | float | None = None,
+        top_score: int = 0,
+    ) -> tuple[str, str]:
+        """Convenience: compute log R/R score from prices, then decide vs cylinders."""
+        score = cls.calculate_rr_score(current_price, low, high, top_score)
+        return cls.decide_from_score(score, cylinders)
+
+    @classmethod
+    def three_point_up(
+        cls,
+        current_price: float,
+        low: float,
+        high: float,
+        top_score: int = 0,
+    ) -> float | None:
+        """
+        Price at which the R/R score drops 3 points (a take-profit trigger).
+
+        Ref: canon §5.  3pt up = price * (high / low) ** (3 / (10 - top_score))
+        """
+        if current_price <= 0 or low <= 0 or high <= 0 or high <= low:
+            return None
+        return current_price * (high / low) ** (3 / (10 - top_score))
+
+    @classmethod
+    def three_point_down(
+        cls,
+        current_price: float,
+        low: float,
+        high: float,
+        top_score: int = 0,
+    ) -> float | None:
+        """
+        Price at which the R/R score rises 3 points (an add / accumulate trigger).
+
+        Ref: canon §5.  3pt down = price / (high / low) ** (3 / (10 - top_score))
+        """
+        if current_price <= 0 or low <= 0 or high <= 0 or high <= low:
+            return None
+        return current_price / (high / low) ** (3 / (10 - top_score))
+
     @classmethod
     def should_take_profit(
         cls,
@@ -504,7 +644,7 @@ class RiskRewardCalculator:
     ) -> bool:
         """
         3-Point Rule: Score dropped 3+ points = Take Profit
-        
+
         Ref: Minute 40:00 - "If score drops 3 points, I'm out"
         """
         return previous_score - current_score >= 3
@@ -543,36 +683,38 @@ class RiskRewardCalculator:
         red_line: float | None
     ) -> tuple[str, str]:
         """
-        Determine action zone based on price vs lines.
-        
+        Determine price-only action zone from the LOGARITHMIC R/R score.
+
+        This is a price-position signal (no operational-quality/cylinders input);
+        the Gatekeeper still gates it with market alert, lifecycle, etc. Uses a
+        neutral midpoint of 5 (as if the company operates at ~5 cylinders).
+
+        Ref: canon §4a. Replaces the old linear 30/70 band, which was
+        mathematically wrong for a log-scaled score.
+
         Returns:
-            (zone: "BUY"/"HOLD"/"SELL", reason)
+            (zone: "BUY"/"HOLD"/"SELL"/"UNKNOWN", reason)
         """
         if current_price is None:
             return "UNKNOWN", "Current price not available"
-        
-        if green_line is not None and current_price < green_line:
-            pct_below = ((green_line - current_price) / green_line) * 100
-            return "BUY", f"Price {pct_below:.1f}% below Green Line (undervalued)"
-        
-        if red_line is not None and current_price > red_line:
-            pct_above = ((current_price - red_line) / red_line) * 100
-            return "SELL", f"Price {pct_above:.1f}% above Red Line (overvalued)"
-        
-        if green_line is not None and red_line is not None:
-            # Between green and red
-            range_total = red_line - green_line
-            position = current_price - green_line
-            pct_in_range = (position / range_total) * 100 if range_total > 0 else 50
-            
-            if pct_in_range < 30:
-                return "BUY", f"Near Green Line ({pct_in_range:.0f}% of range)"
-            elif pct_in_range > 70:
-                return "SELL", f"Near Red Line ({pct_in_range:.0f}% of range)"
-            else:
-                return "HOLD", f"Middle of range ({pct_in_range:.0f}%)"
-        
-        return "HOLD", "Insufficient line data"
+
+        score = cls.calculate_rr_score(current_price, green_line, red_line)
+
+        if score is None:
+            # Lines missing/degenerate: fall back to simple cap checks so we still
+            # give a signal when only one line is known, and never fabricate.
+            if green_line is not None and current_price < green_line:
+                return "BUY", "Below Green Line (undervalued)"
+            if red_line is not None and current_price > red_line:
+                return "SELL", "Above Red Line (overvalued)"
+            return "HOLD", "Insufficient line data"
+
+        # Neutral midpoint 5 +/- deadband on the 0-10 log R/R scale.
+        if score >= 5 + cls.RR_DEADBAND:
+            return "BUY", f"R/R score {score:.1f}/10 (toward Green Line, undervalued)"
+        if score <= 5 - cls.RR_DEADBAND:
+            return "SELL", f"R/R score {score:.1f}/10 (toward Red Line, overvalued)"
+        return "HOLD", f"R/R score {score:.1f}/10 (near fair value)"
 
 
 # ============================================================================
@@ -752,7 +894,8 @@ class GomesGatekeeper:
         earnings_date: datetime | None = None,
         ml_prediction: dict[str, Any] | None = None,
         transcript_text: str | None = None,
-        catalyst_info: dict[str, Any] | None = None
+        catalyst_info: dict[str, Any] | None = None,
+        cylinders_count: int | None = None
     ) -> GomesVerdict:
         """
         Evaluate investment and return final verdict.
@@ -857,13 +1000,20 @@ class GomesGatekeeper:
         
         price_zone = "UNKNOWN"
         if current_price is not None:
-            zone, zone_reason = RiskRewardCalculator.get_action_zone(
-                current_price, green_line, red_line
-            )
+            if cylinders_count is not None:
+                # Faithful Level-3 decision: R/R score vs deserved (10 - cylinders).
+                zone, zone_reason = RiskRewardCalculator.decide(
+                    current_price, green_line, red_line, cylinders=cylinders_count
+                )
+            else:
+                # Price-only zone (neutral midpoint) when quality is unknown.
+                zone, zone_reason = RiskRewardCalculator.get_action_zone(
+                    current_price, green_line, red_line
+                )
             price_zone = zone
-            
+
             if zone == "SELL" and passed_filter:
-                # Price above red line - don't buy
+                # Price above deserved value - don't buy
                 adjusted_score = max(0, adjusted_score - 2)
                 risk_factors.append(f"{zone_reason}")
             elif zone == "BUY":
