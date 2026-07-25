@@ -42,16 +42,14 @@ jobs:
           cd backend
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements_trading.txt
           pip install -r requirements_test.txt
 
       - name: Run syntax checks
         run: |
           cd backend
           python -m py_compile app/trading/master_signal.py
-          python -m py_compile app/trading/ml_learning.py
-          python -m py_compile app/trading/sentiment.py
-          python -m py_compile app/trading/backtest.py
+          python -m py_compile app/trading/gomes_logic.py
+          python -m py_compile app/trading/kelly.py
           python -m py_compile app/services/notifications.py
 
       - name: Run unit tests

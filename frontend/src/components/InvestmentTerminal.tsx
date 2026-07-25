@@ -85,6 +85,14 @@ const MAX_POSITION_WEIGHT = 15;  // Max 15% portfolia v jedné akcii
 const MIN_INVESTMENT_CZK = 1000; // Min vklad (kvůli poplatkům)
 const DEFAULT_MONTHLY_CONTRIBUTION = 20000; // Výchozí měsíční vklad v CZK
 
+// Freedom Tab goal assumptions - manually-set targets, not live data.
+// Edit these directly when your goal, contribution, or age changes.
+const FREEDOM_GOAL_TARGET_CZK = 30_000_000;
+const FREEDOM_GOAL_MONTHLY_CONTRIBUTION_CZK = 20_000;
+const FREEDOM_GOAL_ANNUAL_RETURN = 0.15;
+const FREEDOM_GOAL_TARGET_AGE = 50;
+const FREEDOM_GOAL_CURRENT_AGE = 35;
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -978,8 +986,9 @@ const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGap
   // Check if this stock has family gap
   const familyGap = familyGaps?.gaps.find(g => g.ticker === position.ticker);
   
-  // Market cap warning (mock - should be from stock data)
-  const isLargeCap = false; // TODO: Get from actual market cap data
+  // Market cap warning - standard $10B+ large-cap classification
+  const marketCapValue = stock?.market_cap ?? stock?.fully_diluted_market_cap ?? null;
+  const isLargeCap = marketCapValue !== null && marketCapValue >= 10_000_000_000;
   
   // Handle stock update
   const handleUpdate = async () => {
@@ -3813,14 +3822,16 @@ export const InvestmentTerminal: React.FC = () => {
         {/* FREEDOM TAB - Dopamine Dashboard */}
         {activeTab === 'freedom' && (
           <div className="space-y-6">
-            {/* Hero: Freedom Countdown */}
+            {/* Hero: Freedom Countdown
+                Goal assumptions below are manually-set targets, not live data.
+                Edit these directly when your goal, contribution, or age changes. */}
             <FreedomCountdown
               currentValue={familyData.totalValue}
-              targetValue={30000000} // 30M CZK
-              monthlyContribution={20000}
-              annualReturn={0.15}
-              targetAge={50}
-              currentAge={35} // TODO: Make configurable
+              targetValue={FREEDOM_GOAL_TARGET_CZK}
+              monthlyContribution={FREEDOM_GOAL_MONTHLY_CONTRIBUTION_CZK}
+              annualReturn={FREEDOM_GOAL_ANNUAL_RETURN}
+              targetAge={FREEDOM_GOAL_TARGET_AGE}
+              currentAge={FREEDOM_GOAL_CURRENT_AGE}
             />
             
             {/* Two column layout */}
@@ -3865,22 +3876,15 @@ export const InvestmentTerminal: React.FC = () => {
                 </div>
               </div>
               
-              {/* Monthly discipline tracker */}
+              {/* Monthly contribution goal - not yet backed by real deposit tracking,
+                  so this shows the target only, not a fabricated progress/status claim. */}
               <div className="bg-positive/10 border border-positive/30 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-positive">Měsíční disciplína</span>
-                  <span className="text-xs text-text-secondary">Leden 2026</span>
+                  <span className="text-sm text-positive">Měsíční cíl</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="h-2 bg-surface-hover rounded-full overflow-hidden">
-                      <div className="h-full bg-positive w-1/2" /> {/* TODO: Track actual deposits */}
-                    </div>
-                  </div>
-                  <div className="text-xs text-positive font-bold">20k / 40k</div>
-                </div>
-                <div className="text-xs text-text-secondary mt-2">
-                  💪 Přítelkyně: ✅ 20k posláno • Ty: ⏳ Čeká na vklad
+                <div className="text-xs text-text-secondary">
+                  Cíl: {formatCurrency(FREEDOM_GOAL_MONTHLY_CONTRIBUTION_CZK)} / měsíc
+                  (skutečné vklady zatím nejsou trackované)
                 </div>
               </div>
             </div>

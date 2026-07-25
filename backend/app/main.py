@@ -133,7 +133,9 @@ app.include_router(notifications.router)
 app.include_router(investment.router)  # Investment Intelligence
 app.include_router(currency.router)  # Currency exchange rates
 app.include_router(yahoo_finance.router)  # Yahoo Finance Smart Cache
-app.include_router(dev_utils.router)  # Development utilities (DISABLE IN PRODUCTION!)
+
+if settings.debug:
+    app.include_router(dev_utils.router)  # Raw SQL execution — DEBUG only, never in production
 
 
 # ==============================================================================
