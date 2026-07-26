@@ -874,7 +874,7 @@ class GomesGatekeeper:
     """
     
     EARNINGS_DANGER_DAYS = 14  # Ref: Minute 45:00 - "14 days before earnings = EXIT"
-    
+
     def __init__(
         self,
         market_alert: MarketAlert = MarketAlert.GREEN,
@@ -882,6 +882,58 @@ class GomesGatekeeper:
     ):
         self.market_alert = market_alert
         self.current_date = current_date or datetime.now()
+
+    @staticmethod
+    def evaluate_buy_guard(
+        market_alert: MarketAlert | str,
+        rr_score: float | None,
+        deserved_score: float | None,
+        cylinders: int | None,
+        lifecycle_stage: LifecyclePhase | str | None,
+    ) -> tuple[bool, str]:
+        """
+        Hard BUY guard — every condition must pass or the buy is refused.
+
+        Canon (GOMES_METHODOLOGY_CANON.md §6): buy only when the market is
+        GREEN AND the price is attractive on the R/R chart AND the company's
+        operational quality (cylinders) is known. Missing data is a refusal,
+        never a default — a BUY built on unknowns is how capital gets lost.
+
+        Returns:
+            (is_allowed, reason) — reason names the first failed gate, or
+            confirms all gates passed.
+        """
+        if isinstance(market_alert, str):
+            try:
+                market_alert = MarketAlert(market_alert.upper())
+            except ValueError:
+                return False, f"Unknown market alert '{market_alert}' (BUY requires GREEN)"
+
+        if market_alert != MarketAlert.GREEN:
+            return False, f"Market Alert is {market_alert.value} (BUY requires GREEN)"
+
+        if cylinders is None or cylinders == 0:
+            return False, "Cylinders unknown or zero (quality unverified)"
+
+        if lifecycle_stage is not None:
+            if isinstance(lifecycle_stage, str):
+                try:
+                    lifecycle_stage = LifecyclePhase(lifecycle_stage.upper())
+                except ValueError:
+                    lifecycle_stage = LifecyclePhase.UNKNOWN
+            if lifecycle_stage == LifecyclePhase.WAIT_TIME:
+                return False, "Stock is in Wait Time (hype phase / dead period)"
+
+        if rr_score is None or deserved_score is None:
+            return False, "Missing R/R score or deserved score"
+
+        if rr_score <= deserved_score:
+            return False, (
+                f"Score {rr_score:.2f} <= Deserved {deserved_score:.2f} "
+                f"(Not cheap enough)"
+            )
+
+        return True, "All Gomes Buy Guard conditions satisfied"
     
     def evaluate(
         self,
@@ -1055,7 +1107,33 @@ class GomesGatekeeper:
             verdict = InvestmentVerdict.AVOID
         else:
             verdict = InvestmentVerdict.AVOID
-        
+
+        # =====================================================================
+        # RULE 7: Hard Buy Guard (canon §6) — no buy-side verdict may bypass it
+        # Buy only when GREEN + cylinders known + not Wait-Time + score >
+        # deserved. Failing the guard downgrades to HOLD (don't buy ≠ sell).
+        # =====================================================================
+
+        if verdict in (
+            InvestmentVerdict.STRONG_BUY,
+            InvestmentVerdict.BUY,
+            InvestmentVerdict.ACCUMULATE,
+        ):
+            guard_rr_score = RiskRewardCalculator.calculate_rr_score(
+                current_price, green_line, red_line
+            )
+            guard_deserved = RiskRewardCalculator.deserved_score(cylinders_count)
+            buy_allowed, guard_reason = self.evaluate_buy_guard(
+                market_alert=self.market_alert,
+                rr_score=guard_rr_score,
+                deserved_score=guard_deserved,
+                cylinders=cylinders_count,
+                lifecycle_stage=lifecycle_phase,
+            )
+            if not buy_allowed:
+                verdict = InvestmentVerdict.HOLD
+                risk_factors.append(f"BUY GUARD: {guard_reason}")
+
         # Catalyst info
         has_catalyst = bool(catalyst_info and catalyst_info.get("has_catalyst"))
         catalyst_type = catalyst_info.get("type") if catalyst_info else None
@@ -1107,6 +1185,105 @@ class GomesGatekeeper:
             confidence=confidence,
             reasoning=reasoning
         )
+
+
+# ============================================================================
+# 6. DUAL-SOURCE BUY POLICY (Gomes × Breakout Investors)
+# ============================================================================
+
+@dataclass
+class DualSourceBuyDecision:
+    """
+    Final buy decision after crossing the Gomes Buy Guard with the
+    Breakout Investors stance for the same ticker.
+    """
+    decision: str            # "ALLOW" | "REJECT"
+    agreement: str           # "AGREE" | "SINGLE" | "MIXED" | "CONFLICT" | "GOMES_NO_BUY"
+    max_position_pct: float  # 0.0 when rejected
+    review_required: bool
+    reason: str
+
+
+# Position-size caps (% of portfolio) by cross-source agreement.
+# Sources agreeing earns full tier size (app-level cap 15%); a lone Gomes take
+# gets standard size; a direct conflict is allowed but tiny + flagged for review.
+AGREEMENT_POSITION_CAPS: dict[str, float] = {
+    "AGREE": 15.0,
+    "SINGLE": 7.0,
+    "MIXED": 7.0,
+    "CONFLICT": 5.0,
+}
+
+
+def evaluate_dual_source_buy(
+    gomes_allowed: bool,
+    gomes_reason: str,
+    breakout_stance: str | None,
+    tier_max_pct: float,
+) -> DualSourceBuyDecision:
+    """
+    Cross the Gomes Buy Guard verdict with the Breakout Investors stance.
+
+    Gomes is the valuation authority: if his guard blocks the buy, Breakout
+    enthusiasm can NEVER override it (GOMES_NO_BUY -> REJECT). When Gomes
+    allows, Breakout only modulates position size and review flags:
+
+      AGREE    (Breakout BULLISH)  -> full tier size, capped at 15%
+      SINGLE   (no Breakout take)  -> standard size, capped at 7%
+      MIXED    (Breakout NEUTRAL)  -> standard size, capped at 7%
+      CONFLICT (Breakout BEARISH)  -> allowed but capped at 5% + REVIEW_REQUIRED
+
+    Args:
+        gomes_allowed/gomes_reason: output of GomesGatekeeper.evaluate_buy_guard.
+        breakout_stance: "BULLISH" | "BEARISH" | "NEUTRAL" | None (no take),
+            as produced by app.core.sources.verdict_stance.
+        tier_max_pct: the tier's own max position size (PositionSizingEngine).
+    """
+    if not gomes_allowed:
+        if breakout_stance == "BULLISH":
+            return DualSourceBuyDecision(
+                decision="REJECT",
+                agreement="GOMES_NO_BUY",
+                max_position_pct=0.0,
+                review_required=False,
+                reason=(
+                    f"Breakout je BULLISH, ale Gomes blokuje: {gomes_reason} "
+                    f"— valuační veto platí"
+                ),
+            )
+        return DualSourceBuyDecision(
+            decision="REJECT",
+            agreement="GOMES_NO_BUY",
+            max_position_pct=0.0,
+            review_required=False,
+            reason=gomes_reason,
+        )
+
+    stance = (breakout_stance or "").strip().upper() or None
+    if stance == "BULLISH":
+        agreement = "AGREE"
+        reason = "Gomes BUY + Breakout BULLISH — zdroje souhlasí, plná velikost"
+    elif stance == "BEARISH":
+        agreement = "CONFLICT"
+        reason = (
+            "Gomes BUY, ale Breakout BEARISH — konflikt zdrojů, "
+            "malá pozice + nutná kontrola"
+        )
+    elif stance is None:
+        agreement = "SINGLE"
+        reason = "Jen Gomes BUY (Breakout bez názoru) — standardní velikost"
+    else:
+        agreement = "MIXED"
+        reason = f"Gomes BUY + Breakout {stance} — bez přímého konfliktu"
+
+    cap = AGREEMENT_POSITION_CAPS[agreement]
+    return DualSourceBuyDecision(
+        decision="ALLOW",
+        agreement=agreement,
+        max_position_pct=min(max(tier_max_pct, 0.0), cap),
+        review_required=(agreement == "CONFLICT"),
+        reason=reason,
+    )
 
 
 # ============================================================================
