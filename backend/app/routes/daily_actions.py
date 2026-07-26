@@ -60,7 +60,7 @@ def load_daily_action_inputs(
         PositionInput(
             ticker=pos.ticker,
             shares=pos.shares_count or 0.0,
-            avg_cost=pos.avg_cost or 0.0,
+            avg_cost=pos.avg_cost,  # None = unknown, engine warns
             currency=pos.currency or "USD",
             current_price=pos.current_price,
             last_price_update=pos.last_price_update,

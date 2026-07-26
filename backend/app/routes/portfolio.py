@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -124,17 +125,18 @@ def get_portfolio_summary(
     for pos in positions:
         currency = getattr(pos, "currency", "USD")
         rate = CurrencyService.get_rate_to_czk(currency)
-        
+
         cost_basis = pos.cost_basis
         market_value = pos.market_value
         unrealized_pl = pos.unrealized_pl
-        
-        # Only add valid (non-NaN) values
-        if not math.isnan(cost_basis) and not math.isinf(cost_basis):
+
+        # Only add valid values. None = unknown cost (user hasn't filled the
+        # buy price yet) — excluded from totals, flagged on the position row.
+        if cost_basis is not None and not math.isnan(cost_basis) and not math.isinf(cost_basis):
             total_cost_basis_czk += cost_basis * rate
         if not math.isnan(market_value) and not math.isinf(market_value):
             total_market_value_czk += market_value * rate
-        if not math.isnan(unrealized_pl) and not math.isinf(unrealized_pl):
+        if unrealized_pl is not None and not math.isnan(unrealized_pl) and not math.isinf(unrealized_pl):
             total_unrealized_pl_czk += unrealized_pl * rate
     
     total_unrealized_pl_percent = (
@@ -225,15 +227,18 @@ def add_position(
     if existing:
         # Update existing - average the cost
         total_shares = existing.shares_count + position_data.shares_count
-        total_cost = (existing.shares_count * existing.avg_cost) + (position_data.shares_count * position_data.avg_cost)
-        existing.shares_count = total_shares
-        existing.avg_cost = total_cost / total_shares
+        if existing.avg_cost is None:
+            # Old cost unknown: a combined average is unknowable — keep it
+            # unknown rather than invent one (user must fill the real cost).
+            existing.shares_count = total_shares
+        else:
+            total_cost = (existing.shares_count * existing.avg_cost) + (position_data.shares_count * position_data.avg_cost)
+            existing.shares_count = total_shares
+            existing.avg_cost = total_cost / total_shares
         existing.current_price = current_price
-        existing.cost_basis = existing.shares_count * existing.avg_cost
-        existing.market_value = existing.shares_count * current_price
-        existing.unrealized_pl = existing.market_value - existing.cost_basis
-        existing.unrealized_pl_percent = ((existing.market_value / existing.cost_basis) - 1) * 100 if existing.cost_basis > 0 else 0
-        
+        # cost_basis / market_value / unrealized_pl are computed properties
+        # on the model — never assigned.
+
         db.commit()
         db.refresh(existing)
         
@@ -250,12 +255,7 @@ def add_position(
             }
         }
     else:
-        # Create new position
-        cost_basis = position_data.shares_count * position_data.avg_cost
-        market_value = position_data.shares_count * current_price
-        unrealized_pl = market_value - cost_basis
-        unrealized_pl_percent = ((market_value / cost_basis) - 1) * 100 if cost_basis > 0 else 0
-        
+        # Create new position (cost_basis / P&L are computed properties)
         new_position = Position(
             portfolio_id=portfolio_id,
             ticker=ticker,
@@ -263,10 +263,6 @@ def add_position(
             shares_count=position_data.shares_count,
             avg_cost=position_data.avg_cost,
             current_price=current_price,
-            cost_basis=cost_basis,
-            market_value=market_value,
-            unrealized_pl=unrealized_pl,
-            unrealized_pl_percent=unrealized_pl_percent,
             currency='USD',
         )
         
@@ -477,28 +473,40 @@ async def upload_csv(
         created_count = 0
         updated_count = 0
         errors = []
-        
+        missing_avg_cost: list[str] = []
+
         logger.info(f"Processing {len(positions_data)} positions for portfolio {portfolio_id}")
-        
+
         # Upsert positions
         for pos_data in positions_data:
             try:
                 logger.debug(f"Processing position: {pos_data}")
+                imported_cost = pos_data.get('avg_cost')  # None for Degiro (no buy price in export)
+                imported_price = pos_data.get('current_price')
+
                 # Check if position already exists
                 existing_pos = db.query(Position).filter(
                     Position.portfolio_id == portfolio_id,
                     Position.ticker == pos_data['ticker']
                 ).first()
-                
+
                 if existing_pos:
-                    # Update existing position
+                    # Update existing position. NEVER overwrite a known
+                    # purchase price with nothing — a Degiro re-import must
+                    # not erase the cost the user filled in by hand.
                     existing_pos.shares_count = pos_data['shares_count']
-                    existing_pos.avg_cost = pos_data['avg_cost']
+                    if imported_cost is not None:
+                        existing_pos.avg_cost = imported_cost
+                    if imported_price is not None:
+                        existing_pos.current_price = imported_price
+                        existing_pos.last_price_update = datetime.utcnow()
                     if 'currency' in pos_data:
                         existing_pos.currency = pos_data['currency']
                     # Update company name if provided and not already set
                     if pos_data.get('company_name') and not existing_pos.company_name:
                         existing_pos.company_name = pos_data['company_name']
+                    if existing_pos.avg_cost is None:
+                        missing_avg_cost.append(existing_pos.ticker)
                     updated_count += 1
                 else:
                     # Get company name from CSV data first, fallback to API
@@ -510,33 +518,30 @@ async def upload_csv(
                                 company_name = stock_info.get('company_name')
                         except Exception as e:
                             logger.debug(f"Could not fetch company name for {pos_data['ticker']}: {e}")
-                    
-                    # Calculate values
-                    avg_cost = pos_data['avg_cost']
-                    shares = pos_data['shares_count']
-                    # For DEGIRO, avg_cost from CSV is actually current price (Uzavírací)
-                    # We use it as current_price and avg_cost (no purchase price in DEGIRO export)
-                    current_price = avg_cost
-                    
-                    # Note: cost_basis, market_value, unrealized_pl are computed properties
-                    # in Position model - we only set the base values
+
+                    # avg_cost stays None when the broker export has no buy
+                    # price (Degiro) — the user fills it in; it is NEVER
+                    # faked from the closing price.
                     new_pos = Position(
                         portfolio_id=portfolio_id,
                         ticker=pos_data['ticker'],
                         company_name=company_name,
-                        shares_count=shares,
-                        avg_cost=avg_cost,
-                        current_price=current_price,
+                        shares_count=pos_data['shares_count'],
+                        avg_cost=imported_cost,
+                        current_price=imported_price if imported_price is not None else imported_cost,
+                        last_price_update=datetime.utcnow() if imported_price is not None else None,
                         currency=pos_data.get('currency', 'USD')
                     )
                     db.add(new_pos)
+                    if imported_cost is None:
+                        missing_avg_cost.append(pos_data['ticker'])
                     created_count += 1
                     logger.info(f"Created position: {pos_data['ticker']}")
-                    
+
             except Exception as e:
                 logger.error(f"Error processing {pos_data.get('ticker', 'unknown')}: {str(e)}")
                 errors.append(f"Error processing {pos_data.get('ticker', 'unknown')}: {str(e)}")
-        
+
         db.commit()
         logger.info(f"Committed {created_count} new, {updated_count} updated positions")
         
@@ -549,12 +554,24 @@ async def upload_csv(
             print(f"Warning: Could not auto-refresh prices: {e}")
             # Don't fail the upload if price refresh fails
         
+        missing_avg_cost = sorted(set(missing_avg_cost))
+        message = (
+            f"Imported {created_count + updated_count} positions. "
+            f"Prices updated: {refresh_result['updated_count']}, Failed: {refresh_result['failed_count']}"
+        )
+        if missing_avg_cost:
+            message += (
+                f" · ⚠️ {len(missing_avg_cost)} pozic bez nákupní ceny "
+                f"({', '.join(missing_avg_cost)}) — doplň je v detailu pozice"
+            )
+
         return CSVUploadResponse(
             success=True,
-            message=f"Imported {created_count + updated_count} positions. Prices updated: {refresh_result['updated_count']}, Failed: {refresh_result['failed_count']}",
+            message=message,
             positions_created=created_count,
             positions_updated=updated_count,
-            errors=errors
+            errors=errors,
+            missing_avg_cost=missing_avg_cost,
         )
         
     except Exception as e:

@@ -338,6 +338,31 @@ class TestRankingAndHonesty:
         assert result.available_cash_czk == 0.0
         assert any("hotovost" in w for w in result.warnings)
 
+    def test_missing_avg_cost_disarms_doubling_and_warns(self):
+        """Degiro imports have no buy price: no invented doubling TRIM."""
+        result = run(
+            market_alert="GREEN",
+            positions=[PositionInput(
+                ticker="NOCB", shares=100, avg_cost=None, current_price=50.0,
+                last_price_update=NOW,
+            )],
+        )
+        assert result.actions == []
+        assert any("NOCB" in w and "NÁKUPNÍ CENA" in w for w in result.warnings)
+
+    def test_missing_avg_cost_still_derisks_on_red(self):
+        """De-risk needs no cost basis — unknown cost must not block safety."""
+        result = run(
+            market_alert="RED",
+            positions=[PositionInput(
+                ticker="NOCB", shares=100, avg_cost=None, current_price=50.0,
+                last_price_update=NOW,
+            )],
+        )
+        [action] = result.actions
+        assert action.action_type == "LIQUIDATE_HEAVY"
+        assert action.quantity == 100
+
 
 # ==============================================================================
 # Endpoint wiring (routing + serialization, DB loader patched)

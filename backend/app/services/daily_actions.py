@@ -55,7 +55,9 @@ class PositionInput:
     """A held position, as read from the positions table."""
     ticker: str
     shares: float
-    avg_cost: float
+    # None = purchase price unknown (Degiro imports carry none) — the
+    # doubling rule is disarmed and a warning nags until the user fills it.
+    avg_cost: float | None
     currency: str = "USD"
     current_price: float | None = None
     last_price_update: datetime | None = None
@@ -125,6 +127,12 @@ def generate_daily_actions(
                 f"nelze vyhodnotit, ověř ručně"
             )
             continue
+
+        if pos.avg_cost is None:
+            warnings.append(
+                f"⚠️ CHYBÍ NÁKUPNÍ CENA: {ticker} — doplň ji v detailu pozice; "
+                f"P/L a pravidlo zdvojnásobení do té doby nehlídám"
+            )
 
         if pos.last_price_update is None:
             warnings.append(
@@ -254,6 +262,8 @@ def _derisk_action(
 
 def _doubling_action(pos: PositionInput, ticker: str, rate: float) -> ActionItem | None:
     """Doubled -> sell half, play with house money."""
+    if pos.avg_cost is None:
+        return None  # unknown cost -> rule disarmed (warned in main loop)
     if pos.avg_cost <= 0 or pos.current_price < 2 * pos.avg_cost:
         return None
     gain_pct = (pos.current_price - pos.avg_cost) / pos.avg_cost * 100
