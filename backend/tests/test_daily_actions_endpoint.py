@@ -350,6 +350,33 @@ class TestRankingAndHonesty:
         assert result.actions == []
         assert any("NOCB" in w and "NÁKUPNÍ CENA" in w for w in result.warnings)
 
+    def test_many_same_type_warnings_group_into_one_line(self):
+        """14 positions missing a cost = one grouped warning, not a wall."""
+        result = run(
+            market_alert="GREEN",
+            positions=[
+                PositionInput(ticker=f"T{i:02d}", shares=10, avg_cost=None,
+                              current_price=5.0, last_price_update=NOW)
+                for i in range(14)
+            ],
+        )
+        cost_warnings = [w for w in result.warnings if "NÁKUPNÍ CENA" in w]
+        assert len(cost_warnings) == 1
+        assert "14 pozic" in cost_warnings[0]
+        assert "T00" in cost_warnings[0] and "T13" in cost_warnings[0]
+
+    def test_few_warnings_stay_individual(self):
+        result = run(
+            market_alert="GREEN",
+            positions=[
+                PositionInput(ticker=f"T{i}", shares=10, avg_cost=None,
+                              current_price=5.0, last_price_update=NOW)
+                for i in range(2)
+            ],
+        )
+        cost_warnings = [w for w in result.warnings if "NÁKUPNÍ CENA" in w]
+        assert len(cost_warnings) == 2
+
     def test_missing_avg_cost_still_derisks_on_red(self):
         """De-risk needs no cost basis — unknown cost must not block safety."""
         result = run(

@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 MAX_ACTIONS = 3
 STALE_PRICE_AFTER = timedelta(days=3)
+# More same-type warnings than this collapse into one grouped line.
+GROUP_WARNINGS_ABOVE = 3
 
 # Urgency bands: de-risking always outranks profit-taking outranks buying.
 URGENCY_LIQUIDATE = 100
@@ -111,6 +113,13 @@ def generate_daily_actions(
     candidates: list[ActionItem] = []
     portfolio_value_czk = cash_czk
 
+    # Per-category ticker collectors — emitted after the loop, grouped when
+    # many positions share the same problem (one line, not a wall of 14).
+    no_price: list[str] = []
+    no_cost: list[str] = []
+    undated_price: list[str] = []
+    stale_price: list[tuple[str, datetime]] = []
+
     # ------------------------------------------------------------------
     # Held positions: de-risk, doubling rule, R/R trims
     # ------------------------------------------------------------------
@@ -122,28 +131,16 @@ def generate_daily_actions(
         phase = _resolve_phase(analysis)
 
         if pos.current_price is None or pos.current_price <= 0:
-            warnings.append(
-                f"⚠️ CHYBÍ ÚDAJE: {ticker} nemá aktuální cenu — pravidla "
-                f"nelze vyhodnotit, ověř ručně"
-            )
+            no_price.append(ticker)
             continue
 
         if pos.avg_cost is None:
-            warnings.append(
-                f"⚠️ CHYBÍ NÁKUPNÍ CENA: {ticker} — doplň ji v detailu pozice; "
-                f"P/L a pravidlo zdvojnásobení do té doby nehlídám"
-            )
+            no_cost.append(ticker)
 
         if pos.last_price_update is None:
-            warnings.append(
-                f"⚠️ STÁŘÍ CENY NEZNÁMÉ: {ticker} — cena bez časového razítka, "
-                f"ověř před obchodem"
-            )
+            undated_price.append(ticker)
         elif now - pos.last_price_update > STALE_PRICE_AFTER:
-            warnings.append(
-                f"⚠️ STARÁ CENA: {ticker} naposledy aktualizována "
-                f"{pos.last_price_update:%Y-%m-%d} — ověř před obchodem"
-            )
+            stale_price.append((ticker, pos.last_price_update))
 
         rate = fx_rate_to_czk(pos.currency)
         position_value_czk = pos.shares * pos.current_price * rate
@@ -159,6 +156,39 @@ def generate_daily_actions(
 
         if best is not None:
             candidates.append(best)
+
+    # ------------------------------------------------------------------
+    # Data-honesty warnings — grouped per category so 14 positions with the
+    # same gap read as one line, not a wall
+    # ------------------------------------------------------------------
+    _grouped(
+        warnings, no_price,
+        "⚠️ CHYBÍ ÚDAJE: {t} nemá aktuální cenu — pravidla nelze vyhodnotit, ověř ručně",
+        "⚠️ CHYBÍ ÚDAJE: {n} pozic bez aktuální ceny ({tickers}) — pravidla nelze vyhodnotit",
+    )
+    _grouped(
+        warnings, no_cost,
+        "⚠️ CHYBÍ NÁKUPNÍ CENA: {t} — doplň ji v detailu pozice; P/L a pravidlo zdvojnásobení do té doby nehlídám",
+        "⚠️ CHYBÍ NÁKUPNÍ CENA u {n} pozic ({tickers}) — doplň je v detailu pozic; P/L a pravidlo zdvojnásobení do té doby nehlídám",
+    )
+    _grouped(
+        warnings, undated_price,
+        "⚠️ STÁŘÍ CENY NEZNÁMÉ: {t} — cena bez časového razítka, ověř před obchodem",
+        "⚠️ STÁŘÍ CENY NEZNÁMÉ u {n} pozic ({tickers}) — ověř před obchodem",
+    )
+    if len(stale_price) <= GROUP_WARNINGS_ABOVE:
+        for ticker, updated in stale_price:
+            warnings.append(
+                f"⚠️ STARÁ CENA: {ticker} naposledy aktualizována "
+                f"{updated:%Y-%m-%d} — ověř před obchodem"
+            )
+    else:
+        oldest = min(u for _, u in stale_price)
+        warnings.append(
+            f"⚠️ STARÁ CENA u {len(stale_price)} pozic "
+            f"({', '.join(t for t, _ in stale_price)}) — nejstarší {oldest:%Y-%m-%d}, "
+            f"ověř před obchodem"
+        )
 
     # ------------------------------------------------------------------
     # Watchlist: BUY candidates through the hard Buy Guard
@@ -192,6 +222,22 @@ def generate_daily_actions(
 # ==============================================================================
 # Rule helpers
 # ==============================================================================
+
+def _grouped(
+    warnings: list[str],
+    tickers: list[str],
+    single_fmt: str,
+    group_fmt: str,
+) -> None:
+    """Emit one warning per ticker, or a single grouped line when many."""
+    if not tickers:
+        return
+    if len(tickers) <= GROUP_WARNINGS_ABOVE:
+        for t in tickers:
+            warnings.append(single_fmt.format(t=t))
+    else:
+        warnings.append(group_fmt.format(n=len(tickers), tickers=", ".join(tickers)))
+
 
 def _normalize_alert(market_alert: str | None, warnings: list[str]) -> MarketAlert | None:
     """Unknown alert is a loud warning, never a silent GREEN."""
