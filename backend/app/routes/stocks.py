@@ -336,6 +336,40 @@ async def get_ticker_history(
 
 
 @router.get(
+    "/{ticker}/sources",
+    summary="Compare sources on a ticker",
+    description=(
+        "Side-by-side current take from each source (Gomes vs Breakout Investors) "
+        "plus an agreement summary (AGREE / MIXED / CONFLICT / SINGLE / NONE)."
+    ),
+)
+async def get_ticker_sources(
+    ticker: str,
+    db: Session = Depends(get_db),
+):
+    """Dual-source comparison for a ticker."""
+    try:
+        repository = StockRepository(db)
+        comparison = repository.get_source_comparison(ticker.upper())
+
+        if not comparison["sources"]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No analyses found for ticker '{ticker}'",
+            )
+
+        return comparison
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to compare sources: {str(e)}",
+        )
+
+
+@router.get(
     "/stats/summary",
     summary="Get portfolio statistics",
     description="Get summary statistics about the portfolio",
