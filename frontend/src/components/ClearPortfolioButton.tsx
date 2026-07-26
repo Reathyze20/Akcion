@@ -50,9 +50,11 @@ export const ClearPortfolioButton: React.FC<ClearPortfolioButtonProps> = ({
 
   return (
     <>
+      {/* Neutral chrome — the danger color lives in the confirm dialog,
+          not permanently in the header. */}
       <button
         onClick={() => { setError(null); setOpen(true); }}
-        className="btn-secondary text-sm border border-negative/40 text-negative hover:bg-negative/10"
+        className="btn-secondary text-sm text-text-secondary hover:text-negative"
         title="Smazat všechny pozice (hotovost, analýzy a watchlist zůstanou)"
       >
         <Trash2 className="w-4 h-4" />

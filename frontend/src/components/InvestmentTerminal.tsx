@@ -787,18 +787,20 @@ const PortfolioRow: React.FC<{
       {/* Weight % - Aktuální vs Cílová */}
       <td className="py-3 px-3">
         <div className="flex flex-col">
+          {/* Numbers stay neutral; only the small status tag carries color.
+              A column of red values reads as panic — this is a caution, not a loss. */}
           <div className="flex items-center gap-1">
-            <span className={`font-mono text-sm font-bold ${position.is_overweight ? 'text-negative' : position.is_underweight ? 'text-warning' : 'text-text-secondary'}`}>
+            <span className="font-mono text-sm font-semibold text-text-secondary">
               {position.weight_in_portfolio.toFixed(1)}%
             </span>
             <span className="text-text-muted text-xs">/</span>
-            <span className="font-mono text-xs text-text-secondary">{position.max_allocation_cap.toFixed(1)}%</span>
+            <span className="font-mono text-xs text-text-muted">{position.max_allocation_cap.toFixed(1)}%</span>
           </div>
           {position.is_overweight && (
-            <div className="text-[9px] text-negative">OVERWEIGHT</div>
+            <div className="text-[9px] text-warning">OVERWEIGHT</div>
           )}
           {position.is_underweight && !position.is_overweight && (
-            <div className="text-[9px] text-warning">UNDERWEIGHT</div>
+            <div className="text-[9px] text-text-muted">UNDERWEIGHT</div>
           )}
         </div>
       </td>
@@ -823,8 +825,8 @@ const PortfolioRow: React.FC<{
                   Cost: ${position.avg_cost.toFixed(2)}
                 </div>
               ) : (
-                <div className="text-[9px] text-warning font-bold" title="Broker export neobsahuje nákupní cenu — doplň ji v detailu pozice">
-                  ⚠️ Doplň nákup. cenu
+                <div className="text-[9px] text-text-muted" title="Broker export neobsahuje nákupní cenu — doplň ji v detailu pozice">
+                  Cost: <span className="text-warning">doplň</span>
                 </div>
               )}
             </>
@@ -945,8 +947,8 @@ const PortfolioRow: React.FC<{
             </div>
           </>
         ) : (
-          <div className="text-[10px] text-warning font-bold" title="Doplň nákupní cenu v detailu pozice">
-            ⚠️ CHYBÍ<br />nákup. cena
+          <div className="text-[10px] text-text-muted" title="Doplň nákupní cenu v detailu pozice">
+            — <span className="text-warning">bez ceny</span>
           </div>
         )}
       </td>
@@ -3336,8 +3338,8 @@ export const InvestmentTerminal: React.FC = () => {
               </div>
             </div>
 
-            {/* Cash (Munice) - Editable */}
-            <div className="bg-surface-raised/50 rounded-xl p-4 border border-positive/30 text-center">
+            {/* Cash (Munice) - Editable. Neutral chrome: cash is a fact, not a gain. */}
+            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
               <div className="flex items-center justify-center gap-2">
                 <div className="text-xs text-text-secondary uppercase tracking-wider">Available Cash</div>
                 {!isEditingCash && (
@@ -3418,7 +3420,7 @@ export const InvestmentTerminal: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <div className="text-2xl font-black text-positive mt-1">
+                  <div className="text-2xl font-black text-text-primary mt-1">
                     {formatCurrency(familyData.totalCash)}
                   </div>
                   <div className="text-xs text-text-muted mt-0.5">
