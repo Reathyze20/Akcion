@@ -1,311 +1,276 @@
 """
-Master Signal Aggregator Tests
-==============================
+Master Signal v2 tests — fundamentals-only scoring (Phase 2 of the roadmap).
 
-Unit tests for the Master Signal Aggregator module.
+Locks gap #3 from GOMES_METHODOLOGY_CANON.md: the Weinstein 30 WMA trend check
+is technical analysis and canon says the method has "almost NOTHING to do with
+technical analysis". These tests guarantee the Weinstein pillar carries ZERO
+weight in buy_confidence, never blocks, and is surfaced only as the
+informational `technical_overlay_warning` badge.
 
-Tests:
-- Signal calculation
-- Weight configuration
-- Component scoring
-- Edge cases
-
-Author: GitHub Copilot with Claude Opus 4.5
-Date: 2026-01-18
-Version: 1.0.0
+(The previous version of this file tested the deleted V1 six-component
+aggregator and failed at collection; it was rewritten for V2 on 2026-07-26.)
 """
 
-import pytest
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from __future__ import annotations
 
-# Test target imports
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from app.trading.master_signal import (
-    MasterSignalAggregator,
-    MasterSignalResult,
+    CashRunwayStatus,
+    MasterSignalAggregatorV2,
+    MasterSignalResultV2,
     SignalStrength,
-    SignalComponents,
-    WeightConfig,
+    ThesisTrackerScore,
+    ValuationCashScore,
+    WeightConfigV2,
+    WeinsteinGuardScore,
+    WeinsteinPhase,
 )
 
 
 # ==============================================================================
-# Fixtures
+# Builders
 # ==============================================================================
+
+def make_thesis(score: float = 80.0, red_flags: int = 0) -> ThesisTrackerScore:
+    return ThesisTrackerScore(
+        conviction_score=score,
+        milestones_hit=0,
+        red_flags_count=red_flags,
+        verdict="BUY",
+        combined_score=score,
+    )
+
+
+def make_valuation(
+    score: float = 70.0,
+    status: CashRunwayStatus = CashRunwayStatus.HEALTHY,
+) -> ValuationCashScore:
+    return ValuationCashScore(
+        cash_on_hand=None,
+        total_debt=None,
+        burn_rate=None,
+        runway_months=18.0 if status == CashRunwayStatus.HEALTHY else 3.0,
+        runway_status=status,
+        dilution_risk=status != CashRunwayStatus.HEALTHY,
+        combined_score=score,
+    )
+
+
+def make_weinstein(
+    score: float = 50.0,
+    phase: WeinsteinPhase = WeinsteinPhase.PHASE_1_BASE,
+) -> WeinsteinGuardScore:
+    return WeinsteinGuardScore(
+        current_price=10.0,
+        wma_30=9.0,
+        wma_slope=0.0,
+        phase=phase,
+        price_vs_wma_pct=0.0,
+        combined_score=score,
+    )
+
 
 @pytest.fixture
 def mock_db():
-    """Create mock database session"""
-    db = Mock()
+    db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = None
     return db
 
 
 @pytest.fixture
 def aggregator(mock_db):
-    """Create MasterSignalAggregator instance with mock DB"""
-    return MasterSignalAggregator(mock_db)
+    agg = MasterSignalAggregatorV2(mock_db)
+    # Isolate from DB/AI: verdict object only feeds target/stop extraction.
+    agg.gomes_service = MagicMock()
+    agg.gomes_service.generate_verdict.return_value = None
+    return agg
 
 
-@pytest.fixture
-def sample_components():
-    """Create sample signal components"""
-    return SignalComponents(
-        gomes_score=85.0,
-        ml_confidence=78.0,
-        technical_score=72.0,
-        sentiment_score=80.0,
-        gap_score=90.0,
-        risk_reward_score=75.0,
-    )
+def run_signal(aggregator, thesis, valuation, weinstein) -> MasterSignalResultV2:
+    with patch.object(
+        MasterSignalAggregatorV2, "_calculate_thesis_tracker", return_value=thesis
+    ), patch.object(
+        MasterSignalAggregatorV2, "_calculate_valuation_cash", return_value=valuation
+    ), patch.object(
+        MasterSignalAggregatorV2, "_calculate_weinstein_guard", return_value=weinstein
+    ):
+        return aggregator.calculate_master_signal("TEST", current_price=10.0)
 
 
 # ==============================================================================
-# WeightConfig Tests
+# Weights — fundamentals only
 # ==============================================================================
 
-class TestWeightConfig:
-    """Tests for WeightConfig validation"""
-    
-    def test_default_weights_sum_to_one(self):
-        """Default weights must sum to 1.0"""
+class TestWeights:
+    def test_weights_sum_to_one(self):
+        WeightConfigV2.validate()  # must not raise
         total = (
-            WeightConfig.GOMES_SCORE +
-            WeightConfig.ML_CONFIDENCE +
-            WeightConfig.TECHNICAL +
-            WeightConfig.SENTIMENT +
-            WeightConfig.GAP_ANALYSIS +
-            WeightConfig.RISK_REWARD
+            WeightConfigV2.THESIS_TRACKER
+            + WeightConfigV2.VALUATION_CASH
+            + WeightConfigV2.WEINSTEIN_GUARD
         )
-        assert 0.99 <= total <= 1.01, f"Weights sum to {total}, expected 1.0"
-    
-    def test_validate_does_not_raise_with_valid_weights(self):
-        """Validate should not raise with default weights"""
-        # Should not raise
-        WeightConfig.validate()
-    
-    def test_gomes_has_highest_weight(self):
-        """Gomes score should have the highest weight (authority principle)"""
-        weights = [
-            WeightConfig.GOMES_SCORE,
-            WeightConfig.ML_CONFIDENCE,
-            WeightConfig.TECHNICAL,
-            WeightConfig.SENTIMENT,
-            WeightConfig.GAP_ANALYSIS,
-            WeightConfig.RISK_REWARD,
-        ]
-        assert WeightConfig.GOMES_SCORE == max(weights), "Gomes should be primary authority"
+        assert total == pytest.approx(1.0)
+
+    def test_canonical_split_60_40_0(self):
+        assert WeightConfigV2.THESIS_TRACKER == pytest.approx(0.60)
+        assert WeightConfigV2.VALUATION_CASH == pytest.approx(0.40)
+        assert WeightConfigV2.WEINSTEIN_GUARD == 0.0
+
+    def test_thesis_is_the_authority(self):
+        assert WeightConfigV2.THESIS_TRACKER == max(
+            WeightConfigV2.THESIS_TRACKER,
+            WeightConfigV2.VALUATION_CASH,
+            WeightConfigV2.WEINSTEIN_GUARD,
+        )
 
 
 # ==============================================================================
-# SignalStrength Tests
+# Score purity — technicals must not move the number
+# ==============================================================================
+
+class TestScorePurity:
+    def test_confidence_is_thesis_plus_valuation_only(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(80.0), make_valuation(70.0), make_weinstein(50.0)
+        )
+        assert result.buy_confidence == pytest.approx(80.0 * 0.60 + 70.0 * 0.40)
+
+    def test_weinstein_score_cannot_move_confidence(self, aggregator):
+        """Identical fundamentals, extreme opposite technicals -> same number."""
+        best_trend = run_signal(
+            aggregator, make_thesis(80.0), make_valuation(70.0),
+            make_weinstein(100.0, WeinsteinPhase.PHASE_2_ADVANCE),
+        )
+        worst_trend = run_signal(
+            aggregator, make_thesis(80.0), make_valuation(70.0),
+            make_weinstein(0.0, WeinsteinPhase.PHASE_4_DECLINE),
+        )
+        assert best_trend.buy_confidence == pytest.approx(worst_trend.buy_confidence)
+
+    def test_phase_4_does_not_block(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(80.0), make_valuation(70.0),
+            make_weinstein(0.0, WeinsteinPhase.PHASE_4_DECLINE),
+        )
+        assert result.blocked is False
+        assert result.blocked_reason is None
+
+
+# ==============================================================================
+# Technical overlay — informational badge only
+# ==============================================================================
+
+class TestTechnicalOverlay:
+    def test_phase_4_sets_overlay_warning(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(), make_valuation(),
+            make_weinstein(0.0, WeinsteinPhase.PHASE_4_DECLINE),
+        )
+        assert result.technical_overlay_warning is True
+        assert "30WMA" in result.technical_overlay_note
+
+    @pytest.mark.parametrize(
+        "phase",
+        [
+            WeinsteinPhase.PHASE_1_BASE,
+            WeinsteinPhase.PHASE_2_ADVANCE,
+            WeinsteinPhase.PHASE_3_TOP,
+        ],
+    )
+    def test_other_phases_no_warning(self, aggregator, phase):
+        result = run_signal(
+            aggregator, make_thesis(), make_valuation(), make_weinstein(50.0, phase)
+        )
+        assert result.technical_overlay_warning is False
+        assert result.technical_overlay_note is None
+
+    def test_to_dict_exposes_overlay_and_marks_weinstein_informational(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(), make_valuation(),
+            make_weinstein(0.0, WeinsteinPhase.PHASE_4_DECLINE),
+        )
+        data = result.to_dict()
+        assert data["technical_overlay_warning"] is True
+        assert "30WMA" in data["technical_overlay_note"]
+        assert data["components"]["weinstein_guard"]["informational_only"] is True
+
+
+# ==============================================================================
+# Fundamental blocks still stand
+# ==============================================================================
+
+class TestFundamentalBlocks:
+    def test_cash_runway_danger_blocks(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(),
+            make_valuation(20.0, CashRunwayStatus.DANGER), make_weinstein(),
+        )
+        assert result.blocked is True
+        assert "CASH_RUNWAY_DANGER" in result.blocked_reason
+
+    def test_three_red_flags_block(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(80.0, red_flags=3), make_valuation(), make_weinstein()
+        )
+        assert result.blocked is True
+        assert "RED_FLAGS" in result.blocked_reason
+
+    def test_healthy_fundamentals_not_blocked(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(), make_valuation(), make_weinstein()
+        )
+        assert result.blocked is False
+
+
+# ==============================================================================
+# Signal strength classification
 # ==============================================================================
 
 class TestSignalStrength:
-    """Tests for SignalStrength enum"""
-    
-    def test_signal_strength_values(self):
-        """Signal strengths should have correct values"""
-        assert SignalStrength.STRONG_BUY.value == "STRONG_BUY"
-        assert SignalStrength.BUY.value == "BUY"
-        assert SignalStrength.WEAK_BUY.value == "WEAK_BUY"
-        assert SignalStrength.NEUTRAL.value == "NEUTRAL"
-        assert SignalStrength.AVOID.value == "AVOID"
+    @pytest.mark.parametrize(
+        "confidence, expected",
+        [
+            (100.0, SignalStrength.STRONG_BUY),
+            (80.0, SignalStrength.STRONG_BUY),
+            (79.9, SignalStrength.BUY),
+            (60.0, SignalStrength.BUY),
+            (59.9, SignalStrength.WEAK_BUY),
+            (40.0, SignalStrength.WEAK_BUY),
+            (39.9, SignalStrength.NEUTRAL),
+            (20.0, SignalStrength.NEUTRAL),
+            (19.9, SignalStrength.AVOID),
+            (0.0, SignalStrength.AVOID),
+        ],
+    )
+    def test_classify_strength(self, aggregator, confidence, expected):
+        assert aggregator._classify_strength(confidence) == expected
 
 
 # ==============================================================================
-# MasterSignalResult Tests
+# Serialization
 # ==============================================================================
 
-class TestMasterSignalResult:
-    """Tests for MasterSignalResult dataclass"""
-    
-    def test_to_dict_serialization(self, sample_components):
-        """Result should serialize to dictionary correctly"""
-        result = MasterSignalResult(
-            ticker="AAPL",
-            buy_confidence=82.5,
-            signal_strength=SignalStrength.STRONG_BUY,
-            components=sample_components,
-            verdict="STRONG_BUY",
-            blocked_reason=None,
-            entry_price=185.50,
-            target_price=205.00,
-            stop_loss=167.00,
-            risk_reward_ratio=2.3,
-            kelly_size=0.15,
-            calculated_at=datetime(2026, 1, 18, 10, 0, 0),
-            expires_at=datetime(2026, 1, 18, 16, 0, 0),
+class TestSerialization:
+    def test_to_dict_core_fields(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(80.0), make_valuation(70.0), make_weinstein()
         )
-        
         data = result.to_dict()
-        
-        assert data["ticker"] == "AAPL"
-        assert data["buy_confidence"] == 82.5
-        assert data["signal_strength"] == "STRONG_BUY"
-        assert data["entry_price"] == 185.50
-        assert data["risk_reward_ratio"] == 2.3
-        assert data["kelly_size"] == 0.15
-        assert "components" in data
-        assert data["components"]["gomes_score"] == 85.0
-    
-    def test_to_dict_handles_none_values(self, sample_components):
-        """Result serialization should handle None values"""
-        result = MasterSignalResult(
-            ticker="TEST",
-            buy_confidence=50.0,
-            signal_strength=SignalStrength.NEUTRAL,
-            components=sample_components,
-            verdict="NEUTRAL",
-            blocked_reason="Wait Time phase",
-            entry_price=None,
-            target_price=None,
-            stop_loss=None,
-            risk_reward_ratio=None,
-            kelly_size=None,
-            calculated_at=datetime.utcnow(),
-            expires_at=None,
+        assert data["ticker"] == "TEST"
+        assert data["buy_confidence"] == pytest.approx(76.0)
+        assert data["components"]["thesis_tracker"]["score"] == 80.0
+        assert data["components"]["valuation_cash"]["score"] == 70.0
+        assert isinstance(datetime.fromisoformat(data["calculated_at"]), datetime)
+
+    def test_to_dict_handles_missing_prices(self, aggregator):
+        result = run_signal(
+            aggregator, make_thesis(), make_valuation(), make_weinstein()
         )
-        
         data = result.to_dict()
-        
-        assert data["entry_price"] is None
+        assert data["target_price"] is None
+        assert data["stop_loss"] is None
         assert data["risk_reward_ratio"] is None
-        assert data["kelly_size"] is None
-        assert data["expires_at"] is None
-
-
-# ==============================================================================
-# MasterSignalAggregator Tests
-# ==============================================================================
-
-class TestMasterSignalAggregator:
-    """Tests for MasterSignalAggregator class"""
-    
-    def test_initialization(self, mock_db):
-        """Aggregator should initialize correctly"""
-        aggregator = MasterSignalAggregator(mock_db)
-        
-        assert aggregator.db == mock_db
-        assert aggregator.weights is not None
-        assert aggregator.gomes_service is not None
-        assert aggregator.gap_service is not None
-    
-    def test_initialization_with_custom_weights(self, mock_db):
-        """Aggregator should accept custom weight configuration"""
-        custom_weights = WeightConfig()
-        aggregator = MasterSignalAggregator(mock_db, weights=custom_weights)
-        
-        assert aggregator.weights == custom_weights
-    
-    @patch.object(MasterSignalAggregator, '_calculate_gomes_score')
-    @patch.object(MasterSignalAggregator, '_calculate_ml_confidence')
-    @patch.object(MasterSignalAggregator, '_calculate_technical_score')
-    @patch.object(MasterSignalAggregator, '_calculate_sentiment_score')
-    @patch.object(MasterSignalAggregator, '_calculate_gap_score')
-    @patch.object(MasterSignalAggregator, '_calculate_risk_reward_score')
-    def test_calculate_weighted_confidence(
-        self,
-        mock_rr,
-        mock_gap,
-        mock_sentiment,
-        mock_tech,
-        mock_ml,
-        mock_gomes,
-        aggregator,
-    ):
-        """Weighted confidence calculation should be correct"""
-        # Setup mocks
-        mock_gomes.return_value = 80.0
-        mock_ml.return_value = 75.0
-        mock_tech.return_value = 60.0
-        mock_sentiment.return_value = 70.0
-        mock_gap.return_value = 100.0
-        mock_rr.return_value = 80.0
-        
-        # Calculate expected weighted sum
-        expected = (
-            80.0 * WeightConfig.GOMES_SCORE +
-            75.0 * WeightConfig.ML_CONFIDENCE +
-            60.0 * WeightConfig.TECHNICAL +
-            70.0 * WeightConfig.SENTIMENT +
-            100.0 * WeightConfig.GAP_ANALYSIS +
-            80.0 * WeightConfig.RISK_REWARD
-        )
-        
-        # Actual calculation would need more setup, but this shows the pattern
-        assert expected > 0  # Basic sanity check
-    
-    def test_classify_strength_strong_buy(self, aggregator):
-        """Confidence >= 80 should be STRONG_BUY"""
-        assert aggregator._classify_strength(85.0) == SignalStrength.STRONG_BUY
-        assert aggregator._classify_strength(80.0) == SignalStrength.STRONG_BUY
-        assert aggregator._classify_strength(100.0) == SignalStrength.STRONG_BUY
-    
-    def test_classify_strength_buy(self, aggregator):
-        """Confidence 60-79 should be BUY"""
-        assert aggregator._classify_strength(60.0) == SignalStrength.BUY
-        assert aggregator._classify_strength(70.0) == SignalStrength.BUY
-        assert aggregator._classify_strength(79.9) == SignalStrength.BUY
-    
-    def test_classify_strength_weak_buy(self, aggregator):
-        """Confidence 40-59 should be WEAK_BUY"""
-        assert aggregator._classify_strength(40.0) == SignalStrength.WEAK_BUY
-        assert aggregator._classify_strength(50.0) == SignalStrength.WEAK_BUY
-    
-    def test_classify_strength_neutral(self, aggregator):
-        """Confidence 20-39 should be NEUTRAL"""
-        assert aggregator._classify_strength(20.0) == SignalStrength.NEUTRAL
-        assert aggregator._classify_strength(35.0) == SignalStrength.NEUTRAL
-    
-    def test_classify_strength_avoid(self, aggregator):
-        """Confidence < 20 should be AVOID"""
-        assert aggregator._classify_strength(0.0) == SignalStrength.AVOID
-        assert aggregator._classify_strength(10.0) == SignalStrength.AVOID
-        assert aggregator._classify_strength(19.9) == SignalStrength.AVOID
-
-
-# ==============================================================================
-# Integration-Style Tests
-# ==============================================================================
-
-class TestMasterSignalIntegration:
-    """Integration tests for Master Signal (requires more setup)"""
-    
-    @pytest.mark.integration
-    def test_calculate_master_signal_returns_result(self, aggregator):
-        """Calculate should return MasterSignalResult"""
-        # This would require proper DB setup in real integration test
-        pass
-    
-    @pytest.mark.integration
-    def test_blocked_wait_time_ticker(self, aggregator):
-        """Tickers in Wait Time phase should be blocked"""
-        # Gomes logic should block Wait Time phase
-        pass
-
-
-# ==============================================================================
-# Edge Cases
-# ==============================================================================
-
-class TestEdgeCases:
-    """Edge case tests"""
-    
-    def test_zero_confidence_handling(self, sample_components):
-        """Handle zero confidence gracefully"""
-        sample_components.gomes_score = 0.0
-        sample_components.ml_confidence = 0.0
-        # Should not raise
-        assert sample_components.gomes_score == 0.0
-    
-    def test_max_confidence_capping(self, aggregator):
-        """Confidence should not exceed 100"""
-        # Even with all max scores, result should be capped at 100
-        strength = aggregator._classify_strength(150.0)
-        # Should still work (and treat as STRONG_BUY)
-        assert strength == SignalStrength.STRONG_BUY
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

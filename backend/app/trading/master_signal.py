@@ -12,14 +12,20 @@ OLD (6 components):
 - Gap Analysis (10%)
 - Risk/Reward (5%)
 
-NEW (3 pillars):
+NEW (2 scored pillars + 1 informational overlay):
 - Thesis Tracker (60%)     ✅ Investment Intelligence + Milestones + Red Flags
-- Valuation & Cash (25%)   ✅ Cash runway, burn rate, dilution risk
-- Weinstein Guard (15%)    ✅ 30-Week Moving Average only
+- Valuation & Cash (40%)   ✅ Cash runway, burn rate, dilution risk
+- Weinstein Guard (0%)     ℹ️ 30 WMA trend — INFORMATIONAL ONLY, never scored
+
+Canon note (GOMES_METHODOLOGY_CANON.md): the methodology has "almost NOTHING
+to do with technical analysis". The Weinstein 30 WMA trend check therefore
+carries ZERO weight in buy_confidence and never blocks; it is exposed only as
+`technical_overlay_warning`, a safety badge the UI may render alongside the
+fundamental score.
 
 Author: GitHub Copilot with Claude Opus 4.5
-Date: 2026-01-24
-Version: 2.0.0
+Date: 2026-01-24 (reweighted 2026-07-26, gap #3)
+Version: 2.1.0
 """
 
 from __future__ import annotations
@@ -74,15 +80,16 @@ class CashRunwayStatus(str, Enum):
 
 class WeightConfigV2:
     """
-    Simplified weight configuration - 3 pillars only
-    
+    Weight configuration - fundamentals only.
+
     Thesis Tracker (60%) - Gomes is the authority
-    Valuation & Cash (25%) - Hard numbers don't lie
-    Weinstein Guard (15%) - Simple trend filter
+    Valuation & Cash (40%) - Hard numbers don't lie
+    Weinstein Guard (0%) - technical analysis carries NO weight (canon);
+        surfaced separately as technical_overlay_warning
     """
     THESIS_TRACKER: float = 0.60      # 60% - Gomes + Milestones + Red Flags
-    VALUATION_CASH: float = 0.25      # 25% - Cash runway, dilution risk
-    WEINSTEIN_GUARD: float = 0.15     # 15% - 30 WMA trend filter
+    VALUATION_CASH: float = 0.40      # 40% - Cash runway, dilution risk
+    WEINSTEIN_GUARD: float = 0.00     # 0% - informational overlay only
     
     @classmethod
     def validate(cls) -> None:
@@ -111,7 +118,7 @@ class ThesisTrackerScore:
 
 @dataclass
 class ValuationCashScore:
-    """Valuation & Cash component (25% weight)"""
+    """Valuation & Cash component (40% weight)"""
     cash_on_hand: Optional[float]   # In millions
     total_debt: Optional[float]     # In millions
     burn_rate: Optional[float]      # Monthly burn in millions
@@ -123,7 +130,7 @@ class ValuationCashScore:
 
 @dataclass
 class WeinsteinGuardScore:
-    """Weinstein Trend Guard component (15% weight)"""
+    """Weinstein Trend overlay (0% weight — informational badge only)"""
     current_price: float
     wma_30: float                   # 30-week moving average
     wma_slope: float                # Slope of 30 WMA (-1 to +1)
@@ -164,10 +171,15 @@ class MasterSignalResultV2:
     target_price: Optional[float]
     stop_loss: Optional[float]
     risk_reward_ratio: Optional[float]
-    
+
+    # Technical overlay — informational only, NEVER part of buy_confidence.
+    # True when the 30 WMA trend check flags a downtrend (Weinstein Phase 4).
+    technical_overlay_warning: bool = False
+    technical_overlay_note: Optional[str] = None
+
     # Metadata
-    calculated_at: datetime
-    
+    calculated_at: datetime = field(default_factory=datetime.utcnow)
+
     def to_dict(self) -> dict:
         """Convert to API response"""
         return {
@@ -190,6 +202,9 @@ class MasterSignalResultV2:
                     "dilution_risk": self.components.valuation_cash.dilution_risk,
                 },
                 "weinstein_guard": {
+                    # Informational overlay only — weight 0, excluded from
+                    # buy_confidence (canon: no technical analysis in the score).
+                    "informational_only": True,
                     "score": round(self.components.weinstein_guard.combined_score, 2),
                     "phase": self.components.weinstein_guard.phase.value,
                     "price": self.components.weinstein_guard.current_price,
@@ -197,6 +212,8 @@ class MasterSignalResultV2:
                     "price_vs_wma_pct": round(self.components.weinstein_guard.price_vs_wma_pct, 2),
                 },
             },
+            "technical_overlay_warning": self.technical_overlay_warning,
+            "technical_overlay_note": self.technical_overlay_note,
             "blocked": self.blocked,
             "blocked_reason": self.blocked_reason,
             "verdict": self.verdict,
@@ -220,8 +237,8 @@ class MasterSignalAggregatorV2:
     
     Pillars:
     1. Thesis Tracker (60%) - AI analysis of transcripts + milestones
-    2. Valuation & Cash (25%) - Cash runway, burn rate, dilution risk
-    3. Weinstein Guard (15%) - 30-week moving average trend filter
+    2. Valuation & Cash (40%) - Cash runway, burn rate, dilution risk
+    3. Weinstein Guard (0%) - 30 WMA trend, informational overlay only
     
     Usage:
         aggregator = MasterSignalAggregatorV2(db)
@@ -275,31 +292,36 @@ class MasterSignalAggregatorV2:
         valuation_score = self._calculate_valuation_cash(ticker)
         
         # =======================================================
-        # PILLAR 3: Weinstein Trend Guard (15%)
+        # TECHNICAL OVERLAY: Weinstein Trend (0% weight, informational)
         # =======================================================
         weinstein_score = self._calculate_weinstein_guard(ticker, current_price)
-        
+
         # =======================================================
-        # AGGREGATE SCORES
+        # AGGREGATE SCORES — fundamentals only (canon: no technical
+        # analysis in the score; Weinstein weight is 0.0 by config)
         # =======================================================
         buy_confidence = (
             thesis_score.combined_score * WeightConfigV2.THESIS_TRACKER +
             valuation_score.combined_score * WeightConfigV2.VALUATION_CASH +
             weinstein_score.combined_score * WeightConfigV2.WEINSTEIN_GUARD
         )
-        
+
+        # Technical overlay: surface the downtrend as a badge, never as a
+        # score penalty or a block (gap #3 — Weinstein is not Gomes canon).
+        technical_overlay_warning = (
+            weinstein_score.phase == WeinsteinPhase.PHASE_4_DECLINE
+        )
+        technical_overlay_note = (
+            "⚠️ Below 30WMA Trend (Weinstein Phase 4) — informational only"
+            if technical_overlay_warning else None
+        )
+
         # =======================================================
-        # BLOCKING RULES
+        # BLOCKING RULES — fundamentals only
         # =======================================================
         blocked = False
         blocked_reason = None
-        
-        # Rule 1: Weinstein Phase 4 = DO NOT BUY
-        if weinstein_score.phase == WeinsteinPhase.PHASE_4_DECLINE:
-            blocked = True
-            blocked_reason = "WEINSTEIN_PHASE_4: Price below falling 30 WMA - DO NOT BUY"
-            buy_confidence *= 0.3  # Heavy penalty
-        
+
         # Rule 2: Cash Runway < 6 months = Dilution risk
         if valuation_score.runway_status == CashRunwayStatus.DANGER:
             blocked = True
@@ -348,6 +370,8 @@ class MasterSignalAggregatorV2:
             target_price=target_price,
             stop_loss=stop_loss,
             risk_reward_ratio=risk_reward,
+            technical_overlay_warning=technical_overlay_warning,
+            technical_overlay_note=technical_overlay_note,
             calculated_at=datetime.utcnow(),
         )
     
@@ -505,7 +529,7 @@ class MasterSignalAggregatorV2:
             )
     
     # ==========================================================================
-    # Pillar 3: Weinstein Trend Guard (15%)
+    # Technical Overlay: Weinstein Trend (0% weight, informational)
     # ==========================================================================
     
     def _calculate_weinstein_guard(
