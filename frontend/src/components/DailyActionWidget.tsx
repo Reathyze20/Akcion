@@ -32,19 +32,20 @@ interface DailyActionWidgetProps {
 }
 
 const ALERT_STYLE: Record<string, { emoji: string; label: string; pill: string }> = {
-  GREEN: { emoji: '🟢', label: 'TRH JE V POŘÁDKU', pill: 'bg-positive/15 text-positive border-positive/40' },
-  YELLOW: { emoji: '🟡', label: 'TRH: YELLOW — jen nejlepší setupy', pill: 'bg-warning/15 text-warning border-warning/40' },
-  ORANGE: { emoji: '🟠', label: 'TRH: ORANGE — defenziva', pill: 'bg-orange-500/15 text-orange-400 border-orange-500/40' },
-  RED: { emoji: '🔴', label: 'TRH: RED — hotovost je král', pill: 'bg-negative/15 text-negative border-negative/40' },
-  UNKNOWN: { emoji: '⚠️', label: 'SEMAFOR NENÍ NASTAVEN', pill: 'bg-warning/15 text-warning border-warning/40' },
+  GREEN: { emoji: '🟢', label: 'TRH JE V POŘÁDKU', pill: 'bg-positive-bg text-positive border-positive-border' },
+  YELLOW: { emoji: '🟡', label: 'TRH: YELLOW — jen nejlepší setupy', pill: 'bg-warning-bg text-warning border-warning-border' },
+  ORANGE: { emoji: '🟠', label: 'TRH: ORANGE — defenziva', pill: 'bg-warning-bg text-warning border-warning-border' },
+  RED: { emoji: '🔴', label: 'TRH: RED — hotovost je král', pill: 'bg-negative-bg text-negative border-negative-border' },
+  UNKNOWN: { emoji: '⚠️', label: 'SEMAFOR NENÍ NASTAVEN', pill: 'bg-warning-bg text-warning border-warning-border' },
 };
 
+// Semantic tokens only — the emoji + label carry the alert level, color stays quiet.
 const ACTION_STYLE: Record<string, { border: string; badge: string; label: string }> = {
-  BUY: { border: 'border-emerald-500/50', badge: 'bg-emerald-500/20 text-emerald-400', label: 'BUY' },
-  TRIM: { border: 'border-amber-500/50', badge: 'bg-amber-500/20 text-amber-400', label: 'TRIM / TAKE PROFIT' },
-  SELL: { border: 'border-red-500/50', badge: 'bg-red-500/20 text-red-400', label: 'SELL / DE-RISK' },
-  SELL_WAIT_TIME: { border: 'border-red-500/50', badge: 'bg-red-500/20 text-red-400', label: 'SELL — WAIT TIME' },
-  LIQUIDATE_HEAVY: { border: 'border-red-600/60', badge: 'bg-red-600/25 text-red-400', label: 'LIQUIDATE' },
+  BUY: { border: 'border-positive-border', badge: 'bg-positive-bg text-positive', label: 'BUY' },
+  TRIM: { border: 'border-warning-border', badge: 'bg-warning-bg text-warning', label: 'TRIM / TAKE PROFIT' },
+  SELL: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'SELL / DE-RISK' },
+  SELL_WAIT_TIME: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'SELL — WAIT TIME' },
+  LIQUIDATE_HEAVY: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'LIQUIDATE' },
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -129,7 +130,7 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
   const isHold = data.status === 'HOLD_HOLD_HOLD';
 
   return (
-    <div className="mb-4 bg-gradient-to-br from-slate-900 to-slate-950 rounded-xl border border-border overflow-hidden">
+    <div className="mb-4 bg-surface-raised rounded-xl border border-border overflow-hidden">
       {/* Header row: alert pill + cash pill + refresh */}
       <div className="flex items-center justify-between px-5 pt-4">
         <div className="flex items-center gap-2 flex-wrap">
@@ -224,7 +225,7 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
 
       {/* Data-honesty warnings — always visible, both states */}
       {data.warnings.length > 0 && (
-        <div className="mx-5 mb-4 p-3 rounded-lg bg-warning/10 border border-warning/30">
+        <div className="mx-5 mb-4 p-3 rounded-lg bg-warning-bg border border-warning-border">
           {data.warnings.map((warning) => (
             <p key={warning} className="text-xs text-warning py-0.5">
               {warning}
