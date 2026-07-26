@@ -23,6 +23,7 @@ import type {
 import { StockDetail } from './StockDetail';
 import NotificationBell from './NotificationBell';
 import DailyActionWidget from './DailyActionWidget';
+import ClearPortfolioButton from './ClearPortfolioButton';
 
 // ============================================================================
 // TYPES
@@ -3258,6 +3259,12 @@ export const InvestmentTerminal: React.FC = () => {
                 }}
               />
               
+              {/* Clear all positions (guarded) */}
+              <ClearPortfolioButton
+                portfolios={portfolios}
+                onCleared={refreshPortfolios}
+              />
+
               {/* Import Portfolio */}
               <button
                 onClick={() => setShowImportModal(true)}
