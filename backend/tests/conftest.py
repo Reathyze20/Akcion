@@ -18,14 +18,19 @@ from datetime import datetime
 # ==============================================================================
 # Environment Setup
 # ==============================================================================
+# MODULE LEVEL, not a fixture: several app modules instantiate Settings() at
+# import time (e.g. routes/gomes.py), which happens during test COLLECTION —
+# before any fixture runs. On CI there is no backend/.env, so without these
+# defaults collection itself crashes with pydantic ValidationError.
+os.environ.setdefault('DATABASE_URL', 'sqlite:///:memory:')
+os.environ.setdefault('OPENAI_API_KEY', 'test-key')
+os.environ.setdefault('GEMINI_API_KEY', 'test-key')
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_env():
-    """Setup test environment variables"""
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    os.environ['OPENAI_API_KEY'] = 'test-key'
-    os.environ['GEMINI_API_KEY'] = 'test-key'
-    
+    """Kept for backwards compatibility — env is set at module import above."""
+
 
 # ==============================================================================
 # Database Fixtures

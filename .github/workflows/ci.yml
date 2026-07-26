@@ -68,7 +68,7 @@ jobs:
   # =============================================================================
 
   frontend-tests:
-    name: Frontend Tests (Node 18)
+    name: Frontend Tests (Node 22)
     runs-on: ubuntu-latest
 
     steps:
@@ -78,7 +78,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
+          # Vite 7 (rolldown) requires Node 20.19+ / 22.12+
+          node-version: "22"
 
       - name: Cache dependencies
         uses: actions/cache@v3
