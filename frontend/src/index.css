@@ -14,12 +14,13 @@
   /* System fonts for maximum rendering quality */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   
-  /* Semantic colors as CSS variables - ONLY for indicators */
-  --color-positive: #22c55e;
-  --color-negative: #ef4444;
-  --color-warning: #f59e0b;
+  /* Semantic colors as CSS variables - ONLY for indicators.
+     Desaturated: color = meaning, never decoration. */
+  --color-positive: #4da37a;
+  --color-negative: #c95c5c;
+  --color-warning: #c0913f;
   /* Accent for interactive elements */
-  --color-accent: #3b82f6;
+  --color-accent: #4f81b3;
 }
 
 body {
@@ -74,10 +75,10 @@ body {
     @apply text-sm font-semibold text-[#e8ecf4] font-mono;
   }
   .data-value-positive {
-    @apply text-sm font-semibold text-[#22c55e] font-mono;
+    @apply text-sm font-semibold text-[#4da37a] font-mono;
   }
   .data-value-negative {
-    @apply text-sm font-semibold text-[#ef4444] font-mono;
+    @apply text-sm font-semibold text-[#c95c5c] font-mono;
   }
 
   /* ================================================================
@@ -89,16 +90,16 @@ body {
     @apply px-2 py-0.5 text-[11px] font-semibold rounded;
   }
   .badge-positive {
-    @apply bg-[rgba(34,197,94,0.12)] text-[#22c55e] border border-[rgba(34,197,94,0.2)];
+    @apply bg-[rgba(77,163,122,0.10)] text-[#4da37a] border border-[rgba(77,163,122,0.18)];
   }
   .badge-negative {
-    @apply bg-[rgba(239,68,68,0.12)] text-[#ef4444] border border-[rgba(239,68,68,0.2)];
+    @apply bg-[rgba(201,92,92,0.10)] text-[#c95c5c] border border-[rgba(201,92,92,0.18)];
   }
   .badge-warning {
-    @apply bg-[rgba(245,158,11,0.12)] text-[#f59e0b] border border-[rgba(245,158,11,0.2)];
+    @apply bg-[rgba(192,145,63,0.10)] text-[#c0913f] border border-[rgba(192,145,63,0.18)];
   }
   .badge-info {
-    @apply bg-[rgba(99,102,241,0.12)] text-[#6366f1] border border-[rgba(99,102,241,0.2)];
+    @apply bg-[rgba(79,129,179,0.10)] text-[#4f81b3] border border-[rgba(79,129,179,0.18)];
   }
   .badge-neutral {
     @apply bg-[#1e232d] text-[#9ca3b0] border border-[#2a3140];
@@ -147,13 +148,13 @@ body {
      - Monochrome base with semantic color for value
   ================================================================ */
   .score-high {
-    @apply text-[#22c55e];
+    @apply text-[#4da37a];
   }
   .score-medium {
-    @apply text-[#f59e0b];
+    @apply text-[#c0913f];
   }
   .score-low {
-    @apply text-[#ef4444];
+    @apply text-[#c95c5c];
   }
   .score-neutral {
     @apply text-[#6b7280];

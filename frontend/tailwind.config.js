@@ -54,32 +54,33 @@ export default {
         },
         
         // Semantic colors - ONLY for indicators (buy/sell/warning)
+        // Desaturated on purpose: color carries meaning, never decoration.
         positive: {
-          DEFAULT: '#22c55e',   // Green for gains/buy
-          muted: '#16a34a',
-          bg: 'rgba(34, 197, 94, 0.1)',
-          border: 'rgba(34, 197, 94, 0.25)',
+          DEFAULT: '#4da37a',   // Calm financial green (was neon #22c55e)
+          muted: '#3d8664',
+          bg: 'rgba(77, 163, 122, 0.08)',
+          border: 'rgba(77, 163, 122, 0.16)',
         },
         negative: {
-          DEFAULT: '#ef4444',   // Red for losses/sell
-          muted: '#dc2626',
-          bg: 'rgba(239, 68, 68, 0.1)',
-          border: 'rgba(239, 68, 68, 0.25)',
+          DEFAULT: '#c95c5c',   // Brick red (was alarm #ef4444)
+          muted: '#a94b4b',
+          bg: 'rgba(201, 92, 92, 0.08)',
+          border: 'rgba(201, 92, 92, 0.16)',
         },
         warning: {
-          DEFAULT: '#f59e0b',   // Amber for warnings
-          muted: '#d97706',
-          bg: 'rgba(245, 158, 11, 0.1)',
-          border: 'rgba(245, 158, 11, 0.25)',
+          DEFAULT: '#c0913f',   // Muted gold (was highlighter #f59e0b)
+          muted: '#a17832',
+          bg: 'rgba(192, 145, 63, 0.08)',
+          border: 'rgba(192, 145, 63, 0.16)',
         },
-        
+
         // UI accent - for interactive elements (buttons, links, focus)
         accent: {
-          DEFAULT: '#3b82f6',   // Blue-500 - subtle, professional
-          hover: '#2563eb',     // Blue-600
-          muted: '#1d4ed8',     // Blue-700
-          bg: 'rgba(59, 130, 246, 0.1)',
-          border: 'rgba(59, 130, 246, 0.25)',
+          DEFAULT: '#4f81b3',   // Steel blue (was electric #3b82f6)
+          hover: '#446f9b',
+          muted: '#3a5f85',
+          bg: 'rgba(79, 129, 179, 0.08)',
+          border: 'rgba(79, 129, 179, 0.16)',
         },
       },
       fontFamily: {
@@ -92,12 +93,9 @@ export default {
         'input': '4px',
       },
       boxShadow: {
+        // Neutral elevation only — no colored glows (professional, not disco)
         'card': '0 1px 3px rgba(0, 0, 0, 0.3)',
         'card-hover': '0 4px 12px rgba(0, 0, 0, 0.4)',
-        'card-hover': '0 4px 16px rgba(88, 166, 255, 0.15)',
-        'glow-blue': '0 0 24px rgba(88, 166, 255, 0.3)',
-        'glow-green': '0 0 24px rgba(63, 185, 80, 0.3)',
-        'glow-red': '0 0 24px rgba(248, 81, 73, 0.3)',
       },
       animation: {
         'shimmer': 'shimmer 2s infinite',
