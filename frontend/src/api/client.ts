@@ -41,7 +41,6 @@ import type {
   // Price Lines History
   PriceLinesHistoryResponse,
   // Score History & Kelly
-  ScoreHistoryResponse,
   DriftAlertsResponse,
   AllocationPlanResponse,
   FamilyAuditResponse,
@@ -814,6 +813,16 @@ class ApiClient {
     );
     return response.data;
   }
+
+  /**
+   * Daily Action list — "Co mám dnes udělat?" (max 3 actions or Nic. Drž.)
+   */
+  async getDailyActions(): Promise<DailyActionsResponse> {
+    const response = await this.client.get<DailyActionsResponse>(
+      '/api/trading/daily-actions'
+    );
+    return response.data;
+  }
 }
 
 // ==================== New Types ====================
@@ -878,6 +887,31 @@ export interface ScoreHistoryItem {
   source: string | null;
   note: string | null;
   created_at: string | null;
+}
+
+// Daily Action list (Path 1: "Co mám dnes udělat?")
+export interface DailyAction {
+  id: string;
+  ticker: string;
+  source_key: 'GOMES' | 'BREAKOUT_INVESTORS' | 'COMBINED';
+  action_type: 'BUY' | 'TRIM' | 'SELL' | 'SELL_WAIT_TIME' | 'LIQUIDATE_HEAVY';
+  current_price: number;
+  currency: string;
+  target_price: number | null;
+  quantity: number;
+  estimated_czk_value: number;
+  reason: string;
+  urgency_score: number;
+  review_required: boolean;
+}
+
+export interface DailyActionsResponse {
+  market_alert: 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED' | 'UNKNOWN';
+  available_cash_czk: number;
+  status: 'HOLD_HOLD_HOLD' | 'ACTION_REQUIRED';
+  actions: DailyAction[];
+  warnings: string[];
+  generated_at: string;
 }
 
 // Export singleton instance

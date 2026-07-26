@@ -22,12 +22,13 @@ import type {
 } from '../types';
 import { StockDetail } from './StockDetail';
 import NotificationBell from './NotificationBell';
+import DailyActionWidget from './DailyActionWidget';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface EnrichedPosition extends Position {
+type EnrichedPosition = Position & {
   stock?: Stock;
   conviction_score: number | null;
   // Gomes Gap Analysis
@@ -46,7 +47,7 @@ interface EnrichedPosition extends Position {
   inflection_status?: string;
   // Next Catalyst
   next_catalyst?: string;  // Format: "EVENT / DATE" or null
-}
+};
 
 interface FamilyPortfolioData {
   totalValue: number;
@@ -81,7 +82,6 @@ const TARGET_WEIGHTS: Record<number, number> = {
 };
 
 // Hard Caps (Gomesova pojistka)
-const MAX_POSITION_WEIGHT = 15;  // Max 15% portfolia v jedné akcii
 const MIN_INVESTMENT_CZK = 1000; // Min vklad (kvůli poplatkům)
 const DEFAULT_MONTHLY_CONTRIBUTION = 20000; // Výchozí měsíční vklad v CZK
 
@@ -237,7 +237,6 @@ const RiskMeter: React.FC<{
   const isDangerous = analyzedTotal > 0 && riskScore > 70;
   const hasUnanalyzed = unanalyzedCount > 0;
   const riskColor = isDangerous ? 'text-negative' : isOverexposed ? 'text-warning' : 'text-positive';
-  const riskBg = isDangerous ? 'bg-negative' : isOverexposed ? 'bg-warning' : 'bg-positive';
   const borderColor = isDangerous ? 'border-negative/50' : isOverexposed ? 'border-warning/50' : hasUnanalyzed ? 'border-border' : 'border-border-subtle';
   
   return (
@@ -946,7 +945,9 @@ interface StockDetailModalProps {
   onUpdate: () => void;  // Callback to refresh data after update
 }
 
-const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGaps, onClose, onUpdate }) => {
+// DEAD CODE: superseded by AssetDetailModal; exported only so strict TS
+// (noUnusedLocals) passes until the monolith split removes it entirely.
+export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGaps, onClose, onUpdate }) => {
   const stock = position.stock;
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [updateText, setUpdateText] = useState('');
@@ -2677,7 +2678,6 @@ export const InvestmentTerminal: React.FC = () => {
   // Monthly contribution editing state
   const [isEditingContribution, setIsEditingContribution] = useState(false);
   const [editContributionValue, setEditContributionValue] = useState('');
-  const [editContributionPortfolioId, setEditContributionPortfolioId] = useState<number | null>(null);
   const [isSavingContribution, setIsSavingContribution] = useState(false);
   
   // Debt management state
@@ -3000,6 +3000,7 @@ export const InvestmentTerminal: React.FC = () => {
           stock,
           conviction_score: gomesScore,
           max_allocation_cap: maxAllocationCap,
+          target_weight_pct: maxAllocationCap,
           weight_in_portfolio: currentWeightPct,
           gap_czk: gapCZK,
           optimal_size: initialOptimalSize, // Negative for OVERWEIGHT, will be recalculated for UNDERWEIGHT
@@ -3495,6 +3496,20 @@ export const InvestmentTerminal: React.FC = () => {
               </div>
             )}
           </div>
+        )}
+
+        {/* Daily Action list — Path 1: "Co mám dnes udělat?" */}
+        {activeTab === 'portfolio' && (
+          <DailyActionWidget
+            onExecuteAction={(action) => {
+              const pos = displayedPositions.find((p) => p.ticker === action.ticker);
+              if (pos) {
+                setSelectedPosition(pos);
+                return true;
+              }
+              return false;
+            }}
+          />
         )}
 
         {/* Portfolio Summary Stats */}
