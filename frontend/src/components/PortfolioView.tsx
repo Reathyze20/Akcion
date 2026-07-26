@@ -29,8 +29,8 @@ export const PortfolioView: React.FC = () => {
     setSelectedStock,
     sentimentFilter,
     setSentimentFilter,
-    minGomesScore,
-    setMinGomesScore,
+    minConvictionScore,
+    setMinConvictionScore,
     isLoading,
     setIsLoading,
     setError,
@@ -46,7 +46,7 @@ export const PortfolioView: React.FC = () => {
     try {
       const filters: Record<string, string | number> = {};
       if (sentimentFilter) filters.sentiment = sentimentFilter;
-      if (minGomesScore) filters.min_conviction_score = minGomesScore;
+      if (minConvictionScore) filters.min_conviction_score = minConvictionScore;
 
       // Try enriched endpoint first for price data, fall back to basic if it fails
       try {
@@ -56,8 +56,8 @@ export const PortfolioView: React.FC = () => {
         if (sentimentFilter) {
           filteredStocks = filteredStocks.filter(s => s.sentiment?.toUpperCase() === sentimentFilter.toUpperCase());
         }
-        if (minGomesScore) {
-          filteredStocks = filteredStocks.filter(s => (s.conviction_score || 0) >= minGomesScore);
+        if (minConvictionScore) {
+          filteredStocks = filteredStocks.filter(s => (s.conviction_score || 0) >= minConvictionScore);
         }
         setStocks(filteredStocks);
       } catch {
@@ -72,7 +72,7 @@ export const PortfolioView: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [sentimentFilter, minGomesScore, setIsLoading, setError, setStocks]);
+  }, [sentimentFilter, minConvictionScore, setIsLoading, setError, setStocks]);
 
   useEffect(() => {
     loadPortfolio();
@@ -232,8 +232,8 @@ export const PortfolioView: React.FC = () => {
           </select>
           
           <select
-            value={minGomesScore || ''}
-            onChange={(e) => setMinGomesScore(e.target.value ? parseInt(e.target.value) : null)}
+            value={minConvictionScore || ''}
+            onChange={(e) => setMinConvictionScore(e.target.value ? parseInt(e.target.value) : null)}
             className="input text-xs py-1.5 bg-surface-base"
           >
             <option value="">Any Conviction Score</option>

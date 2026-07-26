@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 import { apiClient } from '../api/client';
-import type { ScoreHistoryPoint } from '../types';
+import type { ScoreHistoryItem } from '../api/client';
 
 interface ScoreHistoryMiniChartProps {
   ticker: string;
@@ -25,7 +25,7 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
   height = 40,
   width = 100,
 }) => {
-  const [history, setHistory] = useState<ScoreHistoryPoint[]>([]);
+  const [history, setHistory] = useState<ScoreHistoryItem[]>([]);
   const [trend, setTrend] = useState<'UP' | 'DOWN' | 'STABLE'>('STABLE');
   const [loading, setLoading] = useState(true);
   const [hasAlert, setHasAlert] = useState(false);
@@ -33,18 +33,22 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
   useEffect(() => {
     const fetchHistory = async () => {
       try {
+        // API returns a flat list, newest first.
         const data = await apiClient.getScoreHistory(ticker);
-        setHistory(data.history.slice(-10)); // Last 10 points
-        setTrend(data.score_trend);
-        
-        // Check for thesis drift alert (price up but score down)
-        if (data.history.length >= 2) {
-          const latest = data.history[0];
-          const previous = data.history[1];
-          if (latest.conviction_score < previous.conviction_score && 
-              latest.price_at_analysis && previous.price_at_analysis &&
-              latest.price_at_analysis > previous.price_at_analysis * 1.1) {
-            setHasAlert(true);
+        const oldestFirst = [...data].reverse().slice(-10);
+        setHistory(oldestFirst);
+
+        // Trend + score-drop alert from the two most recent records.
+        if (data.length >= 2) {
+          const latest = data[0];
+          const previous = data[1];
+          setTrend(
+            latest.score > previous.score ? 'UP'
+              : latest.score < previous.score ? 'DOWN'
+              : 'STABLE'
+          );
+          if (latest.score < previous.score - 1) {
+            setHasAlert(true); // score dropped by more than a point
           }
         }
       } catch {
@@ -66,8 +70,8 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
   const minScore = 0;
   const points = history.map((point, index) => {
     const x = (index / (history.length - 1)) * width;
-    const y = height - ((point.conviction_score - minScore) / (maxScore - minScore)) * height;
-    return { x, y, score: point.conviction_score };
+    const y = height - ((point.score - minScore) / (maxScore - minScore)) * height;
+    return { x, y, score: point.score };
   });
 
   const pathD = points.map((p, i) => 
@@ -148,7 +152,7 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
                           bg-amber-900/90 text-amber-200 text-[10px] rounded whitespace-nowrap
                           opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none
                           border border-amber-500/50">
-            Hype předbíhá fundament!
+            Skóre kleslo o víc než 1 bod!
           </div>
         </div>
       )}

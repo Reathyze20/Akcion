@@ -8,7 +8,6 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { apiClient } from "../api/client";
 import { GomesAlertPanel } from "./GomesAlertPanel";
 
 interface MasterSignalResult {
@@ -87,7 +86,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
     return "bg-gray-400";
   };
 
-  const getStrengthBadge = (strength: string): JSX.Element => {
+  const getStrengthBadge = (strength: string): React.JSX.Element => {
     const colors: Record<string, string> = {
       STRONG_BUY: "bg-green-100 text-green-800 border-green-300",
       BUY: "bg-blue-100 text-blue-800 border-blue-300",
@@ -135,7 +134,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ minConfidence = 60, limit =
         <GomesAlertPanel 
           showAllAlerts={true}
           maxAlerts={5}
-          onTakeAction={(ticker) => {
+          onTakeAction={() => {
             // Refresh opportunities when action is taken
             fetchOpportunities();
           }}

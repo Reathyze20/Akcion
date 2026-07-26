@@ -13,7 +13,6 @@ export interface Stock {
   speaker: string;
   sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | null;
   conviction_score: number | null;
-  conviction_score: number | null;
   price_target: string | null;
   time_horizon: string | null;
   edge: string | null; // Information Arbitrage
@@ -75,14 +74,13 @@ export interface StockAnalysisResult {
   ticker: string;
   company_name: string | null;
   sentiment: string;
-  conviction_score: number;
+  conviction_score: number | null;
   price_target: string | null;
   edge: string | null;
   catalysts: string | null;
   risks: string | null;
   status: string | null;
   time_horizon: string | null;
-  conviction_score: number | null;
 }
 
 export interface AnalysisRequest {
@@ -125,7 +123,6 @@ export interface PortfolioStats {
     neutral: number;
   };
   high_conviction_count: number;
-  average_conviction_score: number;
   average_conviction_score: number;
 }
 

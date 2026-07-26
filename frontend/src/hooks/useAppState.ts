@@ -33,8 +33,8 @@ interface AppState {
   // Filters
   sentimentFilter: string | null;
   setSentimentFilter: (sentiment: string | null) => void;
-  minGomesScore: number | null;
-  setMinGomesScore: (score: number | null) => void;
+  minConvictionScore: number | null;
+  setMinConvictionScore: (score: number | null) => void;
 }
 
 export const useAppState = (): AppState => {

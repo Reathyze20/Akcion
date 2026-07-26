@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Upload, RefreshCw, Trash2, Plus, TrendingUp, TrendingDown, Edit2 } from 'lucide-react';
 import { apiClient } from '../api/client';
-import { handleApiError, showError, type ApiError } from '../utils/errorHandling';
+import { showError, type ApiError } from '../utils/errorHandling';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from './ConfirmDialog';
 import type { Portfolio, PortfolioSummary, BrokerType, Position } from '../types';

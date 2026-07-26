@@ -52,7 +52,6 @@ interface EnrichedPosition {
   max_allocation_cap?: number;
   trend_status?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   is_deteriorated?: boolean;
-  [key: string]: unknown; // Allow additional properties
 }
 
 interface StockDetailProps {

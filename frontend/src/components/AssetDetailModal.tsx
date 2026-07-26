@@ -174,11 +174,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
     return { color: 'green', label: 'Healthy', severity: 'safe' };
   };
   const runwayStatus = getCashRunwayStatus(cashRunwayMonths);
-  
-  // Insider activity color
-  const insiderColor = insiderActivity === 'BUYING' ? 'green' : 
-                       insiderActivity === 'SELLING' ? 'red' : 'slate';
-  
+
   // Handle manual edit save
   const handleSaveEdit = async () => {
     setIsSaving(true);
@@ -243,10 +239,9 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
     gomes_score: position.conviction_score,
   };
 
-  // Get shield status for conditional rendering
-  const shieldStatus = useGatekeeperStatus(gatekeeperAnalysis);
-  const isBuyBlocked = shieldStatus.hideBuyButton;
-  
+  // Keep the shield hook active (it drives GatekeeperShield rendering below).
+  useGatekeeperStatus(gatekeeperAnalysis);
+
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-2">
       <GatekeeperShield analysis={gatekeeperAnalysis}>

@@ -7,7 +7,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
-import type { WatchlistRanking, GomesRating } from '../types';
+import type { WatchlistRanking, ConvictionRating } from '../types';
 
 interface WatchlistRankingTableProps {
   minScore?: number;
@@ -15,7 +15,7 @@ interface WatchlistRankingTableProps {
   onTickerClick?: (ticker: string) => void;
 }
 
-const getRatingColor = (rating: GomesRating) => {
+const getRatingColor = (rating: ConvictionRating) => {
   switch (rating) {
     case 'STRONG_BUY':
       return 'text-positive bg-green-900/30';
