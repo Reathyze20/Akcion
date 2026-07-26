@@ -179,14 +179,10 @@ export default function PortfolioPage() {
         selectedFile
       );
       
-      console.log('✅ Upload success:', result);
-      
       if (result.success) {
-        showSuccess(
-          `Upload successful! Created: ${result.positions_created} positions, Updated: ${result.positions_updated} positions. ` +
-          `NOTE: Degiro CSV contains current prices, not purchase prices. Please use the Edit button to update your actual purchase costs.`,
-          5000
-        );
+        // Backend message includes the exact tickers missing a purchase price
+        // (Degiro exports carry none) — the user fills them in via Edit.
+        showSuccess(result.message, result.missing_avg_cost?.length ? 10000 : 5000);
         setShowUploadModal(false);
         setSelectedFile(null);
         await loadPortfolioSummary(selectedPortfolio);
@@ -276,7 +272,7 @@ export default function PortfolioPage() {
   const handleEditPosition = (position: Position) => {
     setEditingPosition(position);
     setEditShares(position.shares_count.toString());
-    setEditAvgCost(position.avg_cost.toString());
+    setEditAvgCost(position.avg_cost != null ? position.avg_cost.toString() : '');
     setShowEditModal(true);
   };
 
@@ -533,7 +529,9 @@ export default function PortfolioPage() {
                     </td>
                     <td className="px-6 py-4 text-right text-text-primary">{position.shares_count}</td>
                     <td className="px-6 py-4 text-right text-text-secondary">
-                      {formatCurrency(position.avg_cost, currency)}
+                      {position.avg_cost != null
+                        ? formatCurrency(position.avg_cost, currency)
+                        : <span className="text-warning font-bold" title="Broker export neobsahuje nákupní cenu — doplň ji přes Edit">⚠️ doplň</span>}
                     </td>
                     <td className="px-6 py-4 text-right text-text-primary">
                       {position.current_price ? formatCurrency(position.current_price, currency) : '-'}
@@ -542,14 +540,14 @@ export default function PortfolioPage() {
                       {formatCurrency(position.market_value, currency)}
                     </td>
                     <td className={`px-6 py-4 text-right font-semibold ${
-                      position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'
+                      position.unrealized_pl == null ? 'text-warning' : position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'
                     }`}>
-                      {formatCurrency(position.unrealized_pl, currency)}
+                      {position.unrealized_pl != null ? formatCurrency(position.unrealized_pl, currency) : '⚠️'}
                     </td>
                     <td className={`px-6 py-4 text-right font-semibold ${
-                      position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'
+                      position.unrealized_pl_percent == null ? 'text-warning' : position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'
                     }`}>
-                      {formatPercent(position.unrealized_pl_percent)}
+                      {position.unrealized_pl_percent != null ? formatPercent(position.unrealized_pl_percent) : '⚠️'}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -724,7 +722,7 @@ export default function PortfolioPage() {
             <div className="mb-4 p-4 bg-surface-raised rounded-lg">
               <div className="text-2xl font-bold text-accent">{editingPosition.ticker}</div>
               <div className="text-sm text-text-secondary mt-1">
-                Aktuálně: {editingPosition.shares_count} akcií @ ${editingPosition.avg_cost.toFixed(2)}
+                Aktuálně: {editingPosition.shares_count} akcií @ {editingPosition.avg_cost != null ? `$${editingPosition.avg_cost.toFixed(2)}` : '⚠️ nákupní cena chybí — doplň ji níže'}
               </div>
             </div>
             <div className="space-y-4">

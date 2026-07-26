@@ -587,8 +587,9 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
         name: 'Diamond Hands',
         icon: 'diamond',
         description: 'Drž akcii 9/10 i při -20% drawdown',
-        earned: positions.some(p => 
-          p.conviction_score && p.conviction_score >= 9 && p.unrealized_pl_percent <= -20
+        earned: positions.some(p =>
+          p.conviction_score && p.conviction_score >= 9 &&
+          p.unrealized_pl_percent != null && p.unrealized_pl_percent <= -20
         ),
         category: 'discipline'
       },
@@ -621,7 +622,7 @@ const MeritBadges: React.FC<{ positions: EnrichedPosition[]; totalValue: number 
         name: 'Free Rider',
         icon: 'bird',
         description: 'Měj pozici s P/L 100%+ (house money)',
-        earned: positions.some(p => p.unrealized_pl_percent >= 100),
+        earned: positions.some(p => p.unrealized_pl_percent != null && p.unrealized_pl_percent >= 100),
         category: 'growth'
       },
       {
@@ -718,26 +719,30 @@ const PortfolioRow: React.FC<{
     ? <TrendingDown className="w-4 h-4 text-negative" />
     : <BarChart3 className="w-4 h-4 text-text-muted" />;
 
-  const plColor = position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative';
-  
-  // Get action command
+  // null P/L = purchase price unknown (user must fill it in) — neutral color
+  const hasCostBasis = position.avg_cost != null;
+  const plColor = position.unrealized_pl_percent == null
+    ? 'text-warning'
+    : position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative';
+
+  // Get action command (unknown P/L treated as 0: no free-ride claims)
   const actionCmd = getActionCommand(
     position.conviction_score,
     position.weight_in_portfolio,
     position.target_weight_pct,
-    position.unrealized_pl_percent
+    position.unrealized_pl_percent ?? 0
   );
-  
+
   // Check if row should be highlighted (HARD EXIT)
   const isHardExit = position.conviction_score !== null && position.conviction_score < 4;
-  
-  // Strategy: Free Ride eligible vs Growing
-  const isFreeRideEligible = position.unrealized_pl_percent >= 150;
-  const progressTo150 = Math.min(100, (position.unrealized_pl_percent / 150) * 100);
-  
+
+  // Strategy: Free Ride eligible vs Growing (never without a real cost basis)
+  const isFreeRideEligible = position.unrealized_pl_percent != null && position.unrealized_pl_percent >= 150;
+  const progressTo150 = Math.min(100, ((position.unrealized_pl_percent ?? 0) / 150) * 100);
+
   // Calculate shares to sell for Free Ride
   const sharesToSellForFreeRide = useMemo(() => {
-    if (!isFreeRideEligible) return 0;
+    if (!isFreeRideEligible || position.avg_cost == null) return 0;
     const currentPrice = position.stock?.current_price ?? position.current_price ?? 0;
     if (currentPrice <= 0) return 0;
     const costBasis = position.shares_count * position.avg_cost;
@@ -812,9 +817,15 @@ const PortfolioRow: React.FC<{
               <div className="text-sm font-bold text-text-primary font-mono">
                 ${position.current_price.toFixed(2)}
               </div>
-              <div className="text-[9px] text-text-muted">
-                Cost: ${position.avg_cost.toFixed(2)}
-              </div>
+              {position.avg_cost != null ? (
+                <div className="text-[9px] text-text-muted">
+                  Cost: ${position.avg_cost.toFixed(2)}
+                </div>
+              ) : (
+                <div className="text-[9px] text-warning font-bold" title="Broker export neobsahuje nákupní cenu — doplň ji v detailu pozice">
+                  ⚠️ Doplň nákup. cenu
+                </div>
+              )}
             </>
           ) : (
             <div className="text-xs text-text-muted">-</div>
@@ -913,22 +924,30 @@ const PortfolioRow: React.FC<{
               />
             </div>
             <div className="text-[8px] text-slate-600 mt-0.5">
-              {position.unrealized_pl_percent.toFixed(0)}% / 150%
+              {position.unrealized_pl_percent != null
+                ? `${position.unrealized_pl_percent.toFixed(0)}% / 150%`
+                : '⚠️ bez nákup. ceny'}
             </div>
           </div>
         )}
       </td>
 
-      {/* P/L % */}
+      {/* P/L % — unknown cost basis renders as a prompt, never as 0.00% */}
       <td className="py-3 px-3 text-right">
-        <div className={`font-bold text-sm ${plColor}`}>
-          {position.unrealized_pl_percent !== undefined && position.unrealized_pl_percent !== null 
-            ? formatPercent(position.unrealized_pl_percent) 
-            : '0.00%'}
-        </div>
-        <div className="text-[10px] text-text-muted">
-          {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
-        </div>
+        {hasCostBasis && position.unrealized_pl_percent != null ? (
+          <>
+            <div className={`font-bold text-sm ${plColor}`}>
+              {formatPercent(position.unrealized_pl_percent)}
+            </div>
+            <div className="text-[10px] text-text-muted">
+              {formatCurrency(position.unrealized_pl ?? 0, position.currency || 'USD')}
+            </div>
+          </>
+        ) : (
+          <div className="text-[10px] text-warning font-bold" title="Doplň nákupní cenu v detailu pozice">
+            ⚠️ CHYBÍ<br />nákup. cena
+          </div>
+        )}
       </td>
     </tr>
   );
@@ -958,7 +977,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
   // Position editing state
   const [isEditingPosition, setIsEditingPosition] = useState(false);
   const [editShares, setEditShares] = useState(position.shares_count.toString());
-  const [editAvgCost, setEditAvgCost] = useState(position.avg_cost.toString());
+  const [editAvgCost, setEditAvgCost] = useState(position.avg_cost != null ? position.avg_cost.toString() : '');
   const [editCurrentPrice, setEditCurrentPrice] = useState((stock?.current_price ?? position.current_price ?? 0).toString());
   const [editCompanyName, setEditCompanyName] = useState(position.company_name || stock?.company_name || '');
   const [editTicker, setEditTicker] = useState(position.ticker);
@@ -1259,7 +1278,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                     onClick={() => {
                       setIsEditingPosition(false);
                       setEditShares(position.shares_count.toString());
-                      setEditAvgCost(position.avg_cost.toString());
+                      setEditAvgCost(position.avg_cost != null ? position.avg_cost.toString() : '');
                       setEditCurrentPrice(currentPrice.toString());
                       setEditCompanyName(position.company_name || stock?.company_name || '');
                       setEditTicker(position.ticker);
@@ -1344,10 +1363,12 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                     />
                   </div>
                 ) : (
-                  <span className="font-mono text-text-primary">${position.avg_cost.toFixed(2)}</span>
+                  <span className="font-mono text-text-primary">
+                    {position.avg_cost != null ? `$${position.avg_cost.toFixed(2)}` : '⚠️ doplň'}
+                  </span>
                 )}
               </div>
-              
+
               {/* Current Price (editable) */}
               <div className="flex justify-between items-center">
                 <span className="text-text-secondary">Current Price</span>
@@ -1435,7 +1456,9 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               
               <div className="border-t border-border pt-3 flex justify-between">
                 <span className="text-text-secondary">Cost Basis</span>
-                <span className="font-mono text-text-secondary">{formatCurrency(position.cost_basis, position.currency || 'USD')}</span>
+                <span className="font-mono text-text-secondary">
+                  {position.cost_basis != null ? formatCurrency(position.cost_basis, position.currency || 'USD') : '⚠️ chybí nákupní cena'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">Market Value</span>
@@ -1444,18 +1467,24 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               <div className="flex justify-between items-center">
                 <span className="text-text-secondary">Unrealized P/L</span>
                 <div className="text-right">
-                  <span className={`font-bold ${position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'}`}>
-                    {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
-                  </span>
-                  <div className={`text-xs ${position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'}`}>
-                    ({formatPercent(position.unrealized_pl_percent)})
-                  </div>
+                  {position.unrealized_pl != null && position.unrealized_pl_percent != null ? (
+                    <>
+                      <span className={`font-bold ${position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'}`}>
+                        {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
+                      </span>
+                      <div className={`text-xs ${position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'}`}>
+                        ({formatPercent(position.unrealized_pl_percent)})
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-warning text-xs font-bold">⚠️ chybí nákupní cena</span>
+                  )}
                 </div>
               </div>
             </div>
-            
+
             {/* Free Ride Alert */}
-            {position.unrealized_pl_percent >= 150 && (
+            {position.unrealized_pl_percent != null && position.unrealized_pl_percent >= 150 && (
               <div className="mt-4 p-3 bg-warning/20 border border-warning/50 rounded-lg">
                 <div className="flex items-center gap-2 text-warning font-bold mb-1">
                   <Zap className="w-4 h-4" />
@@ -1622,7 +1651,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                 <PlusCircle className="w-4 h-4" />
                 Add to Position
               </button>
-              {position.unrealized_pl_percent >= 100 && (
+              {position.unrealized_pl_percent != null && position.unrealized_pl_percent >= 100 && (
                 <button className="w-full py-2 bg-warning/20 hover:bg-warning/30 text-warning font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
                   <TrendingUp className="w-4 h-4" />
                   Take Partial Profits (House Money)
@@ -1983,7 +2012,11 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
         setSuccess(`Portfolio "${portfolio.name}" created! Uploading CSV...`);
         try {
           const result = await apiClient.uploadCSV(portfolio.id, broker, file);
-          setSuccess(`Imported ${result.positions_created} positions successfully!`);
+          setSuccess(
+            result.missing_avg_cost?.length
+              ? `Imported ${result.positions_created} positions. ⚠️ Bez nákupní ceny: ${result.missing_avg_cost.join(', ')} — doplň je v detailu pozice.`
+              : `Imported ${result.positions_created} positions successfully!`
+          );
           onSuccess();
           setTimeout(() => onClose(), 1500);
         } catch (uploadErr) {
@@ -2018,11 +2051,15 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
       const result = await apiClient.uploadCSV(selectedPortfolioId, broker, file);
       
       if (result.success) {
-        setSuccess(`Imported ${result.positions_created} new, updated ${result.positions_updated} positions`);
+        setSuccess(
+          result.missing_avg_cost?.length
+            ? `Imported ${result.positions_created} new, updated ${result.positions_updated}. ⚠️ Bez nákupní ceny: ${result.missing_avg_cost.join(', ')} — doplň je v detailu pozice.`
+            : `Imported ${result.positions_created} new, updated ${result.positions_updated} positions`
+        );
         setTimeout(() => {
           onSuccess();
           onClose();
-        }, 1500);
+        }, result.missing_avg_cost?.length ? 4000 : 1500);
       } else {
         setError(result.message || 'Import failed');
       }
@@ -2956,8 +2993,8 @@ export const InvestmentTerminal: React.FC = () => {
         // 1. Cílová váha podle skóre (Target Weight)
         const targetWeightPct = getTargetWeight(gomesScore);
         
-        // 2. Aktuální váha v portfoliu
-        const positionValueOriginal = pos.market_value > 0 ? pos.market_value : pos.cost_basis;
+        // 2. Aktuální váha v portfoliu (cost_basis may be null: unknown buy price)
+        const positionValueOriginal = pos.market_value > 0 ? pos.market_value : (pos.cost_basis ?? 0);
         const positionCurrency = pos.currency || 'CZK';
         const currencyRate = exchangeRates[positionCurrency] || 1;
         const positionValueCZK = positionValueOriginal * currencyRate;
@@ -3127,7 +3164,7 @@ export const InvestmentTerminal: React.FC = () => {
         case 'score':
           return (b.conviction_score ?? 0) - (a.conviction_score ?? 0);
         case 'pl':
-          return b.unrealized_pl_percent - a.unrealized_pl_percent;
+          return (b.unrealized_pl_percent ?? 0) - (a.unrealized_pl_percent ?? 0);
         default:
           return 0;
       }

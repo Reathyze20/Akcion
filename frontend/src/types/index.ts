@@ -166,13 +166,15 @@ export interface Position {
   ticker: string;
   company_name?: string | null;
   shares_count: number;
-  avg_cost: number;
+  // null = purchase price unknown (Degiro exports carry none) — user must
+  // fill it in; P/L fields are null until then, never fabricated.
+  avg_cost: number | null;
   current_price: number | null;
   last_price_update: string | null;
-  cost_basis: number;
+  cost_basis: number | null;
   market_value: number;
-  unrealized_pl: number;
-  unrealized_pl_percent: number;
+  unrealized_pl: number | null;
+  unrealized_pl_percent: number | null;
   currency?: string;
   created_at: string;
   updated_at: string;
@@ -217,6 +219,8 @@ export interface CSVUploadResponse {
   positions_created: number;
   positions_updated: number;
   errors: string[];
+  // Tickers imported without a purchase price — user must fill avg_cost in.
+  missing_avg_cost?: string[];
 }
 
 export interface PriceRefreshResponse {
