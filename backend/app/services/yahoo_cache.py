@@ -341,12 +341,15 @@ class YahooFinanceCache:
                     info = stock.info
                     fast_info = stock.fast_info
                     
+                    # FastInfo dict keys are camelCase ("lastPrice"); the old
+                    # snake_case lookups returned None for every field, so the
+                    # cache logged success while storing empty prices.
                     data.update({
-                        "current_price": fast_info.get("last_price"),
-                        "previous_close": fast_info.get("previous_close"),
-                        "day_low": fast_info.get("day_low"),
-                        "day_high": fast_info.get("day_high"),
-                        "volume": fast_info.get("volume"),
+                        "current_price": fast_info.get("lastPrice"),
+                        "previous_close": fast_info.get("previousClose"),
+                        "day_low": fast_info.get("dayLow"),
+                        "day_high": fast_info.get("dayHigh"),
+                        "volume": fast_info.get("lastVolume"),
                         "market_data_updated": now,
                     })
                     

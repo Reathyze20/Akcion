@@ -60,7 +60,10 @@ class PositionBase(BaseModel):
     ticker: str = Field(..., description="Stock ticker symbol")
     company_name: str | None = Field(None, description="Company name")
     shares_count: float = Field(..., description="Number of shares")
-    avg_cost: float = Field(..., description="Average cost per share")
+    avg_cost: float | None = Field(
+        None,
+        description="Average cost per share; None = unknown, user must fill in",
+    )
     currency: str = Field(default="USD", description="Currency code (USD, EUR, HKD, etc.)")
 
 
@@ -87,10 +90,10 @@ class PositionResponse(PositionBase):
     portfolio_id: int
     current_price: float | None = None
     last_price_update: datetime | None = None
-    cost_basis: float
+    cost_basis: float | None = None
     market_value: float
-    unrealized_pl: float
-    unrealized_pl_percent: float
+    unrealized_pl: float | None = None
+    unrealized_pl_percent: float | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -116,12 +119,15 @@ class CSVUploadRequest(BaseModel):
 
 class CSVUploadResponse(BaseModel):
     """Schema for CSV upload response."""
-    
+
     success: bool
     message: str
     positions_created: int
     positions_updated: int
     errors: list[str] = []
+    # Tickers imported WITHOUT a purchase price (e.g. Degiro exports carry
+    # none) — the user must fill avg_cost in before P/L rules apply to them.
+    missing_avg_cost: list[str] = []
 
 
 # ==============================================================================

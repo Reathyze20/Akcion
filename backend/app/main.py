@@ -36,6 +36,7 @@ from .schemas import (
 from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analysis, stocks
 from .routes import intelligence_gomes, master_signal, notifications
 from .routes import investment  # Investment Intelligence
+from .routes import daily_actions  # Path 1: "Co mám dnes udělat?"
 from .routes import currency  # Currency exchange rates
 from .routes import yahoo_finance  # Yahoo Finance Smart Cache
 from .routes import dev_utils  # Development utilities (DISABLE IN PRODUCTION!)
@@ -131,9 +132,12 @@ app.include_router(master_signal.router)
 app.include_router(master_signal.action_router)
 app.include_router(notifications.router)
 app.include_router(investment.router)  # Investment Intelligence
+app.include_router(daily_actions.router)  # Daily Action list ("Nic. Drž.")
 app.include_router(currency.router)  # Currency exchange rates
 app.include_router(yahoo_finance.router)  # Yahoo Finance Smart Cache
-app.include_router(dev_utils.router)  # Development utilities (DISABLE IN PRODUCTION!)
+
+if settings.debug:
+    app.include_router(dev_utils.router)  # Raw SQL execution — DEBUG only, never in production
 
 
 # ==============================================================================

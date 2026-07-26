@@ -377,27 +377,35 @@ class BrokerCSVParser:
             
             shares = float(shares_str)
             price_value = float(price_str)
-            
-            # If using total value column, calculate per-share price
+
+            # Degiro portfolio exports carry the CLOSING price, never the
+            # purchase price. Store it as current_price and leave avg_cost
+            # honestly unknown (None) — the app prompts the user to fill it.
+            # (The old code stored the closing price as avg_cost: fabricated
+            # cost basis that zeroed P/L and disarmed the doubling rule.)
             if use_total_value and shares > 0:
-                avg_cost = price_value / shares
-                logger.debug(f"Row {idx}: total_value={price_value}, shares={shares}, avg_cost={avg_cost:.4f}")
+                current_price = price_value / shares
+                logger.debug(f"Row {idx}: total_value={price_value}, shares={shares}, price/share={current_price:.4f}")
             else:
-                avg_cost = price_value
-            
+                current_price = price_value
+
             # Determine currency (prefer extracted, fallback to column, then USD)
             currency = extracted_currencies.get(idx, "USD")
             if "currency" in row and not currency:
                 currency_val = str(row["currency"]).strip().upper()
                 if currency_val and currency_val != "NAN" and not pd.isna(currency_val):
                     currency = currency_val
-            
-            logger.info(f"Parsed: {ticker} ({company_name}), {shares} shares @ {avg_cost:.2f} {currency}")
-            
+
+            logger.info(
+                f"Parsed: {ticker} ({company_name}), {shares} shares, "
+                f"closing {current_price:.2f} {currency}, avg_cost UNKNOWN"
+            )
+
             return {
                 "ticker": ticker,
                 "shares_count": shares,
-                "avg_cost": avg_cost,
+                "avg_cost": None,  # Degiro export has no purchase price
+                "current_price": current_price,
                 "currency": currency,
                 "company_name": company_name,
             }
@@ -495,23 +503,37 @@ class BrokerCSVParser:
                     return candidate
         return None
 
+    # A real ISIN: 2 letters + 9 alphanumerics + check digit (e.g. US00760J1088)
+    _ISIN_RE = re.compile(r"\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b")
+
     @staticmethod
     def _skip_metadata_row(df: pd.DataFrame) -> pd.DataFrame:
-        """Skip first row if it looks like metadata (not data)."""
+        """
+        Skip first row only if it looks like metadata, not data.
+
+        A position row is recognized by containing an actual ISIN anywhere in
+        it. (The old check required a cell to literally start with "ISIN",
+        which silently dropped the FIRST POSITION of any Degiro export that
+        has no metadata line — rows look like "AEHR | US00760J1088".)
+        """
         if len(df) == 0:
             return df
-        
+
         first_row_is_data = False
         for val in df.iloc[0]:
             val_str = str(val).strip().upper()
-            if val_str.startswith("ISIN") or val_str == "SYMBOL/ISIN":
+            if (
+                val_str.startswith("ISIN")
+                or val_str == "SYMBOL/ISIN"
+                or BrokerCSVParser._ISIN_RE.search(val_str)
+            ):
                 first_row_is_data = True
                 break
-        
+
         if not first_row_is_data:
             logger.debug("Skipping first row (appears to be metadata)")
             return df.iloc[1:].reset_index(drop=True)
-        
+
         return df
 
     @staticmethod
@@ -576,32 +598,46 @@ def validate_position_data(positions: list[dict]) -> list[dict]:
         Validated and cleaned positions
     """
     validated = []
-    
+
     for pos in positions:
         # Skip empty tickers
         if not pos.get("ticker"):
             continue
-        
+
         try:
             shares = float(pos["shares_count"])
-            cost = float(pos["avg_cost"])
-            
-            if shares <= 0 or cost <= 0:
+            if shares <= 0:
                 continue
-            
+
+            # avg_cost may legitimately be None (Degiro exports carry no
+            # purchase price) — keep the position and let the app prompt the
+            # user. A present-but-nonpositive cost is invalid data: drop row.
+            cost = pos.get("avg_cost")
+            if cost is not None:
+                cost = float(cost)
+                if cost <= 0:
+                    continue
+
+            current_price = pos.get("current_price")
+            if current_price is not None:
+                current_price = float(current_price)
+                if current_price <= 0:
+                    current_price = None
+
             currency = pos.get("currency", "USD")
             if not currency or currency == "NAN":
                 currency = "USD"
-            
+
             validated.append({
                 "ticker": pos["ticker"],
                 "shares_count": shares,
                 "avg_cost": cost,
+                "current_price": current_price,
                 "currency": currency,
                 "company_name": pos.get("company_name"),  # Preserve company name
             })
         except (ValueError, TypeError):
             continue
-    
+
     logger.info(f"Validated {len(validated)} of {len(positions)} positions")
     return validated

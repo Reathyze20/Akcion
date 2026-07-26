@@ -36,11 +36,11 @@ interface EnrichedPosition {
   ticker: string;
   company_name?: string | null;
   shares_count: number;
-  avg_cost: number;
+  avg_cost: number | null;  // null = buy price unknown, user must fill in
   current_price: number | null;
   currency?: string;
-  unrealized_pl: number;
-  unrealized_pl_percent: number;
+  unrealized_pl: number | null;
+  unrealized_pl_percent: number | null;
   stock?: Stock;
   conviction_score?: number | null;
   target_weight_pct?: number;
@@ -52,7 +52,6 @@ interface EnrichedPosition {
   max_allocation_cap?: number;
   trend_status?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   is_deteriorated?: boolean;
-  [key: string]: unknown; // Allow additional properties
 }
 
 interface StockDetailProps {
@@ -392,9 +391,9 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                       label="Počet akcií" 
                       value={position.shares_count}
                     />
-                    <MetricCard 
-                      label="Průměrná cena" 
-                      value={formatCurrency(position.avg_cost, position.currency)}
+                    <MetricCard
+                      label="Průměrná cena"
+                      value={position.avg_cost != null ? formatCurrency(position.avg_cost, position.currency) : '⚠️ doplň nákupní cenu'}
                     />
                     <MetricCard 
                       label="Aktuální cena" 
@@ -407,17 +406,26 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                   </div>
                 </div>
                 
-                {/* P/L Section */}
+                {/* P/L Section — unknown cost basis is a prompt, never a number */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className={`p-4 rounded-lg border ${position.unrealized_pl >= 0 ? 'bg-green-900/20 border-green-700' : 'bg-red-900/20 border-red-700'}`}>
-                    <p className="text-xs text-slate-500 mb-1">Nerealizovaný P/L</p>
-                    <p className={`text-xl font-bold ${position.unrealized_pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {formatCurrency(position.unrealized_pl, position.currency)}
-                    </p>
-                    <p className={`text-sm ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(2)}%
-                    </p>
-                  </div>
+                  {position.unrealized_pl != null && position.unrealized_pl_percent != null ? (
+                    <div className={`p-4 rounded-lg border ${position.unrealized_pl >= 0 ? 'bg-green-900/20 border-green-700' : 'bg-red-900/20 border-red-700'}`}>
+                      <p className="text-xs text-slate-500 mb-1">Nerealizovaný P/L</p>
+                      <p className={`text-xl font-bold ${position.unrealized_pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatCurrency(position.unrealized_pl, position.currency)}
+                      </p>
+                      <p className={`text-sm ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(2)}%
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-lg border border-amber-700 bg-amber-900/20">
+                      <p className="text-xs text-slate-500 mb-1">Nerealizovaný P/L</p>
+                      <p className="text-sm font-bold text-amber-400">
+                        ⚠️ Chybí nákupní cena — doplň ji v editaci pozice, P/L do té doby nelze spočítat
+                      </p>
+                    </div>
+                  )}
                   
                   {/* Allocation */}
                   <div className="p-4 rounded-lg border border-slate-700 bg-[#161b22]">

@@ -101,6 +101,12 @@ class Stock(Base):
         nullable=True,
         doc="Analyst name (e.g., Mark Gomes)"
     )
+    source_key = Column(
+        String(50),
+        nullable=True,
+        index=True,
+        doc="Canonical source: GOMES / BREAKOUT_INVESTORS / OTHER (normalized from speaker)"
+    )
     
     # Analysis Metadata
     sentiment = Column(
@@ -420,6 +426,7 @@ class Stock(Base):
             "company_name": self.company_name,
             "source_type": self.source_type,
             "speaker": self.speaker,
+            "source_key": self.source_key,
             "sentiment": self.sentiment,
             "conviction_score": self.conviction_score,
             "conviction_score": self.conviction_score,

@@ -9,17 +9,17 @@
 import React, { useState } from 'react';
 import TopPicksWidget from './TopPicksWidget';
 import WatchlistRankingTable from './WatchlistRankingTable';
-import GomesScoreCard from './GomesScoreCard';
+import ConvictionScoreCard from './ConvictionScoreCard';
 import TickerTimeline from './TickerTimeline';
 import TranscriptImporter from './TranscriptImporter';
 import { apiClient } from '../api/client';
-import type { GomesScoreResponse } from '../types';
+import type { ConvictionScoreResponse } from '../types';
 
 type ViewMode = 'analysis' | 'timeline' | 'import';
 
 const GomesDashboard: React.FC = () => {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [tickerScore, setTickerScore] = useState<GomesScoreResponse | null>(null);
+  const [tickerScore, setTickerScore] = useState<ConvictionScoreResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('analysis');
@@ -138,7 +138,7 @@ const GomesDashboard: React.FC = () => {
               </div>
             ) : tickerScore ? (
               <div>
-                <GomesScoreCard
+                <ConvictionScoreCard
                   score={tickerScore}
                   onAnalyze={handleRefreshAnalysis}
                 />

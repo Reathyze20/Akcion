@@ -20,6 +20,7 @@ from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ..core.sources import normalize_source, summarize_source_agreement
 from ..models.stock import Stock
 
 
@@ -118,9 +119,12 @@ class StockRepository:
         ticker = self._extract_ticker(stock_data)
         if not ticker:
             return
-        
-        version = self._handle_existing_versions(ticker)
-        stock = self._create_stock_entity(stock_data, ticker, source_type, speaker, version)
+
+        source_key = normalize_source(speaker)
+        version = self._handle_existing_versions(ticker, source_key)
+        stock = self._create_stock_entity(
+            stock_data, ticker, source_type, speaker, version, source_key
+        )
         self._session.add(stock)
     
     def _extract_ticker(self, stock_data: dict[str, Any]) -> str | None:
@@ -128,44 +132,57 @@ class StockRepository:
         ticker = stock_data.get("ticker", "")
         return ticker.upper() if ticker else None
     
-    def _handle_existing_versions(self, ticker: str) -> int:
+    def _handle_existing_versions(self, ticker: str, source_key: str) -> int:
         """
-        Handle existing versions of a ticker.
-        
-        Marks existing latest version as not latest and
-        removes old versions beyond the retention limit.
-        
-        Args:
-            ticker: Stock ticker symbol
-            
+        Prepare version tracking for a new analysis of (ticker, source_key).
+
+        Two things happen:
+        - The single "primary" latest (is_latest=True) for this ticker is demoted,
+          so the new row becomes the primary. is_latest stays one-per-ticker, which
+          keeps all existing portfolio/sizing reads working unchanged.
+        - Version numbering and retention cleanup are scoped to THIS source only,
+          so pasting a Breakout Investors take never deletes or supersedes the
+          Gomes history for the same ticker (the dual-source data-loss fix).
+
         Returns:
-            New version number
+            New per-source version number.
         """
-        existing = self._get_latest_version(ticker)
-        
-        if existing:
-            existing.is_latest = False
-            new_version = (existing.version or 1) + 1
-            self._cleanup_old_versions(ticker)
-        else:
-            new_version = 1
-        
+        # Demote the current primary (most-recent-overall) for legacy single-row reads.
+        primary = self._get_latest_version(ticker)
+        if primary:
+            primary.is_latest = False
+
+        # Per-source version + retention (does not touch other sources' rows).
+        same_source = (
+            self._session.query(Stock)
+            .filter(Stock.ticker == ticker, Stock.source_key == source_key)
+            .order_by(desc(Stock.created_at))
+            .all()
+        )
+        new_version = (same_source[0].version or 1) + 1 if same_source else 1
+        self._cleanup_old_versions(ticker, source_key)
         return new_version
-    
+
     def _get_latest_version(self, ticker: str) -> Stock | None:
-        """Get the current latest version of a ticker."""
+        """Get the current primary (is_latest) row for a ticker (one per ticker)."""
         return self._session.query(Stock).filter(
             Stock.ticker == ticker,
             Stock.is_latest == True,
         ).first()
-    
-    def _cleanup_old_versions(self, ticker: str) -> None:
-        """Remove old versions beyond the retention limit."""
+
+    def _cleanup_old_versions(self, ticker: str, source_key: str) -> None:
+        """
+        Keep only the newest MAX_VERSIONS_TO_KEEP rows for THIS (ticker, source_key).
+
+        Scoped by source so trimming one source's history never deletes another
+        source's analyses. Called before the new row is added, so we retain
+        MAX_VERSIONS_TO_KEEP - 1 existing rows + the incoming one.
+        """
         old_versions = (
             self._session.query(Stock)
             .filter(
                 Stock.ticker == ticker,
-                Stock.is_latest == False,
+                Stock.source_key == source_key,
             )
             .order_by(desc(Stock.created_at))
             .offset(MAX_VERSIONS_TO_KEEP - 1)
@@ -181,6 +198,7 @@ class StockRepository:
         source_type: str,
         speaker: str,
         version: int,
+        source_key: str,
     ) -> Stock:
         """
         Create Stock entity from dictionary data.
@@ -200,6 +218,7 @@ class StockRepository:
             company_name=stock_data.get("company_name") or stock_data.get("name", ""),
             source_type=source_type,
             speaker=speaker,
+            source_key=source_key,
             sentiment=stock_data.get("sentiment", "Neutral"),
             conviction_score=(
                 stock_data.get("conviction_score")
@@ -306,6 +325,35 @@ class StockRepository:
             .all()
         )
     
+    def get_current_by_source(self, ticker: str) -> list[Stock]:
+        """
+        Get the most recent analysis PER source for a ticker.
+
+        Returns one row per distinct source_key (e.g. one Gomes take + one
+        Breakout Investors take), each the latest for that source. This is the
+        data behind the side-by-side dual-source view. Uses Postgres DISTINCT ON.
+        """
+        return (
+            self._session.query(Stock)
+            .filter(Stock.ticker == ticker.upper())
+            .order_by(Stock.source_key, desc(Stock.created_at))
+            .distinct(Stock.source_key)
+            .all()
+        )
+
+    def get_source_comparison(self, ticker: str) -> dict[str, Any]:
+        """
+        Side-by-side comparison of every source's current take on a ticker,
+        plus an agreement summary (AGREE / MIXED / CONFLICT / SINGLE / NONE).
+        """
+        takes = self.get_current_by_source(ticker)
+        take_dicts = [t.to_dict() for t in takes]
+        return {
+            "ticker": ticker.upper(),
+            "sources": take_dicts,
+            "agreement": summarize_source_agreement(take_dicts),
+        }
+
     def get_stocks_by_sentiment(self, sentiment: str) -> list[Stock]:
         """
         Filter stocks by sentiment.

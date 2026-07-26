@@ -27,7 +27,7 @@ from app.trading.gomes_analyzer import (
 from app.models.trading import ActiveWatchlist
 from app.models.stock import Stock
 from app.models.analysis import AnalystTranscript, TickerMention
-from app.config.settings import Settings
+from app.config.settings import get_settings
 
 
 # ============================================================================
@@ -39,7 +39,9 @@ router = APIRouter(
     tags=["Gomes Analysis"]
 )
 
-settings = Settings()
+# Cached accessor, not a second Settings() instance — a raw instantiation at
+# import time crashes test collection wherever backend/.env doesn't exist (CI).
+settings = get_settings()
 
 
 # ============================================================================
@@ -930,8 +932,9 @@ def process_transcript_ai(
         
         tickers = [m.ticker for m in mentions]
         
-        # Configure Gemini
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+        # Configure Gemini (field is gemini_api_key; GEMINI_API_KEY is only
+        # the env alias — the old attribute access raised AttributeError)
+        genai.configure(api_key=settings.gemini_api_key)
         model = genai.GenerativeModel(GEMINI_MODEL_NAME)
         
         # Build prompt

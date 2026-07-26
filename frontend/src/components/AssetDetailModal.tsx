@@ -21,6 +21,7 @@ import {
 import type { Stock } from '../types';
 import { GatekeeperShield } from './GatekeeperShield';
 import { useGatekeeperStatus } from '../hooks/useGatekeeperStatus';
+import apiClient from '../api/client';
 
 // Types - Extend base types with Gomes fields
 interface EnrichedPosition {
@@ -73,14 +74,40 @@ interface Props {
   onUpdate?: () => void;
 }
 
-const AssetDetailModal: React.FC<Props> = ({ position, onClose }) => {
+const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
   const stock = position.stock;
   const currentPrice = stock?.current_price ?? position.current_price ?? 0;
-  
+
   // State for Trim Modal
   const [showTrimModal, setShowTrimModal] = useState(false);
   const [trimShares, setTrimShares] = useState('');
   const [trimPrice, setTrimPrice] = useState('');
+  const [isSavingTrim, setIsSavingTrim] = useState(false);
+
+  // Handle trim transaction save
+  const handleSaveTrim = async () => {
+    const sharesToTrim = parseFloat(trimShares);
+    if (!sharesToTrim || sharesToTrim <= 0 || sharesToTrim > position.shares_count) {
+      alert('❌ Neplatný počet kusů k prodeji');
+      return;
+    }
+
+    setIsSavingTrim(true);
+    try {
+      const remainingShares = position.shares_count - sharesToTrim;
+      await apiClient.updatePosition(position.id, { shares_count: remainingShares });
+
+      setShowTrimModal(false);
+      setTrimShares('');
+      setTrimPrice('');
+      onUpdate?.();
+    } catch (error) {
+      console.error('Trim transaction failed:', error);
+      alert(`❌ Chyba při ukládání transakce: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
+    } finally {
+      setIsSavingTrim(false);
+    }
+  };
   
   // State for Transcript Analysis Modal
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
@@ -147,11 +174,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose }) => {
     return { color: 'green', label: 'Healthy', severity: 'safe' };
   };
   const runwayStatus = getCashRunwayStatus(cashRunwayMonths);
-  
-  // Insider activity color
-  const insiderColor = insiderActivity === 'BUYING' ? 'green' : 
-                       insiderActivity === 'SELLING' ? 'red' : 'slate';
-  
+
   // Handle manual edit save
   const handleSaveEdit = async () => {
     setIsSaving(true);
@@ -216,10 +239,9 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose }) => {
     gomes_score: position.conviction_score,
   };
 
-  // Get shield status for conditional rendering
-  const shieldStatus = useGatekeeperStatus(gatekeeperAnalysis);
-  const isBuyBlocked = shieldStatus.hideBuyButton;
-  
+  // Keep the shield hook active (it drives GatekeeperShield rendering below).
+  useGatekeeperStatus(gatekeeperAnalysis);
+
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-2">
       <GatekeeperShield analysis={gatekeeperAnalysis}>
@@ -813,21 +835,11 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose }) => {
                   Zrušit
                 </button>
                 <button
-                  onClick={() => {
-                    // TODO: Call API to save transaction
-                    console.log('Saving trim transaction:', {
-                      ticker: position.ticker,
-                      shares: parseFloat(trimShares),
-                      price: parseFloat(trimPrice)
-                    });
-                    setShowTrimModal(false);
-                    setTrimShares('');
-                    setTrimPrice('');
-                  }}
-                  disabled={!trimShares || !trimPrice || parseFloat(trimShares) <= 0 || parseFloat(trimPrice) <= 0}
+                  onClick={handleSaveTrim}
+                  disabled={isSavingTrim || !trimShares || !trimPrice || parseFloat(trimShares) <= 0 || parseFloat(trimPrice) <= 0}
                   className="flex-1 py-3 bg-negative hover:bg-negative-muted text-text-primary font-black rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Uložit transakci
+                  {isSavingTrim ? 'Ukládám...' : 'Uložit transakci'}
                 </button>
               </div>
             </div>

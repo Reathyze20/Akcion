@@ -7,7 +7,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiClient } from '../api/client';
-import type { WatchlistRanking, GomesRating } from '../types';
+import type { WatchlistRanking, ConvictionRating } from '../types';
 
 interface TopPicksWidgetProps {
   minRating?: 'STRONG_BUY' | 'BUY' | 'HOLD';
@@ -17,7 +17,7 @@ interface TopPicksWidgetProps {
   refreshInterval?: number; // minutes
 }
 
-const getRatingBadge = (rating: GomesRating) => {
+const getRatingBadge = (rating: ConvictionRating) => {
   switch (rating) {
     case 'STRONG_BUY':
       return { bg: 'bg-positive', text: 'text-text-primary', icon: '', label: 'SILNÝ NÁKUP' };

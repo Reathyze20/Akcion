@@ -2,10 +2,11 @@
 Master Signal API Routes v2.0
 ==============================
 
-Simplified API endpoints using 3-pillar system:
+Simplified API endpoints — fundamentals-only scoring:
 1. Thesis Tracker (60%) - Gomes Intelligence
-2. Valuation & Cash (25%) - Cash runway, dilution risk
-3. Weinstein Guard (15%) - 30-week moving average
+2. Valuation & Cash (40%) - Cash runway, dilution risk
+3. Weinstein Guard (0%) - 30 WMA, informational overlay only
+   (exposed as technical_overlay_warning, never part of the score)
 
 REMOVED:
 - ML Predictions (micro-caps are unpredictable)
@@ -50,10 +51,11 @@ async def get_master_signal(
     """
     Get Master Signal v2.0 (Buy Confidence) for a ticker.
     
-    Uses 3-pillar system:
+    Scored pillars (fundamentals only):
     - Thesis Tracker (60%): Gomes Intelligence + milestones + red flags
-    - Valuation & Cash (25%): Cash runway, burn rate, dilution risk
-    - Weinstein Guard (15%): 30-week moving average trend filter
+    - Valuation & Cash (40%): Cash runway, burn rate, dilution risk
+    - Weinstein Guard (0%): 30 WMA trend — informational overlay only,
+      surfaced as technical_overlay_warning ("⚠️ Below 30WMA Trend")
     
     Returns:
         MasterSignalResultV2 with buy_confidence (0-100) and component breakdown

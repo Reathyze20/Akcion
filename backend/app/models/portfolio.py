@@ -157,8 +157,12 @@ class Position(Base):
     )
     avg_cost = Column(
         Float,
-        nullable=False,
-        doc="Average purchase price per share"
+        nullable=True,
+        doc=(
+            "Average purchase price per share. NULL = unknown (Degiro CSV "
+            "exports carry no buy price) — the user must fill it in before "
+            "P/L and the doubling rule apply. Never fabricated from a quote."
+        )
     )
     currency = Column(
         String(3),
@@ -196,8 +200,10 @@ class Position(Base):
     )
 
     @property
-    def cost_basis(self) -> float:
-        """Total amount invested (shares * avg_cost)."""
+    def cost_basis(self) -> float | None:
+        """Total amount invested (shares * avg_cost); None when cost unknown."""
+        if self.avg_cost is None:
+            return None
         return self.shares_count * self.avg_cost
 
     @property
@@ -208,15 +214,19 @@ class Position(Base):
         return self.shares_count * self.current_price
 
     @property
-    def unrealized_pl(self) -> float:
-        """Unrealized profit/loss in currency."""
+    def unrealized_pl(self) -> float | None:
+        """Unrealized profit/loss in currency; None when cost unknown."""
+        if self.avg_cost is None:
+            return None
         if self.current_price is None:
             return 0.0
         return (self.current_price - self.avg_cost) * self.shares_count
 
     @property
-    def unrealized_pl_percent(self) -> float:
-        """Unrealized profit/loss as percentage."""
+    def unrealized_pl_percent(self) -> float | None:
+        """Unrealized profit/loss as percentage; None when cost unknown."""
+        if self.avg_cost is None:
+            return None
         if self.avg_cost == 0 or self.current_price is None:
             return 0.0
         return ((self.current_price - self.avg_cost) / self.avg_cost) * 100
