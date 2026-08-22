@@ -49,6 +49,21 @@ class Settings(BaseSettings):
         alias="ANTHROPIC_API_KEY",
         description="Anthropic Claude API key — research layer (web_search + MCP)",
     )
+
+    t212_api_key_id: str | None = Field(
+        default=None,
+        alias="T212_API_KEY_ID",
+        description="Trading 212 API Key ID (pairs with the secret in T212_API_KEY)",
+    )
+
+    t212_api_key: str | None = Field(
+        default=None,
+        alias="T212_API_KEY",
+        description=(
+            "Trading 212 READ-ONLY API key. Must be created without the "
+            "'orders' permission — the app never places trades."
+        ),
+    )
     
     # Market Data API
     massive_api_key: str | None = Field(

@@ -40,6 +40,7 @@ throttled request must never look the same.
 
 from __future__ import annotations
 
+import base64
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -50,9 +51,22 @@ from loguru import logger
 BASE_URL = "https://live.trading212.com/api/v0"
 REQUEST_TIMEOUT = 30
 
-#: Minimum spacing between calls. Their published limits are per-endpoint and
-#: tight; one call every two seconds is well inside all of them.
-MIN_REQUEST_SPACING_S = 2.0
+#: Minimum spacing PER ENDPOINT, in seconds. Trading 212 throttles each path
+#: separately and answers 429 rather than degrading, so a single global gap is
+#: not enough: six quick calls across different paths still tripped the limit
+#: during setup. These are deliberately generous — this data changes on the
+#: order of hours, and being rate-limited out of a portfolio read is worse
+#: than waiting.
+ENDPOINT_SPACING_S: dict[str, float] = {
+    "equity/account/info": 60.0,
+    "equity/metadata/instruments": 60.0,
+    "equity/portfolio": 10.0,
+    "equity/account/cash": 10.0,
+    "equity/history/orders": 10.0,
+    "equity/history/dividends": 10.0,
+    "history/transactions": 10.0,
+}
+DEFAULT_SPACING_S = 10.0
 
 
 class Trading212Error(RuntimeError):
@@ -129,38 +143,61 @@ class Trading212Client:
     once rather than per call site.
     """
 
-    def __init__(self, api_key: str, *, base_url: str = BASE_URL) -> None:
+    def __init__(
+        self, api_key: str, key_id: str | None = None, *, base_url: str = BASE_URL
+    ) -> None:
+        """
+        Args:
+            api_key: the API SECRET KEY.
+            key_id: the API KEY ID that pairs with it.
+
+        Trading 212 issues two credentials and authenticates with HTTP Basic
+        over `id:secret`. Sending the secret alone — in any header shape, on
+        live or demo — answers 401, so both are required. Verified 2026-08-22
+        against a real key.
+        """
         if not api_key or not api_key.strip():
             raise Trading212AuthError("Chybí T212_API_KEY v backend/.env")
+        if not key_id or not key_id.strip():
+            raise Trading212AuthError("Chybí T212_API_KEY_ID v backend/.env")
         self._key = api_key.strip()
+        self._key_id = key_id.strip()
+        self._auth = "Basic " + base64.b64encode(
+            f"{self._key_id}:{self._key}".encode()
+        ).decode()
         self._base = base_url.rstrip("/")
         self._session = requests.Session()
-        self._last_request_at = 0.0
+        #: Last call time per endpoint — the limits are per path, not global.
+        self._last_call_at: dict[str, float] = {}
 
     # -- transport ---------------------------------------------------------
 
     def _get(self, path: str, **params) -> object:
-        elapsed = time.monotonic() - self._last_request_at
-        if elapsed < MIN_REQUEST_SPACING_S:
-            time.sleep(MIN_REQUEST_SPACING_S - elapsed)
+        key = path.strip("/")
+        spacing = ENDPOINT_SPACING_S.get(key, DEFAULT_SPACING_S)
+        elapsed = time.monotonic() - self._last_call_at.get(key, 0.0)
+        if elapsed < spacing:
+            wait = spacing - elapsed
+            logger.debug("T212 {}: waiting {:.1f}s for rate limit", key, wait)
+            time.sleep(wait)
 
         url = f"{self._base}/{path.lstrip('/')}"
         try:
             response = self._session.get(
                 url,
-                headers={"Authorization": self._key, "Accept": "application/json"},
+                headers={"Authorization": self._auth, "Accept": "application/json"},
                 params=params or None,
                 timeout=REQUEST_TIMEOUT,
             )
         except requests.RequestException as exc:
             raise Trading212Error(f"Trading 212 nedostupné: {exc}") from exc
         finally:
-            self._last_request_at = time.monotonic()
+            self._last_call_at[key] = time.monotonic()
 
         if response.status_code == 401:
             raise Trading212AuthError(
-                "Trading 212 odmítlo klíč (401). Zkontroluj T212_API_KEY, "
-                "nebo klíč nemá oprávnění pro tento endpoint."
+                "Trading 212 odmítlo přihlášení (401). Zkontroluj T212_API_KEY_ID "
+                "a T212_API_KEY, nebo omezení na IP adresu u toho klíče."
             )
         if response.status_code == 403:
             raise Trading212AuthError(
