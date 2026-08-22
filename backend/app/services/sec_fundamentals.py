@@ -138,6 +138,10 @@ class Series:
     quarterly: list[Point] = field(default_factory=list)
     annual: list[Point] = field(default_factory=list)
     instant: list[Point] = field(default_factory=list)
+    #: Year-to-date spans — six months, nine months. Not comparable with a
+    #: quarter and never charted as one, but they are often the ONLY period a
+    #: filing reports, and a burn rate has to come from somewhere.
+    ytd: list[Point] = field(default_factory=list)
 
     @property
     def latest_quarter(self) -> Point | None:
@@ -158,6 +162,63 @@ class Series:
             if 350 <= gap <= 380:
                 return point
         return None
+
+
+#: How far a spending period's end may sit from the cash date and still
+#: describe it. A balance on 30 June against a burn rate from January-March is
+#: not a runway, it is two unrelated numbers divided by each other.
+BURN_PERIOD_TOLERANCE_DAYS: Final[int] = 20
+
+
+def _monthly_burn(series: Series | None, as_of: date) -> tuple[float, Point] | None:
+    """
+    Monthly cash outflow described by whichever reported period ends at
+    `as_of`, normalised by that period's own length.
+
+    Returns None when no reported period lines up. That is the honest answer:
+    Smith Micro's runway was computed from the previous quarter's burn because
+    the only period covering the balance date was a six-month one, which was
+    being discarded. The result was "~2 months" where the filing supports
+    about 3.6.
+    """
+    if series is None:
+        return None
+
+    candidates = series.quarterly + series.ytd + series.annual
+    aligned = [
+        p for p in candidates
+        if p.days and abs((as_of - p.end).days) <= BURN_PERIOD_TOLERANCE_DAYS
+    ]
+    if not aligned:
+        return None
+
+    # The shortest aligned period is the most recent rate of spending.
+    point = min(aligned, key=lambda p: p.days)
+    if point.value >= 0:
+        return None  # cash generated, not burned
+    return abs(point.value) / (point.days / 30.44), point
+
+
+#: A change in share count larger than this between two ADJACENT observations
+#: is a split, not trading. Smith Micro went 25,500,000 -> 5,100,000 across a
+#: single day (2026-06-03 to 2026-06-04): a 1-for-5 reverse split. XBRL carries
+#: both bases in one series without restating the old rows, so a year-on-year
+#: comparison across that point is arithmetic on two different units.
+SPLIT_RATIO: Final[float] = 1.5
+
+
+def _split_between(series: Series, newer: Point, older: Point) -> bool:
+    """Whether a split sits between two observations of a share count."""
+    window = [
+        p for p in series.instant
+        if older.end <= p.end <= newer.end and p.value
+    ]
+    window.sort(key=lambda p: p.end)
+    for previous, current in zip(window, window[1:]):
+        ratio = max(previous.value, current.value) / min(previous.value, current.value)
+        if ratio >= SPLIT_RATIO:
+            return True
+    return False
 
 
 @dataclass
@@ -241,19 +302,23 @@ def _build_series(concept: Concept, facts: dict[str, Any]) -> Series | None:
                 series.quarterly.append(point)
             elif _within(point.days, ANNUAL_DAYS):
                 series.annual.append(point)
-            # Anything else — nine-month and six-month year-to-date figures —
-            # is deliberately dropped. It is real data, but it is not
-            # comparable with either bucket, and mixing it in is exactly how
-            # a growing company reads as a collapsing one.
+            else:
+                # Six- and nine-month spans. Kept apart rather than dropped:
+                # mixing them into `quarterly` is exactly how a growing company
+                # reads as a collapsing one, but Smith Micro's latest 10-Q
+                # reports operating cash flow ONLY as a six-month figure, and
+                # discarding it left the runway computed against a burn rate
+                # from the previous quarter.
+                series.ytd.append(point)
 
-        for bucket in (series.quarterly, series.annual, series.instant):
+        for bucket in (series.quarterly, series.annual, series.instant, series.ytd):
             bucket.sort(key=lambda p: p.end, reverse=True)
             # One period can be reported by several filings (a 10-K restating
             # a quarter). Keep the first, which is the most recent filing.
             seen: set[date] = set()
             bucket[:] = [p for p in bucket if not (p.end in seen or seen.add(p.end))]
 
-        if series.quarterly or series.annual or series.instant:
+        if series.quarterly or series.annual or series.instant or series.ytd:
             return series
 
     return None
@@ -404,10 +469,18 @@ def derive_findings(data: Fundamentals) -> list[str]:
                 f"starší než výsledky výše — novější firma netaguje)"
             )
 
-        if ocf and ocf.quarterly:
-            burn = ocf.quarterly[0]
-            if burn.value < 0:
-                monthly_burn = abs(burn.value) / 3
+        # Positive operating cash flow is not a runway question at all.
+        aligned_positive = ocf is not None and any(
+            p.value >= 0 and p.days
+            and abs((latest_cash.end - p.end).days) <= BURN_PERIOD_TOLERANCE_DAYS
+            for p in ocf.quarterly + ocf.ytd + ocf.annual
+        )
+        burn_rate = _monthly_burn(ocf, latest_cash.end)
+        if aligned_positive and burn_rate is None:
+            line += "; provozní cash flow je kladné"
+        elif burn_rate is not None:
+            monthly_burn, burn_point = burn_rate
+            if True:
                 months = latest_cash.value / monthly_burn if monthly_burn else None
                 if months is None:
                     pass
@@ -422,10 +495,18 @@ def derive_findings(data: Fundamentals) -> list[str]:
                     urgency = " ⚠️ pod 6 měsíců" if months < 6 else ""
                     line += (
                         f"; při provozním odlivu {_fmt_money(monthly_burn)} "
-                        f"měsíčně to vystačí na ~{months:.0f} měsíců{urgency}"
+                        f"měsíčně (za {burn_point.days} dní do "
+                        f"{burn_point.end:%d.%m.%Y}) to vystačí na "
+                        f"~{months:.0f} měsíců{urgency}"
                     )
-            else:
-                line += "; provozní cash flow je kladné"
+        elif ocf and (ocf.quarterly or ocf.ytd or ocf.annual):
+            # There is cash-flow data, just none covering the balance date.
+            # Dividing by an unrelated period is how "~2 months" came out of a
+            # filing that supports about 3.6.
+            line += (
+                " — provozní cash flow za období končící k tomuto datu "
+                "ve výkazech nenacházím, runway nepočítám"
+            )
         else:
             line += " — provozní cash flow ve výkazech nenacházím, runway nepočítám"
         out.append(line)
@@ -439,6 +520,19 @@ def derive_findings(data: Fundamentals) -> list[str]:
             None,
         )
         if year_ago and year_ago.value:
+            if _split_between(shares, now_pt, year_ago):
+                # XBRL carries pre- and post-split counts in one series without
+                # restating the old rows. Smith Micro crossed a 1-for-5 reverse
+                # split on 2026-06-04, and comparing across it produced a 71 %
+                # "fall" in a company whose share count actually rose.
+                out.append(
+                    f"Počet akcií k {now_pt.end:%d.%m.%Y}: "
+                    f"{now_pt.value:,.0f}. Meziroční srovnání nepočítám — mezi "
+                    f"tím proběhl split, takže starší údaj je v jiných "
+                    f"jednotkách."
+                )
+                return out
+
             change = _pct_change(now_pt.value, year_ago.value)
             if change is not None and abs(change) >= 1.0:
                 if change <= -REVERSE_SPLIT_DROP_PCT:

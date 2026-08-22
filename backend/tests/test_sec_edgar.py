@@ -389,3 +389,134 @@ class TestOutlookIsConstrained:
         schema = harden_schema(Outlook.model_json_schema())
         assert schema["additionalProperties"] is False
         assert "minLength" not in str(schema)
+
+
+# ==============================================================================
+# Two defects an adversarial verification pass found in this module
+# ==============================================================================
+
+def _series(points, key="x", label="X", unit="USD"):
+    """Build a Series from (start, end, value) triples; None start = instant."""
+    from datetime import date as _d
+    from app.services.sec_fundamentals import Point, Series
+
+    s = Series(key=key, label_cs=label, unit=unit, tag=key)
+    for start, end, value in points:
+        p = Point(
+            end=_d.fromisoformat(end),
+            start=_d.fromisoformat(start) if start else None,
+            value=value,
+            form="10-Q",
+        )
+        if p.start is None:
+            s.instant.append(p)
+        elif 80 <= p.days <= 100:
+            s.quarterly.append(p)
+        elif 350 <= p.days <= 380:
+            s.annual.append(p)
+        else:
+            s.ytd.append(p)
+    for bucket in (s.quarterly, s.annual, s.instant, s.ytd):
+        bucket.sort(key=lambda p: p.end, reverse=True)
+    return s
+
+
+class TestRunwayUsesAnAlignedPeriod:
+    """
+    Smith Micro's runway came out as "~2 months" from a filing that supports
+    about 3.6. The balance was 30 June; the only quarterly cash-flow figure in
+    XBRL ended 31 March, and the six-month period that actually covered the
+    balance was being discarded as non-comparable. Two unrelated numbers
+    divided by each other.
+    """
+
+    def test_a_six_month_period_covering_the_balance_is_used(self):
+        from app.services.sec_fundamentals import _monthly_burn
+        from datetime import date
+
+        ocf = _series([
+            ("2026-01-01", "2026-06-30", -4_600_000),   # the real one
+            ("2026-01-01", "2026-03-31", -3_752_000),   # a quarter, ends early
+        ])
+        rate, point = _monthly_burn(ocf, date(2026, 6, 30))
+
+        assert point.end == date(2026, 6, 30)
+        assert rate == pytest.approx(4_600_000 / (181 / 30.44), rel=0.01)
+
+    def test_a_period_ending_months_earlier_is_refused(self):
+        """
+        The stale pairing that produced the wrong number. No aligned period
+        means no runway, not a runway from whatever is lying around.
+        """
+        from app.services.sec_fundamentals import _monthly_burn
+        from datetime import date
+
+        ocf = _series([("2026-01-01", "2026-03-31", -3_752_000)])
+        assert _monthly_burn(ocf, date(2026, 6, 30)) is None
+
+    def test_positive_cash_flow_is_not_a_burn(self):
+        from app.services.sec_fundamentals import _monthly_burn
+        from datetime import date
+
+        ocf = _series([("2026-01-01", "2026-06-30", 4_600_000)])
+        assert _monthly_burn(ocf, date(2026, 6, 30)) is None
+
+    def test_the_shortest_aligned_period_wins(self):
+        """A quarter describes the current rate better than a full year."""
+        from app.services.sec_fundamentals import _monthly_burn
+        from datetime import date
+
+        ocf = _series([
+            ("2025-07-01", "2026-06-30", -12_000_000),
+            ("2026-04-01", "2026-06-30", -900_000),
+        ])
+        _, point = _monthly_burn(ocf, date(2026, 6, 30))
+        assert point.days < 100
+
+
+class TestNoComparisonAcrossASplit:
+    """
+    XBRL carries pre- and post-split share counts in one series without
+    restating the old rows. Smith Micro's real data holds 25,500,000 on
+    2026-06-03 and 5,100,000 on 2026-06-04 — a 1-for-5 reverse split — and
+    comparing across it produced a 71 % "fall" in a company whose share count
+    had actually risen.
+    """
+
+    #: The real rows, from SEC on 2026-08-22.
+    SMSI = [
+        (None, "2026-06-30", 5_589_880),
+        (None, "2026-06-04", 5_100_000),
+        (None, "2026-06-03", 25_500_000),
+        (None, "2025-06-30", 19_382_014),
+    ]
+
+    def test_a_split_between_two_points_is_detected(self):
+        from app.services.sec_fundamentals import _split_between
+
+        shares = _series(self.SMSI)
+        newer = shares.instant[0]
+        older = shares.instant[-1]
+        assert _split_between(shares, newer, older) is True
+
+    def test_a_normal_year_of_dilution_is_not_a_split(self):
+        from app.services.sec_fundamentals import _split_between
+
+        shares = _series([
+            (None, "2026-06-30", 9_001_540),
+            (None, "2025-06-30", 7_466_425),
+        ])
+        assert _split_between(shares, shares.instant[0], shares.instant[-1]) is False
+
+    def test_the_finding_refuses_the_comparison_and_says_why(self):
+        from app.services.sec_fundamentals import Fundamentals, derive_findings
+
+        data = Fundamentals(ticker="SMSI", cik="0000948708")
+        data.series["shares_outstanding"] = _series(
+            self.SMSI, key="shares_outstanding", label="Počet akcií", unit="shares"
+        )
+        finding = derive_findings(data)[-1]
+
+        assert "split" in finding
+        assert "5,589,880" in finding
+        assert "71" not in finding, "the fabricated 71 % fall must be gone"
