@@ -16,7 +16,6 @@ Version: 1.0.0
 from __future__ import annotations
 
 import logging
-import os
 import smtplib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -26,6 +25,8 @@ from typing import Optional
 
 import httpx
 
+
+from app.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -178,9 +179,27 @@ class EmailChannel(NotificationChannel):
             logger.error(f"Failed to send email alert: {e}")
             return False
     
+    @staticmethod
+    def _money(value: float | None) -> str:
+        """A price, or an em dash. Never a crash, never a fabricated zero."""
+        return f"${value:.2f}" if value is not None else "—"
+
     def _format_html(self, alert: Alert) -> str:
-        """Format alert as HTML email"""
+        """
+        Format alert as HTML email.
+
+        Every row used to be written as `{alert.entry_price:.2f if ... else ...}`.
+        A conditional expression is not a format spec, so this raised ValueError
+        on every single call — and `send()` swallows exceptions and returns
+        False, so the alert simply never arrived and nothing said why.
+        """
         color = "#10b981" if alert.buy_confidence >= 80 else "#3b82f6"
+        entry = self._money(alert.entry_price)
+        target = self._money(alert.target_price)
+        stop = self._money(alert.stop_loss)
+        size = (
+            f"{alert.kelly_size * 100:.1f}%" if alert.kelly_size is not None else "—"
+        )
         
         html = f"""
         <html>
@@ -192,19 +211,19 @@ class EmailChannel(NotificationChannel):
             <table style="border-collapse: collapse; margin: 20px 0;">
               <tr>
                 <td style="padding: 8px; font-weight: bold;">Entry Price:</td>
-                <td style="padding: 8px;">${alert.entry_price:.2f if alert.entry_price else '—'}</td>
+                <td style="padding: 8px;">{entry}</td>
               </tr>
               <tr>
                 <td style="padding: 8px; font-weight: bold;">Target Price:</td>
-                <td style="padding: 8px; color: green;">${alert.target_price:.2f if alert.target_price else '—'}</td>
+                <td style="padding: 8px; color: green;">{target}</td>
               </tr>
               <tr>
                 <td style="padding: 8px; font-weight: bold;">Stop Loss:</td>
-                <td style="padding: 8px; color: red;">${alert.stop_loss:.2f if alert.stop_loss else '—'}</td>
+                <td style="padding: 8px; color: red;">{stop}</td>
               </tr>
               <tr>
                 <td style="padding: 8px; font-weight: bold;">Position Size:</td>
-                <td style="padding: 8px;">{alert.kelly_size * 100:.1f if alert.kelly_size else '—'}%</td>
+                <td style="padding: 8px;">{size}</td>
               </tr>
             </table>
             <p>{alert.message}</p>
@@ -238,6 +257,9 @@ class NotificationService:
     
     def __init__(self):
         self.channels: list[NotificationChannel] = []
+        #: Why each channel could not be built. Kept so "nothing was sent" can
+        #: be answered with a reason instead of silence.
+        self.unconfigured: list[str] = []
     
     def add_channel(self, channel: NotificationChannel) -> None:
         """Add notification channel"""
@@ -270,34 +292,64 @@ class NotificationService:
         - TELEGRAM_CHAT_ID
         - SMTP_SERVER
         - SMTP_PORT
-        - SMTP_USERNAME
+        - SMTP_USERNAME   (also the sender address)
         - SMTP_PASSWORD
-        - SMTP_FROM_EMAIL
-        - SMTP_TO_EMAIL
+        - EMAIL_RECIPIENT
+
+        These are read through `Settings`, the same place the rest of the app
+        reads them. They used to come from `os.getenv` under two names —
+        SMTP_FROM_EMAIL and SMTP_TO_EMAIL — that appear nowhere in .env and
+        nowhere else in the codebase. The `all([...])` check therefore always
+        failed, so the scheduler ran every thirty minutes with nothing to send
+        through, while a fully configured mailbox sat in .env under the name
+        EMAIL_RECIPIENT.
+
+        When a channel cannot be built, the reason is recorded in
+        `service.unconfigured` rather than being dropped.
         """
         service = cls()
-        
+        settings = Settings()
+
         # Telegram
-        telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
-        telegram_chat_id = os.getenv('TELEGRAM_CHAT_ID')
+        telegram_token = settings.TELEGRAM_BOT_TOKEN
+        telegram_chat_id = settings.TELEGRAM_CHAT_ID
         if telegram_token and telegram_chat_id:
             service.add_channel(TelegramChannel(telegram_token, telegram_chat_id))
-        
-        # Email
-        smtp_server = os.getenv('SMTP_SERVER')
-        smtp_port = int(os.getenv('SMTP_PORT', '587'))
-        smtp_user = os.getenv('SMTP_USERNAME')
-        smtp_pass = os.getenv('SMTP_PASSWORD')
-        from_email = os.getenv('SMTP_FROM_EMAIL')
-        to_email = os.getenv('SMTP_TO_EMAIL')
-        
-        if all([smtp_server, smtp_user, smtp_pass, from_email, to_email]):
+        else:
+            service.unconfigured.append(
+                "Telegram: chybí TELEGRAM_BOT_TOKEN nebo TELEGRAM_CHAT_ID"
+            )
+
+        # Email. Gmail sends as the account that authenticates, so the sender is
+        # SMTP_USERNAME — there is no separate SMTP_FROM_EMAIL to set.
+        smtp_user = settings.SMTP_USERNAME
+        smtp_pass = settings.SMTP_PASSWORD
+        recipient = settings.EMAIL_RECIPIENT
+
+        if smtp_user and smtp_pass and recipient:
             service.add_channel(EmailChannel(
-                smtp_server, smtp_port,
+                settings.SMTP_SERVER, settings.SMTP_PORT,
                 smtp_user, smtp_pass,
-                from_email, to_email
+                smtp_user, recipient,
             ))
-        
+        else:
+            missing = [
+                name for name, value in (
+                    ("SMTP_USERNAME", smtp_user),
+                    ("SMTP_PASSWORD", smtp_pass),
+                    ("EMAIL_RECIPIENT", recipient),
+                ) if not value
+            ]
+            service.unconfigured.append(
+                f"E-mail: chybí {', '.join(missing)} v backend/.env"
+            )
+
+        if not service.channels:
+            logger.warning(
+                "Žádný notifikační kanál nejde postavit: %s",
+                "; ".join(service.unconfigured),
+            )
+
         return service
 
 

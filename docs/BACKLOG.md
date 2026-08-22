@@ -70,7 +70,7 @@ potom. Uvidíš „analýza selhala", ale conviction skóre v DB už je jiné.
 
 ## P1 — bez tebe se nic nestane
 
-### `[ ]` B6. Notifikace nemůžou odejít
+### `[x]` B6. Notifikace nemůžou odejít
 
 Dva paralelní stacky: ten nakonfigurovaný nemá automatiku, ten s automatikou (`notifications.py:291`)
 neumí na tomhle stroji postavit ani jeden kanál. A i kdyby: `EmailChannel._format_html` má
@@ -157,3 +157,4 @@ opravdu jde (gap #6). Nejmenší dopad z P2 — dokud nejsi v Yellow/Orange, nes
 - `[x]` B3 Finnhub dosazoval včerejší close za chybějící kotaci; Massive se jmenoval, jako by vracel živou cenu
 - `[x]` B4 Kurzy z ledna 2025 se používaly tiše; neznámá měna dostávala kurz dolaru
 - `[x]` B5 Analýza commitla nové skóre a teprve pak spadla na chybějícím poli
+- `[x]` B6 Automatizovaný stack četl názvy proměnných, které v `.env` nejsou; e-mail padal na neplatném format specu
