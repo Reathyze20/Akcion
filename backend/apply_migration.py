@@ -18,7 +18,7 @@ def apply_migration(migration_name: str = "add_gomes_tactical_fields"):
     migration_file = Path(__file__).parent / "migrations" / f"{migration_name}.sql"
     
     if not migration_file.exists():
-        print(f"❌ Migration file not found: {migration_file}")
+        print(f"ERROR: Migration file not found: {migration_file}")
         return False
     
     # Read SQL
@@ -44,15 +44,15 @@ def apply_migration(migration_name: str = "add_gomes_tactical_fields"):
     success, error = initialize_database(settings.database_url)
     
     if not success:
-        print(f"❌ Database connection failed: {error}")
+        print(f"ERROR: Database connection failed: {error}")
         return False
     
     # Get engine
     engine = get_engine()
     
-    print("🚀 Applying Gomes Master Table migration...")
-    print(f"📄 File: {migration_file.name}")
-    print(f"📊 Database: {engine.url.database}")
+    print(f"Applying migration: {migration_file.stem}")
+    print(f"File: {migration_file.name}")
+    print(f"Database: {engine.url.database}")
     print()
     
     try:
@@ -61,24 +61,12 @@ def apply_migration(migration_name: str = "add_gomes_tactical_fields"):
             conn.execute(text(sql_content))
             conn.commit()
         
-        print("✅ Migration applied successfully!")
-        print()
-        print("Added columns:")
-        print("  - asset_class (ANCHOR/HIGH_BETA_ROCKET/...)")
-        print("  - cash_runway_months")
-        print("  - gomes_score (0-10)")
-        print("  - inflection_status (WAIT_TIME/UPCOMING/ACTIVE_GOLD_MINE)")
-        print("  - primary_catalyst, catalyst_date")
-        print("  - price_floor, price_base, price_moon")
-        print("  - max_allocation_cap, stop_loss_price")
-        print("  - insider_activity (BUYING/HOLDING/SELLING)")
-        print("  - thesis_narrative")
-        print("  + 10 more fields + 6 indexes")
+        print(f"OK: Migration applied: {migration_file.name}")
         print()
         return True
         
     except Exception as e:
-        print(f"❌ Migration failed: {e}")
+        print(f"ERROR: Migration failed: {e}")
         return False
 
 if __name__ == "__main__":
