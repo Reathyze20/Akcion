@@ -50,7 +50,7 @@ Cena je vstup do R/R skóre, takže se ta chyba propíše do každého verdiktu.
 
 **Hotovo když:** cena si nese, ke kdy platí. Když je to close, řekne se to — nedosazuje se za živou kotaci.
 
-### `[ ]` B4. Kurzy měn jsou z ledna 2025
+### `[x]` B4. Kurzy měn jsou z ledna 2025
 
 `currency.py:43` — `FALLBACK_RATES` má razítko `2025-01-11`, dnes je o 9–15 % vedle, a použijí se tiše,
 kdykoliv ČNB neodpoví. Neznámá měna dostane potichu kurz USD.
@@ -155,3 +155,4 @@ opravdu jde (gap #6). Nejmenší dopad z P2 — dokud nejsi v Yellow/Orange, nes
 - `[x]` B8 Health endpoint hlásil neexistující model a web přístup, který appka nemá — commit `f179e58`
 - `[x]` B2 Neúspěšné stažení dávalo staré ceně razítko „teď“ a tím vypínalo jedinou pojistku
 - `[x]` B3 Finnhub dosazoval včerejší close za chybějící kotaci; Massive se jmenoval, jako by vracel živou cenu
+- `[x]` B4 Kurzy z ledna 2025 se používaly tiše; neznámá měna dostávala kurz dolaru

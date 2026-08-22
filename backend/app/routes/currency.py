@@ -4,10 +4,10 @@ Currency Exchange Rates API
 Provides live exchange rates from Czech National Bank (CNB).
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.currency import CurrencyService
+from app.services.currency import CurrencyError, CurrencyService
 
 
 router = APIRouter(prefix="/api/currency", tags=["currency"])
@@ -54,11 +54,17 @@ async def get_rate(currency: str) -> dict:
     Args:
         currency: Currency code (USD, EUR, GBP, etc.)
     """
-    rate = CurrencyService.get_rate_to_czk(currency.upper())
+    try:
+        detail = CurrencyService.get_rate(currency.upper())
+    except CurrencyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     return {
         "currency": currency.upper(),
-        "rate_to_czk": rate,
-        "base": "CZK"
+        "rate_to_czk": detail.value,
+        "base": "CZK",
+        # Whether this is today's fixing or the snapshot we fall back on.
+        "is_live": detail.is_live,
+        "as_of": detail.as_of.isoformat() if detail.as_of else None,
     }
 
 
@@ -69,7 +75,10 @@ async def convert_currency(request: ConvertRequest) -> ConvertResponse:
     
     Currently only supports conversion TO CZK.
     """
-    rate = CurrencyService.get_rate_to_czk(request.from_currency.upper())
+    try:
+        rate = CurrencyService.get_rate_to_czk(request.from_currency.upper())
+    except CurrencyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     converted = request.amount * rate
     
     return ConvertResponse(

@@ -45,7 +45,7 @@ from ..schemas.portfolio import (
     PriceRefreshRequest,
     PriceRefreshResponse,
 )
-from ..services.currency import CurrencyService
+from ..services.currency import CurrencyError, CurrencyService
 from ..services.importer import BrokerCSVParser, validate_position_data
 from ..services.market_data import MarketDataService
 from ..services.portfolio_reconciliation import PortfolioReconciliationService
@@ -124,9 +124,20 @@ def get_portfolio_summary(
     total_market_value_czk = 0.0
     total_unrealized_pl_czk = 0.0
     
+    # Positions whose currency we cannot convert. Left out of the totals and
+    # named in the response — the old code passed an unknown currency through
+    # to a default of the USD rate, which silently valued an ILS holding at
+    # 3.3x its worth.
+    unconvertible: list[dict[str, str]] = []
+
     for pos in positions:
-        currency = getattr(pos, "currency", "USD")
-        rate = CurrencyService.get_rate_to_czk(currency)
+        currency = getattr(pos, "currency", None) or "USD"
+        try:
+            rate = CurrencyService.get_rate_to_czk(currency)
+        except CurrencyError as e:
+            unconvertible.append({"ticker": pos.ticker, "currency": currency,
+                                  "reason": str(e)})
+            continue
 
         cost_basis = pos.cost_basis
         market_value = pos.market_value
@@ -164,7 +175,10 @@ def get_portfolio_summary(
         "total_unrealized_pl": total_unrealized_pl_czk,
         "total_unrealized_pl_percent": total_unrealized_pl_percent,
         "cash_balance": portfolio.cash_balance,
-        "last_price_update": last_update
+        "last_price_update": last_update,
+        # Non-empty means the totals above are incomplete, and by how much is
+        # not knowable — say so rather than presenting a partial sum as whole.
+        "unconvertible_positions": unconvertible,
     }
 
 

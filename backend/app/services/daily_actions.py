@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from typing import Callable
 
 from app.core.sources import verdict_stance
+from app.services.currency import CurrencyError
 from app.schemas.daily_actions import ActionItem, DailyActionResponse
 from app.trading.gomes_logic import (
     GomesGatekeeper,
@@ -139,6 +140,7 @@ def generate_daily_actions(
     undated_price: list[str] = []
     stale_price: list[tuple[str, datetime]] = []
     unjudgeable: list[str] = []
+    unconvertible: list[str] = []
 
     # ------------------------------------------------------------------
     # Held positions: de-risk, doubling rule, R/R trims
@@ -162,7 +164,14 @@ def generate_daily_actions(
         elif now - pos.last_price_update > STALE_PRICE_AFTER:
             stale_price.append((ticker, pos.last_price_update))
 
-        rate = fx_rate_to_czk(pos.currency)
+        try:
+            rate = fx_rate_to_czk(pos.currency)
+        except CurrencyError:
+            # No rate means no CZK value, and no CZK value means every rule
+            # below — de-risk sizing, doubling, R/R trims — would be computed
+            # against a number we invented. Skip it and say so.
+            unconvertible.append(ticker)
+            continue
         position_value_czk = pos.shares * pos.current_price * rate
         portfolio_value_czk += position_value_czk
 
@@ -198,6 +207,13 @@ def generate_daily_actions(
         "⚠️ NEZNÁMÁ KVALITA u {n} pozic ({tickers}) — chybí fáze i konvikční "
         "skóre, v {alert} Alert je neposoudím; rozhodni sám",
         alert=alert.value if alert else "?",
+    )
+    _grouped(
+        warnings, unconvertible,
+        "⚠️ NEZNÁMÁ MĚNA: {t} — kurz do CZK nemám, pozici jsem do součtu ani "
+        "do pravidel nezapočítal; doplň měnu v detailu pozice",
+        "⚠️ NEZNÁMÁ MĚNA u {n} pozic ({tickers}) — kurz do CZK nemám, do součtu "
+        "ani do pravidel je nezapočítávám",
     )
     _grouped(
         warnings, undated_price,
@@ -438,7 +454,10 @@ def _buy_action(
     budget_czk = min(
         portfolio_value_czk * decision.max_position_pct / 100.0, cash_czk
     )
-    rate = fx_rate_to_czk("USD")
+    try:
+        rate = fx_rate_to_czk("USD")
+    except CurrencyError:
+        return None  # cannot size a purchase without a rate; propose nothing
     price_czk = price * rate
     quantity = math.floor(budget_czk / price_czk) if price_czk > 0 else 0
     if quantity < 1:
