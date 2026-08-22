@@ -138,6 +138,7 @@ def generate_daily_actions(
     no_cost: list[str] = []
     undated_price: list[str] = []
     stale_price: list[tuple[str, datetime]] = []
+    unjudgeable: list[str] = []
 
     # ------------------------------------------------------------------
     # Held positions: de-risk, doubling rule, R/R trims
@@ -165,7 +166,7 @@ def generate_daily_actions(
         position_value_czk = pos.shares * pos.current_price * rate
         portfolio_value_czk += position_value_czk
 
-        best = _derisk_action(alert, pos, ticker, phase, analysis, rate)
+        best = _derisk_action(alert, pos, ticker, phase, analysis, rate, unjudgeable)
 
         if best is None:
             best = _doubling_action(pos, ticker, rate)
@@ -189,6 +190,14 @@ def generate_daily_actions(
         warnings, no_cost,
         "⚠️ CHYBÍ NÁKUPNÍ CENA: {t} — doplň ji v detailu pozice; P/L a pravidlo zdvojnásobení do té doby nehlídám",
         "⚠️ CHYBÍ NÁKUPNÍ CENA u {n} pozic ({tickers}) — doplň je v detailu pozic; P/L a pravidlo zdvojnásobení do té doby nehlídám",
+    )
+    _grouped(
+        warnings, unjudgeable,
+        "⚠️ NEZNÁMÁ KVALITA: {t} nemá fázi ani konvikční skóre — v {alert} "
+        "Alert nedokážu posoudit, jestli ji držet; rozhodni sám",
+        "⚠️ NEZNÁMÁ KVALITA u {n} pozic ({tickers}) — chybí fáze i konvikční "
+        "skóre, v {alert} Alert je neposoudím; rozhodni sám",
+        alert=alert.value if alert else "?",
     )
     _grouped(
         warnings, undated_price,
@@ -247,15 +256,18 @@ def _grouped(
     tickers: list[str],
     single_fmt: str,
     group_fmt: str,
+    **extra: object,
 ) -> None:
     """Emit one warning per ticker, or a single grouped line when many."""
     if not tickers:
         return
     if len(tickers) <= GROUP_WARNINGS_ABOVE:
         for t in tickers:
-            warnings.append(single_fmt.format(t=t))
+            warnings.append(single_fmt.format(t=t, **extra))
     else:
-        warnings.append(group_fmt.format(n=len(tickers), tickers=", ".join(tickers)))
+        warnings.append(
+            group_fmt.format(n=len(tickers), tickers=", ".join(tickers), **extra)
+        )
 
 
 def _alert_is_stale(updated_at: datetime | None, now: datetime) -> bool:
@@ -305,6 +317,7 @@ def _derisk_action(
     phase: LifecyclePhase,
     analysis: AnalysisInput | None,
     rate: float,
+    unjudgeable: list[str],
 ) -> ActionItem | None:
     """Yellow/Orange/Red: exit Wait-Time and alert-blocked tiers."""
     if alert is None or alert == MarketAlert.GREEN:
@@ -326,8 +339,18 @@ def _derisk_action(
             URGENCY_SELL_WAIT_TIME,
         )
 
-    conviction = analysis.conviction_score if analysis and analysis.conviction_score is not None else 0
-    tier = PositionSizingEngine.determine_tier(phase, conviction)
+    # determine_tier ends in "everything else = TERTIARY", so a position we
+    # know nothing about lands in the tier YELLOW blocks — and the app would
+    # order it sold for the sole reason that it has no data on it. Not knowing
+    # whether a holding is speculative is not the same as knowing it is. His
+    # portfolio is fourteen positions with almost no phases recorded; this
+    # rule alone would have told him to liquidate it.
+    conviction = analysis.conviction_score if analysis else None
+    if phase == LifecyclePhase.UNKNOWN and conviction is None:
+        unjudgeable.append(ticker)
+        return None
+
+    tier = PositionSizingEngine.determine_tier(phase, conviction or 0)
     if tier in MarketAlertSystem.get_blocked_tiers(alert):
         return _make_action(
             "SELL", ticker, pos, pos.shares, rate,

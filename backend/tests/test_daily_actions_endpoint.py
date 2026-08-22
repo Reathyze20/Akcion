@@ -120,11 +120,27 @@ class TestDeRisk:
         assert action.estimated_czk_value == pytest.approx(80 * 15.0 * 25.0)
         assert "Wait Time" in action.reason
 
-    def test_yellow_sells_unanalyzed_position_as_tertiary(self):
-        """Unknown quality = speculative by default; Yellow blocks Tertiary."""
+    def test_yellow_does_not_sell_a_position_it_knows_nothing_about(self):
+        """
+        determine_tier ends in "everything else = TERTIARY", so a position
+        with no phase and no conviction score landed in the tier Yellow
+        blocks, and the app ordered it sold for the sole reason that it had
+        no data on it. The real portfolio is fourteen positions with almost
+        no phases recorded — this rule alone said liquidate all of it.
+
+        Not knowing whether a holding is speculative is not the same as
+        knowing it is. The gap is now stated instead of acted on.
+        """
+        result = run(market_alert="YELLOW", positions=[position("XXXX")])
+        assert not any(a.action_type == "SELL" for a in result.actions)
+        assert any("NEZNÁMÁ KVALITA" in w and "XXXX" in w for w in result.warnings)
+
+    def test_yellow_still_sells_a_tertiary_it_actually_knows_about(self):
+        """The rule itself is intact — it just needs evidence to fire."""
         result = run(
             market_alert="YELLOW",
             positions=[position("XXXX")],
+            analyses=[gomes("XXXX", lifecycle_phase="GOLD_MINE", conviction_score=3)],
         )
         [action] = result.actions
         assert action.action_type == "SELL"
@@ -346,14 +362,17 @@ class TestRankingAndHonesty:
         result = run(
             market_alert="YELLOW",
             positions=[
-                position("AAAA"),  # unanalyzed -> SELL (90)
+                position("AAAA"),  # known tertiary -> SELL (90)
                 position("BBBB", avg_cost=5.0, price=11.0),  # doubled -> would TRIM
-                position("CCCC"),  # unanalyzed -> SELL (90)
-                position("DDDD"),  # unanalyzed -> SELL (90)
+                position("CCCC"),  # known tertiary -> SELL (90)
+                position("DDDD"),  # known tertiary -> SELL (90)
             ],
             analyses=[
                 gomes("BBBB", lifecycle_phase="GOLD_MINE",
                       conviction_score=8, cylinders=8),
+                gomes("AAAA", lifecycle_phase="GOLD_MINE", conviction_score=3),
+                gomes("CCCC", lifecycle_phase="GOLD_MINE", conviction_score=3),
+                gomes("DDDD", lifecycle_phase="GOLD_MINE", conviction_score=3),
             ],
         )
         assert len(result.actions) == 3
