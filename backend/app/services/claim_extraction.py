@@ -45,6 +45,10 @@ from pydantic import BaseModel, Field
 from app.core.sources import InvestmentSource
 
 
+class ClaimExtractionError(RuntimeError):
+    """Extraction could not complete. Never confused with 'nothing found'."""
+
+
 class SourceType(str, Enum):
     """What kind of document was pasted."""
 
@@ -295,4 +299,90 @@ def build_prompt(source_type: SourceType, today_iso: str) -> str:
         f"{_PER_SOURCE.get(source_type, _PER_SOURCE[SourceType.OTHER])}\n"
         f"Dnešní datum je {today_iso}. Když zdroj uvádí relativní čas "
         f"('minulý týden', 'včera'), vztahuj ho k tomuto datu."
+    )
+
+# ==============================================================================
+# The model call
+# ==============================================================================
+
+#: Claims from a source this long are worth the larger ceiling — an earnings
+#: call or a full video transcript can legitimately carry dozens.
+MAX_OUTPUT_TOKENS = 16000
+
+
+def extract_claims(
+    text: str,
+    *,
+    source_type: SourceType,
+    today_iso: str,
+    api_key: str,
+    model: str = "claude-opus-5",
+) -> ExtractionResult:
+    """
+    Run one document through the model and return only verified claims.
+
+    The verbatim guard runs after the model, in `verify_claims`, and anything
+    whose quote is not in `text` is dropped before this returns. A caller
+    therefore cannot accidentally store an unverified claim.
+
+    Raises:
+        ClaimExtractionError: on a refusal, a transport failure, or output
+            that does not validate. Never returns a partial result silently —
+            "nothing was found" and "the call failed" must stay distinct.
+    """
+    if not text.strip():
+        raise ClaimExtractionError("Zdrojový text je prázdný.")
+    if not api_key:
+        raise ClaimExtractionError("Chybí ANTHROPIC_API_KEY v backend/.env")
+
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=api_key)
+    system = build_prompt(source_type, today_iso)
+
+    try:
+        response = client.messages.parse(
+            model=model,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            # The instructions are identical across every document of a given
+            # source type, so they are worth caching; only `text` varies.
+            system=[{"type": "text", "text": system,
+                     "cache_control": {"type": "ephemeral"}}],
+            thinking={"type": "adaptive"},
+            messages=[{"role": "user", "content": text}],
+            output_format=ExtractionResult,
+        )
+    except anthropic.APIError as exc:
+        raise ClaimExtractionError(f"Volání Claude selhalo: {exc}") from exc
+
+    if getattr(response, "stop_reason", None) == "refusal":
+        detail = getattr(response, "stop_details", None)
+        raise ClaimExtractionError(
+            f"Claude odmítl zpracovat tento text "
+            f"({getattr(detail, 'category', 'bez důvodu')})."
+        )
+
+    result = response.parsed_output
+    if result is None:
+        raise ClaimExtractionError("Claude nevrátil strukturovaný výstup.")
+
+    verified, rejected = verify_claims(result.claims, text)
+    if rejected:
+        logger.warning(
+            "{} claim(s) rejected — quote not found in source", len(rejected)
+        )
+
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        logger.info(
+            "Extraction: {} claims kept, {} rejected, {} in / {} out tokens",
+            len(verified), len(rejected),
+            getattr(usage, "input_tokens", "?"), getattr(usage, "output_tokens", "?"),
+        )
+
+    return ExtractionResult(
+        claims=verified,
+        detected_tickers=sorted({c.ticker for c in verified}),
+        discarded_as_noise=result.discarded_as_noise,
+        notes=result.notes,
     )
