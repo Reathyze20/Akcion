@@ -40,7 +40,7 @@ import re
 from enum import Enum
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.sources import InvestmentSource
 
@@ -165,9 +165,23 @@ def resolve_source_key(speaker: str | None, source_type: SourceType) -> str:
 _WS = re.compile(r"\s+")
 
 
+#: Timestamp markers a transcript tool injects into the middle of speech:
+#: "(1:35:22)", "(46:56)", "[00:12]". They are not words anyone said, and the
+#: model elides them when quoting a sentence they cut in half. Stripped from
+#: BOTH the source and the quote, so the guard compares speech to speech.
+_TIMESTAMP = re.compile(r"[\(\[]\d{1,2}:\d{2}(?::\d{2})?[\)\]]")
+
+
 def _normalize(text: str) -> str:
-    """Collapse whitespace so a quote survives copy/line-wrap differences."""
-    return _WS.sub(" ", text).strip().lower()
+    """
+    Reduce text to the words that were actually spoken.
+
+    Two artifacts are removed, and only these two: transcript timestamps, and
+    whitespace differences from line wrapping. Everything else — every word,
+    number and their order — must still match, which is what makes
+    `verify_claims` a real check rather than a fuzzy one.
+    """
+    return _WS.sub(" ", _TIMESTAMP.sub(" ", text)).strip().lower()
 
 
 def verify_claims(
@@ -176,9 +190,10 @@ def verify_claims(
     """
     Keep only claims whose verbatim quote actually occurs in the source.
 
-    Whitespace is normalized on both sides — a quote that differs only by a
-    line break is the same quote — but the words themselves must be present,
-    in order. Nothing else is forgiven.
+    Whitespace and transcript timestamps are normalized away on both sides —
+    a quote that differs only by a line break, or by a "(1:35:22)" the
+    transcript tool dropped mid-sentence, is the same quote. The words
+    themselves must be present, in order. Nothing else is forgiven.
 
     Returns:
         (verified, rejected)
@@ -305,9 +320,49 @@ def build_prompt(source_type: SourceType, today_iso: str) -> str:
 # The model call
 # ==============================================================================
 
-#: Claims from a source this long are worth the larger ceiling — an earnings
-#: call or a full video transcript can legitimately carry dozens.
-MAX_OUTPUT_TOKENS = 16000
+#: A two-hour Stock Talk Live transcript produced 13,942 output tokens on the
+#: first real run — close enough to a 16k ceiling that it truncated
+#: intermittently, and a truncated structured output does not parse at all.
+#: The ceiling is not a budget: the model stops when it has extracted
+#: everything, so a generous limit costs nothing on shorter sources.
+MAX_OUTPUT_TOKENS = 64000
+
+
+#: Validation keywords structured outputs rejects. Dropping them costs
+#: nothing: the same constraints still run on our side in
+#: `ExtractionResult.model_validate_json`, so an out-of-range value is caught
+#: after the call instead of being described before it.
+_UNSUPPORTED_SCHEMA_KEYWORDS = (
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+    "multipleOf", "minLength", "maxLength", "pattern", "format",
+    "minItems", "maxItems", "uniqueItems",
+)
+
+
+def _harden_schema(node: object) -> object:
+    """
+    Make a Pydantic JSON schema acceptable to structured outputs.
+
+    Two things the generated schema does not do on its own: every object must
+    set `additionalProperties: false`, and range/length keywords are rejected
+    outright.
+
+    `required` is deliberately left as Pydantic wrote it. Forcing every
+    property into it made the model emit an explicit null for each optional
+    field of each claim, which on a two-hour transcript overran a 32k output
+    ceiling and truncated the whole answer. Optional stays optional.
+    """
+    if isinstance(node, dict):
+        if node.get("type") == "object" and "properties" in node:
+            node["additionalProperties"] = False
+        for keyword in _UNSUPPORTED_SCHEMA_KEYWORDS:
+            node.pop(keyword, None)
+        for value in node.values():
+            _harden_schema(value)
+    elif isinstance(node, list):
+        for item in node:
+            _harden_schema(item)
+    return node
 
 
 def extract_claims(
@@ -340,18 +395,24 @@ def extract_claims(
     client = anthropic.Anthropic(api_key=api_key)
     system = build_prompt(source_type, today_iso)
 
+    schema = _harden_schema(ExtractionResult.model_json_schema())
+
     try:
-        response = client.messages.parse(
+        # Streaming is mandatory at this ceiling — the SDK refuses a
+        # non-streaming request that could exceed ten minutes, and a real
+        # two-hour transcript needs the room. `output_config.format`
+        # constrains the response to the schema; validation still happens
+        # here, because a constrained response is not the same as a checked one.
+        with client.messages.stream(
             model=model,
             max_tokens=MAX_OUTPUT_TOKENS,
-            # The instructions are identical across every document of a given
-            # source type, so they are worth caching; only `text` varies.
             system=[{"type": "text", "text": system,
                      "cache_control": {"type": "ephemeral"}}],
             thinking={"type": "adaptive"},
             messages=[{"role": "user", "content": text}],
-            output_format=ExtractionResult,
-        )
+            output_config={"format": {"type": "json_schema", "schema": schema}},
+        ) as stream:
+            response = stream.get_final_message()
     except anthropic.APIError as exc:
         raise ClaimExtractionError(f"Volání Claude selhalo: {exc}") from exc
 
@@ -362,9 +423,30 @@ def extract_claims(
             f"({getattr(detail, 'category', 'bez důvodu')})."
         )
 
-    result = response.parsed_output
-    if result is None:
-        raise ClaimExtractionError("Claude nevrátil strukturovaný výstup.")
+    usage = getattr(response, "usage", None)
+    out_tokens = getattr(usage, "output_tokens", "?") if usage else "?"
+
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        raise ClaimExtractionError(
+            f"Odpověď se nevešla do limitu ({out_tokens} z {MAX_OUTPUT_TOKENS} "
+            f"tokenů), takže ji nelze přečíst. Pošli zdroj po částech."
+        )
+
+    payload = next(
+        (b.text for b in response.content if getattr(b, "type", None) == "text"), None
+    )
+    if not payload:
+        raise ClaimExtractionError(
+            f"Claude nevrátil žádný text (stop_reason="
+            f"{getattr(response, 'stop_reason', None)}, {out_tokens} tokenů)."
+        )
+
+    try:
+        result = ExtractionResult.model_validate_json(payload)
+    except ValidationError as exc:
+        raise ClaimExtractionError(
+            f"Odpověď neodpovídá očekávanému tvaru: {exc}"
+        ) from exc
 
     verified, rejected = verify_claims(result.claims, text)
     if rejected:
@@ -372,13 +454,11 @@ def extract_claims(
             "{} claim(s) rejected — quote not found in source", len(rejected)
         )
 
-    usage = getattr(response, "usage", None)
-    if usage is not None:
-        logger.info(
-            "Extraction: {} claims kept, {} rejected, {} in / {} out tokens",
-            len(verified), len(rejected),
-            getattr(usage, "input_tokens", "?"), getattr(usage, "output_tokens", "?"),
-        )
+    logger.info(
+        "Extraction: {} claims kept, {} rejected, {} in / {} out tokens",
+        len(verified), len(rejected),
+        getattr(usage, "input_tokens", "?") if usage else "?", out_tokens,
+    )
 
     return ExtractionResult(
         claims=verified,

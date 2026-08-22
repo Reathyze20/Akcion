@@ -110,6 +110,77 @@ def test_case_difference_does_not_reject():
 
 
 # ==============================================================================
+# Transcript timestamps
+# ==============================================================================
+
+#: Shape of a real Gomes video transcript: the tool drops "(H:MM:SS)" markers
+#: wherever it feels like, including the middle of a sentence.
+TRANSCRIPT = """if you look at a company like gatekeeper gatekeeper is operating on ten
+cylinders right now (1:12:04) I don't think anybody can deny that. KRMD chart,
+there you go. I like KRMD, okay? Very much at the low end of the range.
+(1:35:22) Stock's still coming lower, very cheap.
+"""
+
+
+def test_quote_across_a_timestamp_is_accepted():
+    """
+    The regression this exists for. Eight true claims from a real two-hour
+    transcript were rejected — among them the only cylinder count in the whole
+    video, which is the one input the Buy Guard cannot run without. Every one
+    of them had been said; each merely spanned an injected timestamp that the
+    model left out when quoting.
+    """
+    ok, bad = verify_claims(
+        [claim("I like KRMD, okay? Very much at the low end of the range. "
+               "Stock's still coming lower", ticker="KRMD")],
+        TRANSCRIPT,
+    )
+    assert len(ok) == 1 and not bad
+
+
+def test_a_quote_may_also_keep_the_timestamp():
+    """Both directions: the model may quote the marker or drop it."""
+    ok, _ = verify_claims(
+        [claim("operating on ten cylinders right now (1:12:04) I don't think",
+               ticker="GKPRF")],
+        TRANSCRIPT,
+    )
+    assert len(ok) == 1
+
+
+def test_bracketed_timestamps_are_handled_too():
+    ok, _ = verify_claims(
+        [claim("hello world")], "hello [00:12] world"
+    )
+    assert len(ok) == 1
+
+
+def test_stripping_timestamps_does_not_forgive_a_fabrication():
+    """
+    The relaxation is narrow on purpose: it removes a transcript artifact, not
+    a word. An invented sentence is still rejected, and so is a real sentence
+    with an altered number.
+    """
+    ok, bad = verify_claims(
+        [claim("gatekeeper is operating on four cylinders right now",
+               ticker="GKPRF"),
+         claim("I like KRMD at the very top of the range", ticker="KRMD")],
+        TRANSCRIPT,
+    )
+    assert not ok and len(bad) == 2
+
+
+def test_a_price_in_parentheses_is_not_mistaken_for_a_timestamp():
+    """Money must survive normalisation — "(3:1)" splits, "$4.50" prices."""
+    ok, bad = verify_claims(
+        [claim("announced a 1-for-10 reverse split at $4.50"),
+         claim("nothing like this was ever said")],
+        "The board announced a 1-for-10 reverse split at $4.50 per share.",
+    )
+    assert len(ok) == 1 and len(bad) == 1
+
+
+# ==============================================================================
 # Authority mapping
 # ==============================================================================
 
