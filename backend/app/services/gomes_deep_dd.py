@@ -295,31 +295,12 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         # Extract current_price from AI response or use provided
         current_price = data_dict.get("current_price")
         
-        # Get price lines with fallback calculations
+        # Price lines: only ever what the AI extracted from the transcript.
+        # Never back-calculated from current_price — a guessed number presented
+        # as the analyst's stated buy/sell zone would be worse than a missing one.
         green_line = data_dict.get("green_line")
         red_line = data_dict.get("red_line")
         grey_line = data_dict.get("grey_line")
-        
-        # Fallback: Calculate price lines if not provided by AI
-        price_lines_estimated = data_dict.get("price_lines_estimated", False)
-        if current_price and current_price > 0:
-            if not green_line:
-                # Default: 20% below current price (buy zone)
-                green_line = round(current_price * 0.80, 2)
-                price_lines_estimated = True
-                logger.info(f"Estimated green_line: ${green_line} (20% below ${current_price})")
-            
-            if not red_line:
-                # Default: 50% above current price (sell zone for growth stocks)
-                red_line = round(current_price * 1.50, 2)
-                price_lines_estimated = True
-                logger.info(f"Estimated red_line: ${red_line} (50% above ${current_price})")
-            
-            if not grey_line:
-                # Default: 35% below current price (danger zone)
-                grey_line = round(current_price * 0.65, 2)
-                price_lines_estimated = True
-                logger.info(f"Estimated grey_line: ${grey_line} (35% below ${current_price})")
         
         # Convert to Pydantic model
         price_targets = PriceTargetsSchema(
@@ -340,19 +321,18 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             action_signal=data_dict.get("action_signal", "HOLD"),
             kelly_criterion_hint=float(data_dict.get("kelly_criterion_hint", 5)),
             price_targets=price_targets,
-            green_line=green_line,  # Use calculated/fallback value
-            red_line=red_line,      # Use calculated/fallback value
+            green_line=green_line,
+            red_line=red_line,
             key_milestones=data_dict.get("key_milestones", []),
             red_flags=data_dict.get("red_flags", []),
             edge=data_dict.get("edge"),
             catalysts=data_dict.get("catalysts"),
             risks=data_dict.get("risks"),
         )
-        
-        # Log if price lines were estimated
-        if price_lines_estimated:
-            logger.info(f"Price lines for {data.ticker} were estimated (not from transcript)")
-        
+
+        if not green_line or not red_line:
+            logger.info(f"Price lines for {data.ticker} not stated in transcript — left null")
+
         # Extract analysis text (everything before JSON)
         if json_match:
             analysis_text = raw_output[:json_match.start()].strip()
