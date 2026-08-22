@@ -43,6 +43,7 @@ from loguru import logger
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.sources import InvestmentSource
+from app.services import llm
 
 
 class ClaimExtractionError(RuntimeError):
@@ -371,7 +372,7 @@ def extract_claims(
     source_type: SourceType,
     today_iso: str,
     api_key: str,
-    model: str = "claude-opus-5",
+    model: str | None = None,
 ) -> ExtractionResult:
     """
     Run one document through the model and return only verified claims.
@@ -391,6 +392,11 @@ def extract_claims(
         raise ClaimExtractionError("Chybí ANTHROPIC_API_KEY v backend/.env")
 
     import anthropic
+
+    # The model name has one home, `services.llm.MODEL`. Keeping a second
+    # copy here is how the analysis path ended up calling a model that had
+    # been retired for twelve weeks.
+    model = model or llm.MODEL
 
     client = anthropic.Anthropic(api_key=api_key)
     system = build_prompt(source_type, today_iso)

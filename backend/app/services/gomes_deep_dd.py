@@ -29,6 +29,7 @@ from app.core.prompts import (
     THESIS_DRIFT_PROMPT_V2,
 )
 from app.models.stock import Stock
+from app.services.llm import LLMError, complete
 from app.models.score_history import ConvictionScoreHistory, ThesisDriftAlert, AlertType
 from app.schemas.gomes import (
     DeepDueDiligenceRequest,
@@ -63,20 +64,18 @@ class GomesDeepDueDiligenceService:
     def __init__(self, db: Session):
         self.db = db
         self.settings = Settings()
-        self._init_gemini()
-    
-    def _init_gemini(self) -> None:
-        """Initialize Gemini AI client"""
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.settings.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash')
-            self.gemini_available = True
-            logger.info("Gemini 2.5 Pro initialized for Deep Due Diligence")
-        except Exception as e:
-            logger.error(f"Failed to initialize Gemini: {e}")
-            self.gemini_available = False
-            self.model = None
+
+    @property
+    def ai_available(self) -> bool:
+        """
+        Whether an analysis can be attempted at all.
+
+        Only the credential is checked here. Which model is called, and whether
+        it is still a live one, is `services.llm`'s business — this class used
+        to name the model itself, and that is precisely how it went on calling
+        a retired one for twelve weeks.
+        """
+        return bool(self.settings.anthropic_api_key)
     
     async def analyze(
         self,
@@ -93,8 +92,10 @@ class GomesDeepDueDiligenceService:
         Returns:
             DeepDueDiligenceResponse with analysis and structured data
         """
-        if not self.gemini_available:
-            raise RuntimeError("Gemini AI not available")
+        if not self.ai_available:
+            raise RuntimeError(
+                "Analýza není dostupná: chybí ANTHROPIC_API_KEY v backend/.env"
+            )
         
         # Get existing stock data for thesis drift comparison
         existing_data = ""
@@ -122,14 +123,13 @@ class GomesDeepDueDiligenceService:
                 transcript=request.transcript[:50000]
             )
         
-        # Call Gemini
+        # Call the model
         try:
-            response = self.model.generate_content(prompt)
-            raw_output = response.text
-            logger.info(f"Gemini raw output length: {len(raw_output)}")
-        except Exception as e:
-            logger.error(f"Gemini API call failed: {e}")
-            raise RuntimeError(f"AI analysis failed: {e}")
+            raw_output = complete(prompt)
+            logger.info(f"AI raw output length: {len(raw_output)}")
+        except LLMError as e:
+            logger.error(f"AI call failed: {e}")
+            raise RuntimeError(f"Analýza selhala: {e}")
         
         # Parse response
         try:

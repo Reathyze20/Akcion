@@ -908,9 +908,9 @@ def process_transcript_ai(
     **Use case**: Přidat AI analýzu k manuálně importovanému transcriptu.
     """
     import json
-    import google.generativeai as genai
     from decimal import Decimal
-    from app.core.prompts import TICKER_EXTRACTION_PROMPT, GEMINI_MODEL_NAME
+    from app.core.prompts import TICKER_EXTRACTION_PROMPT
+    from app.services.llm import LLMError, complete_json
     from app.models.gomes import PriceLinesModel
     from app.config.settings import settings
     
@@ -932,32 +932,23 @@ def process_transcript_ai(
         
         tickers = [m.ticker for m in mentions]
         
-        # Configure Gemini (field is gemini_api_key; GEMINI_API_KEY is only
-        # the env alias — the old attribute access raised AttributeError)
-        genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
-        
         # Build prompt
         prompt = TICKER_EXTRACTION_PROMPT.format(
             tickers=", ".join(tickers),
             transcript=transcript.raw_text[:50000]  # Limit transcript length
         )
         
-        # Call AI
-        response = model.generate_content(prompt)
-        response_text = response.text
-        
-        # Clean response (remove markdown code blocks)
-        if response_text.startswith("```"):
-            response_text = response_text.strip("```json\n").strip("```")
-        
-        # Parse JSON
+        # Call AI. Fence-stripping and JSON parsing live in services.llm now.
+        # The version that used to be here stripped the fence with a call that
+        # removes *characters*, not a prefix — so it also ate a leading `{`,
+        # `j`, `s`, `o` or `n` from the payload it was meant to clean.
         try:
-            data = json.loads(response_text)
-        except json.JSONDecodeError:
+            data = complete_json(prompt)
+        except LLMError as e:
+            # Say which call failed and why. "AI response was not valid JSON"
+            # was the old blanket answer even when the call never went out.
             return {
-                "message": "AI response was not valid JSON",
-                "raw_response": response_text[:500],
+                "message": f"Analýza selhala: {e}",
                 "processed": 0
             }
         

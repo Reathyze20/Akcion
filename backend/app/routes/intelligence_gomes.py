@@ -769,8 +769,8 @@ async def analyze_ticker_from_transcript(
             prompt_template = TICKER_ANALYSIS_PROMPT
         
         from app.config.settings import Settings
-        import google.generativeai as genai
         import json
+        from app.services.llm import LLMError, complete_json
         from decimal import Decimal
         from app.models.portfolio import Position
         
@@ -823,30 +823,16 @@ async def analyze_ticker_from_transcript(
             last_score=last_score
         )
         
-        # 4. Call Gemini API
-        logger.info("Calling Gemini API...")
-        genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        response = model.generate_content(prompt)
-        response_text = response.text.strip()
-        logger.info(f"Gemini response received, length: {len(response_text)}")
-        logger.debug(f"Response preview: {response_text[:500]}")
-        
-        # Extract JSON from markdown code blocks if present
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-        
-        # 5. Parse JSON response
+        # 4. Call the model. Fence-stripping and JSON parsing happen in
+        # services.llm, which also refuses to hand back an empty dict when the
+        # answer is unreadable — downstream that reads as "nothing was found".
+        logger.info("Calling AI...")
         try:
-            logger.info("Parsing JSON response...")
-            data = json.loads(response_text)
-            logger.info(f"JSON parsed successfully, keys: {list(data.keys())}")
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response: {response_text[:500]}")
-            raise HTTPException(status_code=500, detail=f"AI returned invalid JSON: {str(e)}")
+            data = complete_json(prompt)
+        except LLMError as e:
+            logger.error(f"AI call failed: {e}")
+            raise HTTPException(status_code=502, detail=str(e))
+        logger.info(f"JSON parsed successfully, keys: {list(data.keys())}")
         
         # 6. Validate and process response based on prompt mode
         if use_universal_prompt:

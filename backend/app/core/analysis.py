@@ -1,7 +1,7 @@
 """
 Core AI Analysis Module
 
-Handles all interactions with Gemini AI for stock analysis.
+Handles all interactions with the AI model for stock analysis.
 The prompts and analysis flow directly impact investment decisions.
 
 Clean Code Principles Applied:
@@ -25,17 +25,14 @@ import re
 from dataclasses import dataclass
 from typing import Any, Final
 
-import google.generativeai as genai
-from google.generativeai.types import GenerateContentResponse
 
 from .constants import ERROR_MESSAGES
 from .prompts import (
     FIDUCIARY_ANALYST_PROMPT,
-    GOOGLE_SEARCH_CONFIG,
-    GEMINI_MODEL_NAME,
     PromptBuilder,
 )
 from ..services.market_data import MarketDataService
+from ..services.llm import complete
 
 
 logger = logging.getLogger(__name__)
@@ -90,7 +87,7 @@ class JsonResponseCleaner:
         """
         Remove markdown code fences from AI response.
         
-        Gemini sometimes wraps JSON in ```json ... ``` blocks.
+        The model sometimes wraps JSON in ```json ... ``` blocks.
         This strips them to get pure JSON.
         
         Args:
@@ -195,43 +192,8 @@ class TickerEnrichmentService:
 
 
 # ==============================================================================
-# Gemini Model Factory (Separated concern)
+# Stock Analyzer
 # ==============================================================================
-
-class GeminiModelFactory:
-    """
-    Factory for creating configured Gemini model instances.
-    
-    Single Responsibility: Only handles model instantiation.
-    """
-    
-    @staticmethod
-    def create(
-        model_name: str = GEMINI_MODEL_NAME,
-        system_instruction: str = FIDUCIARY_ANALYST_PROMPT,
-        tools: Any | None = GOOGLE_SEARCH_CONFIG,
-    ) -> genai.GenerativeModel:
-        """
-        Create a configured Gemini model instance.
-        
-        Args:
-            model_name: Name of the Gemini model to use
-            system_instruction: System prompt for the model
-            tools: Optional tools configuration (e.g., Google Search)
-            
-        Returns:
-            Configured GenerativeModel instance
-        """
-        model_kwargs: dict[str, Any] = {
-            "model_name": model_name,
-            "system_instruction": system_instruction,
-        }
-        
-        if tools is not None:
-            model_kwargs["tools"] = tools
-        
-        return genai.GenerativeModel(**model_kwargs)
-
 
 # ==============================================================================
 # Stock Analyzer (Main orchestrator)
@@ -239,10 +201,10 @@ class GeminiModelFactory:
 
 class StockAnalyzer:
     """
-    Orchestrates AI-powered stock analysis using Gemini.
+    Orchestrates AI-powered stock analysis.
     
     This class coordinates the analysis pipeline:
-    1. Configure Gemini with API key
+    1. Resolve credentials via services.llm
     2. Apply fiduciary system prompt
     3. Parse and validate JSON responses
     4. Enrich ticker data with market information
@@ -251,19 +213,13 @@ class StockAnalyzer:
     instead of doing everything itself.
     """
     
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         """
-        Initialize the analyzer with Gemini API credentials.
-        
         Args:
-            api_key: Google Gemini API key
+            api_key: Optional override. Left unset, `services.llm` reads the
+                key from settings, which is what every caller should do.
         """
         self._api_key = api_key
-        self._configure_api()
-    
-    def _configure_api(self) -> None:
-        """Configure Gemini API with stored credentials."""
-        genai.configure(api_key=self._api_key)
     
     def analyze_transcript(self, transcript: str) -> dict[str, Any]:
         """
@@ -290,7 +246,7 @@ class StockAnalyzer:
             RuntimeError: If analysis fails for other reasons
         """
         try:
-            response = self._call_gemini_api(transcript)
+            response = self._call_model(transcript)
             result = self._parse_response(response)
             enriched_result = self._enrich_result(result)
             return enriched_result.to_dict()
@@ -300,26 +256,23 @@ class StockAnalyzer:
         except Exception as e:
             raise RuntimeError(f"{ERROR_MESSAGES.ANALYSIS_FAILED}: {e}")
     
-    def _call_gemini_api(self, transcript: str) -> GenerateContentResponse:
+    def _call_model(self, transcript: str) -> str:
         """
-        Call Gemini API with the prepared prompt.
-        
-        Args:
-            transcript: Raw transcript text
-            
-        Returns:
-            Gemini API response object
+        Run the transcript through the model and return its raw text.
+
+        Note what is missing: this used to attach `GOOGLE_SEARCH_CONFIG`, which
+        has always been the literal value `None`. The analysis never had web
+        access — it only advertised it.
         """
-        model = GeminiModelFactory.create()
         prompt = PromptBuilder().with_transcript(transcript).build()
-        return model.generate_content(prompt)
+        return complete(prompt, system=FIDUCIARY_ANALYST_PROMPT)
     
-    def _parse_response(self, response: GenerateContentResponse) -> AnalysisResult:
+    def _parse_response(self, response: str) -> AnalysisResult:
         """
-        Parse Gemini response into structured AnalysisResult.
+        Parse the model's answer into a structured AnalysisResult.
         
         Args:
-            response: Raw Gemini API response
+            response: Raw answer text
             
         Returns:
             Parsed AnalysisResult object
@@ -327,7 +280,7 @@ class StockAnalyzer:
         Raises:
             json.JSONDecodeError: If response is not valid JSON
         """
-        raw_text = response.text.strip()
+        raw_text = response.strip()
         cleaned_text = JsonResponseCleaner.clean(raw_text)
         parsed_data = json.loads(cleaned_text)
         
@@ -369,7 +322,7 @@ def analyze_with_gemini(transcript: str, api_key: str) -> dict[str, Any] | None:
     
     Args:
         transcript: Investment content to analyze
-        api_key: Gemini API key
+        api_key: Optional API key override
         
     Returns:
         Analysis results dictionary or None on failure
