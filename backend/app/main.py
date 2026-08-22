@@ -39,6 +39,7 @@ from .routes import investment  # Investment Intelligence
 from .routes import daily_actions  # Path 1: "Co mám dnes udělat?"
 from .routes import currency  # Currency exchange rates
 from .routes import yahoo_finance  # Yahoo Finance Smart Cache
+from .routes import sec  # SEC EDGAR — 10-K, 10-Q, Form 4
 from .routes import dev_utils  # Development utilities (DISABLE IN PRODUCTION!)
 
 # Import alert scheduler
@@ -135,6 +136,7 @@ app.include_router(investment.router)  # Investment Intelligence
 app.include_router(daily_actions.router)  # Daily Action list ("Nic. Drž.")
 app.include_router(currency.router)  # Currency exchange rates
 app.include_router(yahoo_finance.router)  # Yahoo Finance Smart Cache
+app.include_router(sec.router)  # SEC EDGAR — výsledky, výhledy, insideři
 
 if settings.debug:
     app.include_router(dev_utils.router)  # Raw SQL execution — DEBUG only, never in production

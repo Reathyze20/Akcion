@@ -53,7 +53,12 @@ from .score_history import (
 # from .trading import OHLCVData, ActiveWatchlist, MLPrediction, TradingSignal
 
 
+from .sec import InsiderTransaction, SecCoverage, SecFiling
+
 __all__ = [
+    "SecCoverage",
+    "SecFiling",
+    "InsiderTransaction",
     # Base
     "Base",
     "BaseModel",

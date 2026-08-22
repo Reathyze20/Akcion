@@ -137,6 +137,25 @@ opravdu jde (gap #6). Nejmenší dopad z P2 — dokud nejsi v Yellow/Orange, nes
 
 ---
 
+## Nové (zadané 22. 8.)
+
+### `[x]` B14. SEC EDGAR — 10-K, 10-Q a Form 4 pro držené pozice
+
+Automaticky stahovat výroční (10-K) a čtvrtletní (10-Q) zprávy a Form 4 (insider nákupy/prodeje)
+pro pozice v portfoliu, analyzovat je a zapojit do rozhodování.
+
+**Dvě pasti, ověřené naživo 22. 8.:**
+
+1. **Pět ze čtrnácti pozic u SEC vůbec nepodává** — GSI.V, KUYA.V, IMP.V, QIPT, UMD jsou TSX Venture
+   a jiné burzy. „Žádná podání" se u nich nesmí zobrazit stejně jako u firmy, která podává a mlčí.
+   První je fakt o burze, druhé fakt o firmě.
+2. **Form 4 „prodej" většinou není prodej.** První stažený Form 4 (TPCS, 19. 8.) má kód `G` — dar,
+   cena $0, označený jako *Disposed*. Naivní parser z toho udělá medvědí signál. Totéž `F` (akcie
+   zadržené na daň) a `M` (uplatnění opce). Skutečný signál nesou jen `P` (nákup na trhu)
+   a `S` (prodej na trhu).
+
+---
+
 ## Hotovo
 
 - `[x]` Tlačítka Buy/Sell v obchodním modálu byla `console.log` no-opy → napojeno na `apiClient`
@@ -168,3 +187,4 @@ opravdu jde (gap #6). Nejmenší dopad z P2 — dokud nejsi v Yellow/Orange, nes
   `535 BadCredentials`. Kanál se postaví a dojde až ke Gmailu, ale nepřihlásí se.
   Vygeneruj nové app password na myaccount.google.com → Security → App passwords
   a přepiš `SMTP_PASSWORD` v `backend/.env`. Do té doby ti appka nemůže nic poslat.
+- `[x]` B14 SEC EDGAR — výsledky z XBRL, výhledy z textu, Form 4 jako doplněk
