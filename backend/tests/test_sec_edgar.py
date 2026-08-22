@@ -520,3 +520,54 @@ class TestNoComparisonAcrossASplit:
         assert "split" in finding
         assert "5,589,880" in finding
         assert "71" not in finding, "the fabricated 71 % fall must be gone"
+
+
+class TestRedFlagsHaveTheirOwnField:
+    """
+    The first version of this prompt asked for `cylinders_evidence` and
+    `red_flags` with overlapping definitions, and the model filled whichever
+    came first — every filing came back with zero red flags while the same
+    facts sat in the cylinder list, unranked and unquoted. The two fields now
+    partition: negative facts in one, neutral and positive in the other.
+    """
+
+    def test_the_model_carries_severity_and_a_quote(self):
+        from app.services.sec_fundamentals import RedFlag
+
+        flag = RedFlag()
+        assert flag.severity == "MEDIUM"
+        assert hasattr(flag, "quote")
+        assert hasattr(flag, "category")
+
+    def test_red_flags_are_asked_for_before_the_neutral_facts(self):
+        """Ordering is what decides which bucket the model fills."""
+        from app.services.sec_fundamentals import OUTLOOK_PROMPT
+
+        assert OUTLOOK_PROMPT.index('"red_flags"') < OUTLOOK_PROMPT.index('"cylinders_evidence"')
+
+    def test_the_prompt_names_the_categories_explicitly(self):
+        """A general ask for "risks" misses most of these."""
+        from app.services.sec_fundamentals import OUTLOOK_PROMPT
+
+        for needed in ("going concern", "material weakness", "delisting",
+                       "koncentrace zákazníků", "Event of Default"):
+            assert needed in OUTLOOK_PROMPT, needed
+
+    def test_the_two_fields_are_told_not_to_overlap(self):
+        from app.services.sec_fundamentals import OUTLOOK_PROMPT
+
+        assert "jen v jednom" in OUTLOOK_PROMPT
+
+    def test_critical_flags_sort_above_the_rest(self):
+        from app.services.sec_sync import format_outlook
+
+        rendered = format_outlook({
+            "guidance": None,
+            "red_flags": [
+                {"severity": "MEDIUM", "category": "x", "fact_cs": "drobnost", "quote": "q"},
+                {"severity": "CRITICAL", "category": "going_concern",
+                 "fact_cs": "pochybnost o pokracovani", "quote": "q"},
+            ],
+        })
+        assert rendered.index("pochybnost o pokracovani") < rendered.index("drobnost")
+        assert "Varovné signály" in rendered

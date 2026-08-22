@@ -179,6 +179,19 @@ Pro kanadské firmy by ekvivalentem byl **SEDAR+**; stojí za zvážení jako da
 
 ---
 
+### `[ ]` B17. U zahraničních emitentů čteme obálku, ne obsah
+
+RDCM je jediná pozice se statusem `FOREIGN_PRIVATE_ISSUER`. Její nejnovější 6-K má
+**1 777 znaků** — je to krycí list. Skutečný obsah (tisková zpráva s výsledky) sedí
+v příloze `EX-99.1`, kterou zatím nestahujeme.
+
+Důsledek: průzkum u RDCM nenašel **nic**, a to při 9,9 % podílu v portfoliu. „Nula nálezů"
+tam ale neznamená čistý štít, znamená, že jsme četli obálku.
+
+**Hotovo když:** u 6-K se čte příloha, ne wrapper — nebo appka řekne, že obsah nepřečetla.
+
+---
+
 ## Hotovo
 
 - `[x]` Tlačítka Buy/Sell v obchodním modálu byla `console.log` no-opy → napojeno na `apiClient`

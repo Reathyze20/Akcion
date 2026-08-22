@@ -282,6 +282,19 @@ def format_outlook(outlook: dict, *, truncated: bool = False) -> str:
         lines.append("**Provozní fakta (válce):**")
         lines.extend(f"  - {item}" for item in cylinders)
 
+    # Red flags come first inside the body — they are the reason to read this.
+    flags = outlook.get("red_flags") or []
+    if flags:
+        order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}
+        ranked = sorted(flags, key=lambda f: order.get(
+            (f.get("severity") or "MEDIUM").upper(), 3))
+        marker = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡"}
+        lines.insert(0, "**Varovné signály:**")
+        for i, flag in enumerate(ranked, start=1):
+            sev = (flag.get("severity") or "MEDIUM").upper()
+            lines.insert(i, f"  {marker.get(sev, '🟡')} {flag.get('fact_cs', '')}")
+        lines.insert(len(ranked) + 1, "")
+
     risks = outlook.get("risks_new") or []
     if risks:
         lines.append("**Nová/zhoršená rizika:**")

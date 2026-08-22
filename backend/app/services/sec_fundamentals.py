@@ -581,13 +581,30 @@ Vrať JSON objekt s těmito klíči:
       NIKDY si výhled nedomýšlej z minulých čísel.
   "guidance_direction": "RAISED" | "LOWERED" | "MAINTAINED" | "NONE"
   "orders_backlog": string nebo null — objednávky, backlog, pipeline.
-  "cylinders_evidence": pole stringů — konkrétní provozní fakta, která podle
-      Gomesova pravidla 10 válců zvyšují nebo snižují zdraví firmy: zpoždění,
-      soudní spory, odchod vedení, ztráta zákazníka, nová smlouva, certifikace.
-      Každý záznam musí být fakt uvedený v textu, ne tvůj odhad. Prázdné pole,
-      když text žádné neuvádí.
+  "red_flags": pole objektů {{"severity", "category", "fact_cs", "quote"}} —
+      NEGATIVNÍ materiální zjištění. Tohle je nejdůležitější pole celé
+      odpovědi, vyplň ho jako první. Projdi VÝSLOVNĚ tenhle seznam; obecné
+      hledání většinu z toho mine:
+        * going concern / podstatná pochybnost o pokračování činnosti
+        * porušení kovenantů, Event of Default, blížící se splatnost dluhu
+        * odchod nebo výměna CEO/CFO, rezignace v představenstvu, spor ve vedení
+        * material weakness ve vnitřních kontrolách, restatement, změna auditora
+        * soudní spory a regulatorní zásahy (FDA, SEC, Nasdaq)
+        * koncentrace zákazníků nad 30 % tržeb nebo pohledávek
+        * ředění: ATM program, warranty, konvertibilní dluhopisy, shelf
+        * hrozba delistingu, nesplnění podmínek burzy, reverzní split kvůli ceně
+        * propad tržeb nebo marže, obrat ze zisku do ztráty
+      severity: CRITICAL když to ohrožuje existenci firmy, HIGH když to
+      podstatně mění investiční tezi, MEDIUM jinak. "quote" musí být DOSLOVNÁ
+      věta z textu — bez ní záznam neuváděj. Standardní boilerplate riziko
+      ("naše akcie mohou klesnout") sem NEPATŘÍ.
+  "cylinders_evidence": pole stringů — provozní fakta, která jsou NEUTRÁLNÍ
+      nebo POZITIVNÍ: nová smlouva, certifikace, uvedení produktu, získaný
+      zákazník, zlepšení procesu. Negativní fakta sem NEDÁVEJ — ta patří
+      výhradně do "red_flags". Každý fakt uveď jen jednou a jen v jednom
+      z těch dvou polí.
   "risks_new": pole stringů — rizika, která zpráva zmiňuje jako nová nebo
-      zhoršená. Ne standardní boilerplate rizika.
+      zhoršená a která se nevešla do "red_flags". Ne boilerplate.
   "summary_cs": string — dvě až tři věty česky, co z toho plyne pro držitele
       akcie. Když text nedává podklad pro závěr, napiš to.
 
@@ -597,6 +614,22 @@ patří tam null nebo prázdné pole. Vymyšlený výhled je horší než žádn
 === VÝŇATEK ===
 {text}
 """
+
+
+class RedFlag(BaseModel):
+    """
+    One material warning sign, with the sentence that supports it.
+
+    Severity and quote are both required on purpose. Without a severity every
+    finding competes equally for attention, and the point of this app is that
+    a decision fits in two minutes. Without a quote a finding cannot be
+    checked, and an unverifiable warning about real money is worse than none.
+    """
+
+    severity: str = Field("MEDIUM", description="CRITICAL | HIGH | MEDIUM")
+    category: str = Field("", description="going_concern, dilution, ...")
+    fact_cs: str = Field("", description="One sentence in Czech, with dates and numbers")
+    quote: str = Field("", description="Verbatim supporting sentence from the filing")
 
 
 class Outlook(BaseModel):
@@ -622,6 +655,10 @@ class Outlook(BaseModel):
     )
     risks_new: list[str] = Field(
         default_factory=list, description="Risks stated as new or worsened"
+    )
+    red_flags: list[RedFlag] = Field(
+        default_factory=list,
+        description="Material warning signs, each with a severity and a quote",
     )
     summary_cs: str = Field("", description="Two or three sentences in Czech")
 
