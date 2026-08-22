@@ -367,6 +367,13 @@ class DeepDueDiligenceResult(BaseModel):
     price_targets: PriceTargetsSchema
     green_line: Optional[float] = Field(None, description="Buy zone price")
     red_line: Optional[float] = Field(None, description="Sell zone price")
+    grey_line: Optional[float] = Field(None, description="Safe accumulation zone")
+    #: The price the analysis was run against. Parsed from the model's answer
+    #: since the beginning and dropped on the floor because this field did not
+    #: exist — while `update_stock_from_analysis` read `data.current_price`
+    #: anyway, raising AttributeError *after* it had already committed the new
+    #: conviction score.
+    current_price: Optional[float] = Field(None, description="Price at analysis time")
     
     # Qualitative
     key_milestones: list[str] = Field(default_factory=list)

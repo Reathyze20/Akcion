@@ -59,7 +59,7 @@ Celé portfolio v CZK stojí na těchhle číslech. Čtyři pozice drží CAD/EU
 
 **Hotovo když:** starý kurz se buď nepoužije, nebo je vidět, že je starý. Neznámá měna není USD.
 
-### `[ ]` B5. Analýza zapíše skóre do DB a až pak spadne
+### `[x]` B5. Analýza zapíše skóre do DB a až pak spadne
 
 `gomes_deep_dd.py` — `score_history` se přidá do session, drift alert taky, a `AttributeError` přijde až
 potom. Uvidíš „analýza selhala", ale conviction skóre v DB už je jiné.
@@ -156,3 +156,4 @@ opravdu jde (gap #6). Nejmenší dopad z P2 — dokud nejsi v Yellow/Orange, nes
 - `[x]` B2 Neúspěšné stažení dávalo staré ceně razítko „teď“ a tím vypínalo jedinou pojistku
 - `[x]` B3 Finnhub dosazoval včerejší close za chybějící kotaci; Massive se jmenoval, jako by vracel živou cenu
 - `[x]` B4 Kurzy z ledna 2025 se používaly tiše; neznámá měna dostávala kurz dolaru
+- `[x]` B5 Analýza commitla nové skóre a teprve pak spadla na chybějícím poli

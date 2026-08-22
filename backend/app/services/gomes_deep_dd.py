@@ -323,6 +323,8 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             price_targets=price_targets,
             green_line=green_line,
             red_line=red_line,
+            grey_line=grey_line,
+            current_price=current_price,
             key_milestones=data_dict.get("key_milestones", []),
             red_flags=data_dict.get("red_flags", []),
             edge=data_dict.get("edge"),
@@ -413,16 +415,44 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         """
         Update or create stock record from analysis result.
         Also saves to score history for thesis drift tracking.
-        
+
+        All of it lands or none of it does. This used to commit the new
+        conviction score, then build the score-history row, then commit again —
+        and the line in between read `data.current_price`, a field the schema
+        did not have. So the failure mode was the worst available one: the UI
+        said "analýza selhala" while the score in the database had already
+        changed, with no history row recording that it had.
+
         Args:
             result: Analysis result
             analysis_source: Source of analysis (deep_dd, transcript, earnings, manual)
             
         Returns:
             Updated/created Stock model
+
+        Raises:
+            Exception: re-raised after rollback. Nothing is left half-written.
         """
         data = result.data
         
+        try:
+            return self._apply_analysis(result, data, analysis_source)
+        except Exception:
+            # A half-applied analysis is worse than none: the score would move
+            # without the history row that explains why.
+            self.db.rollback()
+            logger.exception(
+                f"Zápis analýzy {data.ticker} selhal — databáze vrácena beze změn"
+            )
+            raise
+
+    def _apply_analysis(
+        self,
+        result: DeepDueDiligenceResponse,
+        data: DeepDueDiligenceResult,
+        analysis_source: str,
+    ) -> Stock:
+        """The write itself. One transaction, committed by its caller's guard."""
         # Find or create stock
         stock = self.db.query(Stock).filter(
             Stock.ticker == data.ticker.upper()
@@ -448,9 +478,11 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             stock.green_line = data.green_line
         if data.red_line:
             stock.red_line = data.red_line
+        if data.grey_line:
+            stock.grey_line = data.grey_line
         
         # Calculate price zone based on current price and lines
-        if hasattr(data, 'current_price') and data.current_price and data.green_line and data.red_line:
+        if data.current_price and data.green_line and data.red_line:
             stock.current_price = data.current_price
             price_range = data.red_line - data.green_line
             if price_range > 0:
@@ -485,8 +517,9 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         if data.price_targets.realistic:
             stock.price_target = str(data.price_targets.realistic)
         
-        self.db.commit()
-        self.db.refresh(stock)
+        # flush, not commit: `stock.id` is needed for the history row below, and
+        # that is the only thing the old commit here was buying.
+        self.db.flush()
         
         # === SAVE TO SCORE HISTORY ===
         score_history = ConvictionScoreHistory(
@@ -536,5 +569,6 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
                 self.db.add(alert)
         
         self.db.commit()
+        self.db.refresh(stock)
         
         return stock
