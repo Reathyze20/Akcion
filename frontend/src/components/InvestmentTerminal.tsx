@@ -40,7 +40,10 @@ type EnrichedPosition = Position & {
   optimal_size: number;          // Kolik investovat TENTO MĚSÍC (po prioritizaci)
   allocation_priority: number;   // Priorita (1 = nejvyšší)
   // Status
-  trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
+  // Whether the analysis behind the numbers above may drive a recommendation
+  analysis_usable: boolean;
+  analysis_note: string | null;
   is_deteriorated: boolean;
   is_overweight: boolean;
   is_underweight: boolean;
@@ -148,10 +151,14 @@ const getTargetWeight = (score: number | null): number => {
  * Get action signal based on score and weight gap
  */
 const getActionSignal = (
-  score: number | null, 
-  currentWeight: number, 
-  targetWeight: number
+  score: number | null,
+  currentWeight: number,
+  targetWeight: number,
+  analysisUsable: boolean = true
 ): 'BUY' | 'HOLD' | 'SELL' | 'SNIPER' => {
+  // No usable analysis is not a verdict. Holding still is the only honest
+  // answer, and the ACTION column says why.
+  if (!analysisUsable) return 'HOLD';
   if (score === null) return 'HOLD';
   if (score < 5) return 'SELL';  // Score < 5 = EXIT
   
@@ -175,11 +182,20 @@ const getActionCommand = (
   score: number | null,
   currentWeight: number,
   targetWeight: number,
-  unrealizedProfitPct: number
+  unrealizedProfitPct: number,
+  analysisUsable: boolean = true
 ): { text: string; color: string; bgColor?: string } => {
-  // Priority 1: Free Ride at 150%+
+  // Priority 1: Free Ride at 150%+ — this one is pure arithmetic on the
+  // owner's own cost basis, so it holds without any analysis.
   if (unrealizedProfitPct >= 150) {
     return { text: 'FREE RIDE', color: 'text-warning', bgColor: 'bg-warning/10' };
+  }
+
+  // Nothing below here may fire on an analysis we do not have or no longer
+  // trust. A stale January score was producing HARD EXIT and #1-priority BUY
+  // in August.
+  if (!analysisUsable) {
+    return { text: 'DOPLŇ ANALÝZU', color: 'text-text-muted' };
   }
   
   // Priority 2: Hard Exit for score < 4
@@ -206,12 +222,76 @@ const getActionCommand = (
   return { text: 'ANALYZE', color: 'text-text-muted' };
 };
 
-const getTrendStatus = (stock: Stock | undefined): 'BULLISH' | 'BEARISH' | 'NEUTRAL' => {
+/**
+ * An analysis older than this is not a current opinion.
+ *
+ * The database held a conviction score from January that was still driving a
+ * "#1 priorita BUY" in August. A number on screen with no date attached reads
+ * as today's view of the company.
+ */
+const ANALYSIS_STALE_AFTER_DAYS = 30;
+
+type AnalysisState = {
+  usable: boolean;
+  ageDays: number | null;
+  note: string | null;
+};
+
+/**
+ * Whether a stock's analysis may drive a recommendation — and if not, why.
+ *
+ * Absent and stale both mean "we do not know". The table has to say that,
+ * because the alternative was turning it into a target weight of 0 %, which
+ * on screen reads as "you are overweight everything you own".
+ */
+const getAnalysisState = (
+  stock: Stock | undefined,
+  score: number | null
+): AnalysisState => {
+  if (score === null) return { usable: false, ageDays: null, note: 'bez analýzy' };
+  const created = stock?.created_at ? new Date(stock.created_at) : null;
+  const ageDays =
+    created && !Number.isNaN(created.getTime())
+      ? Math.floor((Date.now() - created.getTime()) / 86_400_000)
+      : null;
+  if (ageDays === null) return { usable: false, ageDays: null, note: 'analýza bez data' };
+  if (ageDays > ANALYSIS_STALE_AFTER_DAYS) {
+    return { usable: false, ageDays, note: `analýza ${ageDays} dní stará` };
+  }
+  return { usable: true, ageDays, note: null };
+};
+
+const CURRENCY_SYMBOL: Record<string, string> = {
+  USD: '$', EUR: '€', CAD: 'CA$', CZK: 'Kč', GBP: '£', ILS: '₪',
+};
+
+/**
+ * A price in the currency the position is actually held in.
+ *
+ * Four of the holdings trade in CAD or EUR. Printing "$0.62" for a euro price
+ * is not a rounding difference — it is a different number.
+ */
+const formatPrice = (value: number, currency?: string | null): string => {
+  const code = (currency || 'USD').toUpperCase();
+  const symbol = CURRENCY_SYMBOL[code] ?? code;
+  const digits = Math.abs(value) < 1 ? 4 : 2;
+  return symbol === 'Kč' || symbol === code
+    ? `${value.toFixed(digits)} ${symbol}`
+    : `${symbol}${value.toFixed(digits)}`;
+};
+
+/**
+ * Where the price sits inside the green/red band. NOT a trend — it says
+ * nothing about direction, only about how much of the range is left.
+ */
+const getTrendStatus = (
+  stock: Stock | undefined
+): 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN' => {
   if (!stock || !stock.current_price || !stock.green_line || !stock.red_line) {
-    return 'NEUTRAL';
+    return 'UNKNOWN';
   }
   const priceRange = stock.red_line - stock.green_line;
-  if (priceRange <= 0) return 'NEUTRAL';
+  if (priceRange <= 0) return 'UNKNOWN';
   const position = (stock.current_price - stock.green_line) / priceRange;
   if (position <= 0.4) return 'BULLISH';
   if (position >= 0.7) return 'BEARISH';
@@ -731,15 +811,26 @@ const PortfolioRow: React.FC<{
     position.conviction_score,
     position.weight_in_portfolio,
     position.target_weight_pct,
-    position.unrealized_pl_percent ?? 0
+    position.unrealized_pl_percent ?? 0,
+    position.analysis_usable
   );
 
   // Check if row should be highlighted (HARD EXIT)
-  const isHardExit = position.conviction_score !== null && position.conviction_score < 4;
+  const isHardExit =
+    position.analysis_usable &&
+    position.conviction_score !== null &&
+    position.conviction_score < 4;
 
-  // Strategy: Free Ride eligible vs Growing (never without a real cost basis)
+  const isWaitTime = position.inflection_status?.toUpperCase() === 'WAIT_TIME';
+
+  // Strategy: Free Ride eligible vs everything else (never without a cost basis)
   const isFreeRideEligible = position.unrealized_pl_percent != null && position.unrealized_pl_percent >= 150;
-  const progressTo150 = Math.min(100, ((position.unrealized_pl_percent ?? 0) / 150) * 100);
+  // Clamped at BOTH ends. Without a lower bound a −60 % position produced a
+  // CSS width of "-40%", which browsers discard — so the biggest losses
+  // rendered as a full green bar.
+  const progressTo150 = Math.max(
+    0, Math.min(100, ((position.unrealized_pl_percent ?? 0) / 150) * 100)
+  );
 
   // Calculate shares to sell for Free Ride
   const sharesToSellForFreeRide = useMemo(() => {
@@ -782,6 +873,15 @@ const PortfolioRow: React.FC<{
         <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
           {actionCmd.text}
         </div>
+        {/* Why there is no verdict — the gap itself, stated */}
+        {!position.analysis_usable && position.analysis_note && (
+          <div className="text-[9px] text-text-muted mt-0.5">{position.analysis_note}</div>
+        )}
+        {isWaitTime && (
+          <div className="text-[9px] text-warning font-bold mt-0.5" title="Kánon: mrtvé peníze, neinvestovat">
+            WAIT TIME
+          </div>
+        )}
       </td>
 
       {/* Weight % - Aktuální vs Cílová */}
@@ -794,22 +894,32 @@ const PortfolioRow: React.FC<{
               {position.weight_in_portfolio.toFixed(1)}%
             </span>
             <span className="text-text-muted text-xs">/</span>
-            <span className="font-mono text-xs text-text-muted">{position.max_allocation_cap.toFixed(1)}%</span>
+            {/* A target of "0.0 %" computed from a missing score used to read
+                as "sell it all". Without an analysis there is no target. */}
+            <span className="font-mono text-xs text-text-muted">
+              {position.analysis_usable ? `${position.max_allocation_cap.toFixed(1)}%` : '—'}
+            </span>
           </div>
-          {position.is_overweight && (
+          {!position.analysis_usable ? (
+            <div className="text-[9px] text-text-muted">CÍL NEZNÁMÝ</div>
+          ) : position.is_overweight ? (
             <div className="text-[9px] text-warning">OVERWEIGHT</div>
-          )}
-          {position.is_underweight && !position.is_overweight && (
+          ) : position.is_underweight ? (
             <div className="text-[9px] text-text-muted">UNDERWEIGHT</div>
-          )}
+          ) : null}
         </div>
       </td>
 
-      {/* Conviction Score */}
+      {/* Conviction Score — a number with no date reads as today's view */}
       <td className="py-3 px-3 text-center">
-        <div className={`text-xl font-black ${scoreColor}`}>
-          {position.conviction_score ?? '-'}
+        <div className={`text-xl font-black ${position.analysis_usable ? scoreColor : 'text-text-muted'}`}>
+          {position.conviction_score ?? '—'}
         </div>
+        {position.conviction_score !== null && !position.analysis_usable && (
+          <div className="text-[9px] text-warning" title={position.analysis_note ?? ''}>
+            neaktuální
+          </div>
+        )}
       </td>
 
       {/* Current Price */}
@@ -818,11 +928,11 @@ const PortfolioRow: React.FC<{
           {position.current_price ? (
             <>
               <div className="text-sm font-bold text-text-primary font-mono">
-                ${position.current_price.toFixed(2)}
+                {formatPrice(position.current_price, position.currency)}
               </div>
               {position.avg_cost != null ? (
                 <div className="text-[9px] text-text-muted">
-                  Cost: ${position.avg_cost.toFixed(2)}
+                  Cost: {formatPrice(position.avg_cost, position.currency)}
                 </div>
               ) : (
                 <div className="text-[9px] text-text-muted" title="Broker export neobsahuje nákupní cenu — doplň ji v detailu pozice">
@@ -838,7 +948,12 @@ const PortfolioRow: React.FC<{
 
       {/* Optimal Size - GAP ANALYSIS */}
       <td className="py-3 px-3">
-        {position.action_signal === 'SELL' ? (
+        {!position.analysis_usable ? (
+          <div className="flex flex-col">
+            <div className="text-text-muted font-mono text-xs">—</div>
+            <div className="text-[9px] text-slate-600">bez analýzy nepočítám</div>
+          </div>
+        ) : position.action_signal === 'SELL' ? (
           <div className="flex flex-col">
             <div className="text-negative font-bold text-xs">SELL</div>
             <div className="text-[9px] text-negative/80">Score &lt; 5</div>
@@ -890,21 +1005,36 @@ const PortfolioRow: React.FC<{
             {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
           </div>
         ) : (
-          <div className="text-[9px] text-negative/70 uppercase">NONE</div>
+          // Absent data is not a red flag about the company.
+          <div className="text-[9px] text-text-muted uppercase">—</div>
         )}
       </td>
 
-      {/* 30 WMA Status */}
+      {/* Where the price sits in the green/red band. Not a trend — it has
+          no direction in it — and blank when there are no lines to sit in. */}
       <td className="py-3 px-3">
         <div className="flex flex-col items-center gap-1">
-          {trendIcon}
-          <span className={`text-[10px] font-medium ${
-            position.trend_status === 'BULLISH' ? 'text-positive' :
-            position.trend_status === 'BEARISH' ? 'text-negative' :
-            'text-text-muted'
-          }`}>
-            {position.trend_status}
-          </span>
+          {position.trend_status === 'UNKNOWN' ? (
+            <>
+              <span className="text-[10px] text-text-muted">—</span>
+              <span className="text-[9px] text-text-muted" title="Chybí zelená/červená linka pro tento ticker">
+                bez linek
+              </span>
+            </>
+          ) : (
+            <>
+              {trendIcon}
+              <span className={`text-[10px] font-medium ${
+                position.trend_status === 'BULLISH' ? 'text-positive' :
+                position.trend_status === 'BEARISH' ? 'text-negative' :
+                'text-text-muted'
+              }`}>
+                {position.trend_status === 'BULLISH' ? 'U ZELENÉ'
+                  : position.trend_status === 'BEARISH' ? 'U ČERVENÉ'
+                  : 'STŘED'}
+              </span>
+            </>
+          )}
         </div>
       </td>
 
@@ -917,19 +1047,38 @@ const PortfolioRow: React.FC<{
               Sell {sharesToSellForFreeRide} shares
             </div>
           </div>
+        ) : position.unrealized_pl_percent == null ? (
+          <div className="flex flex-col">
+            <div className="text-[9px] text-warning uppercase">NEZNÁMÝ STAV</div>
+            <div className="text-[8px] text-slate-600 mt-0.5">⚠️ bez nákup. ceny</div>
+          </div>
+        ) : position.unrealized_pl_percent < 0 ? (
+          // This said "GROWING" for every position, including one down 94 %.
+          // Worse, the bar had no lower clamp, so a loss produced a negative
+          // CSS width the browser discarded — and rendered full green.
+          <div className="flex flex-col">
+            <div className="text-[9px] text-negative uppercase">VE ZTRÁTĚ</div>
+            <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden mt-1">
+              <div
+                className="h-full bg-negative/70 transition-all"
+                style={{ width: `${Math.min(100, Math.abs(position.unrealized_pl_percent))}%` }}
+              />
+            </div>
+            <div className="text-[8px] text-slate-600 mt-0.5">
+              {position.unrealized_pl_percent.toFixed(0)}% od nákupu
+            </div>
+          </div>
         ) : (
           <div className="flex flex-col">
-            <div className="text-[9px] text-text-muted uppercase">GROWING</div>
+            <div className="text-[9px] text-positive uppercase">V ZISKU</div>
             <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden mt-1">
-              <div 
+              <div
                 className="h-full bg-gradient-to-r from-surface-overlay to-positive transition-all"
                 style={{ width: `${progressTo150}%` }}
               />
             </div>
             <div className="text-[8px] text-slate-600 mt-0.5">
-              {position.unrealized_pl_percent != null
-                ? `${position.unrealized_pl_percent.toFixed(0)}% / 150%`
-                : '⚠️ bez nákup. ceny'}
+              {position.unrealized_pl_percent.toFixed(0)}% / 150%
             </div>
           </div>
         )}
@@ -2626,6 +2775,14 @@ function calculateMaxAllocationCap(
   gomesScore: number | null,
   fallbackTarget: number
 ): number {
+  // Wait Time is the canon's loudest refusal — dead money, do not invest.
+  // It outranks every cap, including one already stored on the record: the
+  // Gatekeeper row carried max_allocation_cap 15 % AND inflection_status
+  // WAIT_TIME, and the table made it the #1 buy of the month.
+  if (stock?.inflection_status?.toUpperCase() === 'WAIT_TIME') {
+    return 0;
+  }
+
   // If stock has pre-calculated cap from backend, use it
   if (stock?.max_allocation_cap) {
     return stock.max_allocation_cap;
@@ -3012,8 +3169,11 @@ export const InvestmentTerminal: React.FC = () => {
         const targetValueCZK = (grandTotal * maxAllocationCap) / 100;
         const gapCZK = targetValueCZK - positionValueCZK;
         
-        // 4. Action signal based on score and gap
-        const actionSignal = getActionSignal(gomesScore, currentWeightPct, maxAllocationCap);
+        // 4. Action signal — but only if the analysis is one we still trust
+        const analysisState = getAnalysisState(stock, gomesScore);
+        const actionSignal = getActionSignal(
+          gomesScore, currentWeightPct, maxAllocationCap, analysisState.usable
+        );
         
         // 5. Classify for risk meter
         if (gomesScore !== null && gomesScore >= 9) {
@@ -3046,12 +3206,24 @@ export const InvestmentTerminal: React.FC = () => {
           optimal_size: initialOptimalSize, // Negative for OVERWEIGHT, will be recalculated for UNDERWEIGHT
           allocation_priority: 999, // Will be set after sorting
           trend_status: getTrendStatus(stock),
-          is_deteriorated: gomesScore !== null && gomesScore < 4,
-          is_overweight: currentWeightPct > maxAllocationCap,
-          is_underweight: currentWeightPct < maxAllocationCap && gapCZK > MIN_INVESTMENT_CZK,
+          is_deteriorated: analysisState.usable && gomesScore !== null && gomesScore < 4,
+          // "Overweight" against a target we could not compute is not a fact
+          // about the position, it is a fact about our data.
+          is_overweight: analysisState.usable && currentWeightPct > maxAllocationCap,
+          is_underweight:
+            analysisState.usable &&
+            currentWeightPct < maxAllocationCap &&
+            gapCZK > MIN_INVESTMENT_CZK,
           action_signal: actionSignal,
-          inflection_status: 'UPCOMING',
-          next_catalyst: stock?.next_catalyst ?? undefined,
+          analysis_usable: analysisState.usable,
+          analysis_note: analysisState.note,
+          // The real phase, not a constant. This field was pinned to
+          // 'UPCOMING', so a WAIT_TIME record never showed as one.
+          inflection_status: stock?.inflection_status ?? undefined,
+          next_catalyst:
+            stock?.next_catalyst ??
+            stock?.primary_catalyst ??
+            (stock?.catalysts ? stock.catalysts.split(',')[0].trim() : undefined),
         };
 
         tempPositions.push(enriched);
@@ -3742,8 +3914,8 @@ export const InvestmentTerminal: React.FC = () => {
                   <div className="text-[9px] text-text-muted font-normal">Tento měsíc</div>
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Catalyst</th>
-                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">Trend</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Strategy</th>
+                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]" title="Kde leží cena v pásmu mezi zelenou a červenou linkou">Pásmo</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Stav pozice</th>
                 <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">P/L</th>
               </tr>
             </thead>
