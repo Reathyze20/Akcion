@@ -32,9 +32,17 @@ def fx(currency: str) -> float:
     return RATES[currency.upper()]
 
 
-def run(market_alert="GREEN", positions=(), analyses=(), cash_czk=0.0):
+def run(
+    market_alert="GREEN",
+    positions=(),
+    analyses=(),
+    cash_czk=0.0,
+    market_alert_updated_at=NOW,
+):
+    """Defaults to a semafor set today; staleness is opted into explicitly."""
     return generate_daily_actions(
         market_alert=market_alert,
+        market_alert_updated_at=market_alert_updated_at,
         positions=list(positions),
         analyses=list(analyses),
         cash_czk=cash_czk,
@@ -284,6 +292,55 @@ class TestBuys:
 # Ranking, cap, honesty
 # ==============================================================================
 
+
+class TestStaleSemafor:
+    """
+    The live database held one row — GREEN, last touched seven months earlier
+    — and nothing said so. Every buy the app authorised was authorised on a
+    market reading from another season.
+
+    The rule is asymmetric on purpose: stale data may make us more cautious,
+    never less.
+    """
+
+    def test_stale_green_stops_authorising_buys(self):
+        buyable = gomes("ACME", green_line=1.0, red_line=10.0, cylinders=2,
+                        lifecycle_phase="GOLD_MINE", current_price=1.5)
+        fresh = run(market_alert="GREEN", analyses=[buyable], cash_czk=100_000.0)
+        stale = run(market_alert="GREEN", analyses=[buyable], cash_czk=100_000.0,
+                    market_alert_updated_at=NOW - timedelta(days=200))
+
+        assert any(a.action_type == "BUY" for a in fresh.actions)
+        assert not any(a.action_type == "BUY" for a in stale.actions)
+
+    def test_stale_semafor_says_how_old_it_is(self):
+        result = run(market_alert="GREEN",
+                     market_alert_updated_at=NOW - timedelta(days=207))
+        assert any("STARÝ SEMAFOR" in w and "207 dní" in w for w in result.warnings)
+
+    def test_a_stale_protective_level_keeps_protecting(self):
+        """
+        Downgrading a stale ORANGE to "unknown" would have removed the
+        de-risking it exists to trigger. Caution survives staleness.
+        """
+        held = position("ACME", shares=100, avg_cost=10.0, price=12.0)
+        analysis = gomes("ACME", green_line=1.0, red_line=10.0,
+                         lifecycle_phase="WAIT_TIME", current_price=12.0)
+        result = run(market_alert="ORANGE", positions=[held], analyses=[analysis],
+                     cash_czk=0.0, market_alert_updated_at=NOW - timedelta(days=200))
+        assert result.market_alert == "ORANGE"
+        assert any(a.action_type == "SELL_WAIT_TIME" for a in result.actions)
+
+    def test_an_undated_semafor_counts_as_stale(self):
+        result = run(market_alert="GREEN", market_alert_updated_at=None)
+        assert any("STARÝ SEMAFOR" in w for w in result.warnings)
+
+    def test_a_semafor_inside_the_window_is_not_flagged(self):
+        result = run(market_alert="GREEN",
+                     market_alert_updated_at=NOW - timedelta(days=13))
+        assert not any("STARÝ SEMAFOR" in w for w in result.warnings)
+
+
 class TestRankingAndHonesty:
     def test_derisk_outranks_trim_and_max_3(self):
         result = run(
@@ -407,7 +464,7 @@ class TestEndpoint:
     def test_empty_portfolio_returns_hold(self, client, monkeypatch):
         monkeypatch.setattr(
             daily_actions_route, "load_daily_action_inputs",
-            lambda db: ("GREEN", [], [], 5_000.0),
+            lambda db: ("GREEN", NOW, [], [], 5_000.0),
         )
         response = client.get("/api/trading/daily-actions")
         assert response.status_code == 200

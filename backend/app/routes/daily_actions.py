@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -41,16 +42,20 @@ _INFLECTION_TO_PHASE = {
 
 def load_daily_action_inputs(
     db: Session,
-) -> tuple[str | None, list[PositionInput], list[AnalysisInput], float | None]:
+) -> tuple[
+    str | None, datetime | None, list[PositionInput], list[AnalysisInput], float | None
+]:
     """
     Snapshot everything the engine needs. Kept separate so tests can patch it.
 
-    Returns (market_alert, positions, analyses, cash_czk). market_alert is
-    None when the semafor was never set — the engine warns instead of
-    defaulting to GREEN.
+    Returns (market_alert, alert_updated_at, positions, analyses, cash_czk).
+    market_alert is None when the semafor was never set — the engine warns
+    instead of defaulting to GREEN, and the timestamp lets it tell a current
+    reading from one that has been sitting there for months.
     """
     status_row = db.query(MarketStatus).first()
     market_alert = status_row.status.value if status_row else None
+    alert_updated_at = status_row.last_updated if status_row else None
 
     portfolios = db.query(Portfolio).all()
     # cash_balance is CZK by app convention (see portfolio summary endpoint).
@@ -112,7 +117,7 @@ def load_daily_action_inputs(
             )
         )
 
-    return market_alert, positions, analyses, cash_czk
+    return market_alert, alert_updated_at, positions, analyses, cash_czk
 
 
 @router.get("/daily-actions", response_model=DailyActionResponse)
@@ -127,9 +132,16 @@ def get_daily_actions(db: Session = Depends(get_db)) -> DailyActionResponse:
     - Missing data becomes a warning ("⚠️ CHYBÍ ÚDAJE"), never a number.
     """
     try:
-        market_alert, positions, analyses, cash_czk = load_daily_action_inputs(db)
+        (
+            market_alert,
+            alert_updated_at,
+            positions,
+            analyses,
+            cash_czk,
+        ) = load_daily_action_inputs(db)
         return generate_daily_actions(
             market_alert=market_alert,
+            market_alert_updated_at=alert_updated_at,
             positions=positions,
             analyses=analyses,
             cash_czk=cash_czk,

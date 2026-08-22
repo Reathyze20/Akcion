@@ -40,6 +40,10 @@ logger = logging.getLogger(__name__)
 
 MAX_ACTIONS = 3
 STALE_PRICE_AFTER = timedelta(days=3)
+# The semafor gates every buy and the whole allocation. Gomes restates it
+# roughly weekly; two weeks without an update means we do not know the
+# market state, whatever the last row happens to say.
+STALE_ALERT_AFTER = timedelta(days=14)
 # More same-type warnings than this collapse into one grouped line.
 GROUP_WARNINGS_ABOVE = 3
 
@@ -81,6 +85,7 @@ class AnalysisInput:
 
 def generate_daily_actions(
     market_alert: str | None,
+    market_alert_updated_at: datetime | None,
     positions: list[PositionInput],
     analyses: list[AnalysisInput],
     cash_czk: float | None,
@@ -97,6 +102,20 @@ def generate_daily_actions(
     warnings: list[str] = []
 
     alert = _normalize_alert(market_alert, warnings)
+    # Stale data may make us more cautious, never less. A stale ORANGE still
+    # de-risks; a stale GREEN stops authorising purchases.
+    buy_alert = alert
+    if alert is not None and _alert_is_stale(market_alert_updated_at, now):
+        buy_alert = None
+        age = (
+            f"{(now - market_alert_updated_at).days} dní"
+            if market_alert_updated_at is not None
+            else "neznámo jak dlouho"
+        )
+        warnings.append(
+            f"⚠️ STARÝ SEMAFOR: Market Alert {alert.value} nebyl {age} "
+            f"aktualizován — nákupy blokovány, ochrany běží dál"
+        )
 
     gomes_by_ticker = {
         a.ticker.upper(): a for a in analyses if a.source_key == "GOMES"
@@ -197,7 +216,7 @@ def generate_daily_actions(
         if ticker in held_tickers:
             continue
         buy = _buy_action(
-            alert, ticker, analysis, breakout_by_ticker.get(ticker),
+            buy_alert, ticker, analysis, breakout_by_ticker.get(ticker),
             cash_czk, portfolio_value_czk, fx_rate_to_czk,
         )
         if buy is not None:
@@ -237,6 +256,19 @@ def _grouped(
             warnings.append(single_fmt.format(t=t))
     else:
         warnings.append(group_fmt.format(n=len(tickers), tickers=", ".join(tickers)))
+
+
+def _alert_is_stale(updated_at: datetime | None, now: datetime) -> bool:
+    """
+    An undated semafor counts as stale.
+
+    The live database held one row, GREEN, last touched seven months earlier,
+    and nothing said so. A green light is indistinguishable from a working
+    system, which is what makes silent staleness expensive here.
+    """
+    if updated_at is None:
+        return True
+    return now - updated_at > STALE_ALERT_AFTER
 
 
 def _normalize_alert(market_alert: str | None, warnings: list[str]) -> MarketAlert | None:
