@@ -156,6 +156,29 @@ pro pozice v portfoliu, analyzovat je a zapojit do rozhodování.
 
 ---
 
+### `[?]` B15. Dvě pozice mají měnu, která nesedí s burzou — ověř
+
+`IMP.V` a `KUYA.V` jsou uložené jako **EUR**, zatímco `GSI.V` a `DBO.TO` ze stejných burz
+(TSX Venture / Toronto) jsou **CAD**. Pokud jde skutečně o TSX Venture listingy, je jejich
+hodnota v CZK nadhodnocená o poměr EUR/CAD, tedy **o 61 %** — dohromady zhruba 17 000 Kč,
+což je **7 % celého portfolia**.
+
+Nemůžu to rozhodnout za tebe: Degiro je může držet přes evropský listing (Intermap se
+obchoduje i ve Frankfurtu), a pak je EUR správně. Podívej se do Degira, jakou měnu ti u nich
+skutečně účtuje.
+
+Appka na to od teď upozorní sama (`currency_mismatch`, varování v denním přehledu).
+
+### `[ ]` B16. SEC pokrývá jen 46 % portfolia
+
+Podle hodnoty k 22. 8. je **54,1 % portfolia mimo dosah SEC EDGAR** — TSX Venture, Toronto
+a tři pozice uložené jako ISIN. Čtyři z pěti největších pozic tam spadají.
+
+To znamená, že „SEC nic nenašel" je u poloviny portfolia prázdná informace, ne dobrá zpráva.
+Pro kanadské firmy by ekvivalentem byl **SEDAR+**; stojí za zvážení jako další zdroj.
+
+---
+
 ## Hotovo
 
 - `[x]` Tlačítka Buy/Sell v obchodním modálu byla `console.log` no-opy → napojeno na `apiClient`

@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from typing import Callable
 
 from app.core.sources import verdict_stance
-from app.services.currency import CurrencyError
+from app.services.currency import CurrencyError, currency_mismatch
 from app.schemas.daily_actions import ActionItem, DailyActionResponse
 from app.trading.gomes_logic import (
     GomesGatekeeper,
@@ -152,6 +152,7 @@ def generate_daily_actions(
     stale_price: list[tuple[str, datetime]] = []
     unjudgeable: list[str] = []
     unconvertible: list[str] = []
+    currency_conflict: list[str] = []
 
     # ------------------------------------------------------------------
     # Held positions: de-risk, doubling rule, R/R trims
@@ -174,6 +175,14 @@ def generate_daily_actions(
             undated_price.append(ticker)
         elif now - pos.last_price_update > STALE_PRICE_AFTER:
             stale_price.append((ticker, pos.last_price_update))
+
+        # A ticker's suffix names its exchange, and an exchange has one trading
+        # currency. When they disagree the CZK value is wrong by the ratio
+        # between the two — and nothing else in the app would notice.
+        conflict = currency_mismatch(pos.ticker, pos.currency)
+        if conflict is not None:
+            expected, actual = conflict
+            currency_conflict.append(f"{ticker} ({actual}→{expected}?)")
 
         try:
             rate = fx_rate_to_czk(pos.currency)
@@ -218,6 +227,13 @@ def generate_daily_actions(
         "⚠️ NEZNÁMÁ KVALITA u {n} pozic ({tickers}) — chybí fáze i konvikční "
         "skóre, v {alert} Alert je neposoudím; rozhodni sám",
         alert=alert.value if alert else "?",
+    )
+    _grouped(
+        warnings, currency_conflict,
+        "⚠️ MĚNA NESEDÍ S BURZOU: {t} — hodnota v CZK je o tenhle poměr vedle; "
+        "oprav měnu v detailu pozice",
+        "⚠️ MĚNA NESEDÍ S BURZOU u {n} pozic ({tickers}) — jejich hodnota v CZK "
+        "je o poměr těch měn vedle; oprav je v detailu pozic",
     )
     _grouped(
         warnings, unconvertible,

@@ -175,3 +175,71 @@ class TestFallbackTableIsPlausible:
         the rate table omits is exactly the ILS hole.
         """
         assert {"USD", "EUR", "CAD", "CZK", "GBP", "ILS"} <= set(FALLBACK_RATES)
+
+
+# ==============================================================================
+# A ticker's exchange and its currency have to agree
+# ==============================================================================
+
+class TestExchangeCurrencyConsistency:
+    """
+    Found on the live portfolio 2026-08-22: IMP.V and KUYA.V were stored as EUR
+    while GSI.V and DBO.TO — the same two exchanges — were stored as CAD. At
+    the 2026-08-21 fixing that overstates those two positions by 61 %, about
+    7 % of the whole portfolio, and nothing in the app could notice.
+    """
+
+    def test_a_tsx_venture_listing_priced_in_euro_is_flagged(self):
+        from app.services.currency import currency_mismatch
+
+        assert currency_mismatch("KUYA.V", "EUR") == ("CAD", "EUR")
+
+    def test_the_same_exchange_priced_in_dollars_is_not(self):
+        from app.services.currency import currency_mismatch
+
+        assert currency_mismatch("GSI.V", "CAD") is None
+
+    def test_case_and_whitespace_do_not_create_a_false_alarm(self):
+        from app.services.currency import currency_mismatch
+
+        assert currency_mismatch("gsi.v", " cad ") is None
+
+    def test_an_unsuffixed_ticker_is_never_flagged(self):
+        """
+        A bare symbol names no exchange. Assuming USD would invent the very
+        mismatch this check exists to find.
+        """
+        from app.services.currency import currency_mismatch
+
+        assert currency_mismatch("VTSI", "USD") is None
+        assert currency_mismatch("VTSI", "EUR") is None
+
+    def test_an_unknown_suffix_is_never_flagged(self):
+        from app.services.currency import currency_mismatch
+
+        assert currency_mismatch("FOO.XYZ", "USD") is None
+
+    def test_a_missing_currency_is_not_a_mismatch(self):
+        """
+        That is a separate gap, reported separately. "We cannot tell" must not
+        be reported as "it checks out" — nor as a conflict.
+        """
+        from app.services.currency import currency_mismatch
+
+        assert currency_mismatch("KUYA.V", None) is None
+        assert currency_mismatch("KUYA.V", "") is None
+
+    def test_the_size_of_the_error_is_real(self):
+        """
+        Not a rounding difference: the EUR rate is 61 % above the CAD one.
+        """
+        from app.services.currency import FALLBACK_RATES
+
+        ratio = FALLBACK_RATES["EUR"] / FALLBACK_RATES["CAD"]
+        assert ratio > 1.5
+
+    def test_every_mapped_exchange_has_a_rate_we_can_use(self):
+        from app.services.currency import EXCHANGE_CURRENCY, FALLBACK_RATES
+
+        missing = sorted(set(EXCHANGE_CURRENCY.values()) - set(FALLBACK_RATES))
+        assert not missing, f"kurz chybí pro: {missing}"

@@ -128,6 +128,66 @@ def reset_cache() -> None:
         _cached_at = None
 
 
+#: What a listing on each exchange is actually quoted in. A ticker suffix names
+#: the exchange, and an exchange has one trading currency — so the two must
+#: agree, and when they do not, the position's value in CZK is wrong by the
+#: ratio between them.
+#:
+#: Found 2026-08-22: IMP.V and KUYA.V were stored as EUR while GSI.V and
+#: DBO.TO — the same two exchanges — were stored as CAD. At the 2026-08-21
+#: fixing that is a 61 % overstatement of those two positions, about 7 % of the
+#: whole portfolio. The app had no way to notice.
+EXCHANGE_CURRENCY: Final[dict[str, str]] = {
+    "V": "CAD",   # TSX Venture
+    "TO": "CAD",  # Toronto
+    "CN": "CAD",  # CSE
+    "NE": "CAD",  # NEO
+    "L": "GBP",   # London
+    "HK": "HKD",  # Hong Kong
+    "AX": "AUD",  # ASX
+    "DE": "EUR",  # Xetra
+    "F": "EUR",   # Frankfurt
+    "PA": "EUR",  # Euronext Paris
+    "AS": "EUR",  # Euronext Amsterdam
+    "BR": "EUR",  # Euronext Brussels
+    "MI": "EUR",  # Milan
+    "MC": "EUR",  # Madrid
+    "SW": "CHF",  # SIX
+    "ST": "SEK",  # Stockholm
+    "OL": "NOK",  # Oslo
+    "T": "JPY",   # Tokyo
+    "TA": "ILS",  # Tel Aviv
+}
+
+
+def expected_currency(ticker: str) -> str | None:
+    """
+    The currency a ticker's exchange trades in, if its suffix names one.
+
+    Returns None for an unsuffixed ticker — that is a US listing or an unknown
+    venue, and guessing USD would be inventing the very check this exists for.
+    """
+    parts = (ticker or "").upper().strip().rsplit(".", 1)
+    if len(parts) != 2:
+        return None
+    return EXCHANGE_CURRENCY.get(parts[1])
+
+
+def currency_mismatch(ticker: str, currency: str | None) -> tuple[str, str] | None:
+    """
+    (expected, actual) when a position's currency contradicts its exchange.
+
+    None means either that they agree or that we cannot tell — and those two
+    stay indistinguishable on purpose, because "we cannot tell" must never be
+    reported as "it checks out".
+    """
+    expected = expected_currency(ticker)
+    actual = (currency or "").upper().strip()
+    if expected is None or not actual or expected == actual:
+        return None
+    return expected, actual
+
+
 class CurrencyService:
     """Currency conversion to CZK, carrying the provenance of every rate."""
 
