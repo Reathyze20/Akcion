@@ -59,6 +59,7 @@ def complete(
     system: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     api_key: str | None = None,
+    schema: dict[str, Any] | None = None,
 ) -> str:
     """
     Run one prompt and return the model's text.
@@ -97,6 +98,13 @@ def complete(
         kwargs["system"] = [
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
         ]
+    if schema is not None:
+        # Constrains the response to the shape. Without it a long answer can
+        # end mid-string and parse as nothing at all — which is how the VTSI
+        # filing analysis failed while six others succeeded.
+        kwargs["output_config"] = {
+            "format": {"type": "json_schema", "schema": schema}
+        }
 
     try:
         with client.messages.stream(
@@ -151,6 +159,41 @@ def complete(
 # JSON answers
 # ==============================================================================
 
+#: Validation keywords structured outputs rejects. Dropping them costs nothing:
+#: the same constraints still run on our side after the call, so an
+#: out-of-range value is caught afterwards instead of being described before.
+_UNSUPPORTED_SCHEMA_KEYWORDS: Final[tuple[str, ...]] = (
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+    "multipleOf", "minLength", "maxLength", "pattern", "format",
+    "minItems", "maxItems", "uniqueItems",
+)
+
+
+def harden_schema(node: object) -> object:
+    """
+    Make a Pydantic JSON schema acceptable to structured outputs.
+
+    Two things the generated schema does not do on its own: every object must
+    set `additionalProperties: false`, and range/length keywords are rejected.
+
+    `required` is deliberately left as Pydantic wrote it. Forcing every
+    property into it makes the model emit an explicit null for each optional
+    field, which on a long document overruns the output ceiling and truncates
+    the whole answer. Optional stays optional.
+    """
+    if isinstance(node, dict):
+        if node.get("type") == "object" and "properties" in node:
+            node["additionalProperties"] = False
+        for keyword in _UNSUPPORTED_SCHEMA_KEYWORDS:
+            node.pop(keyword, None)
+        for value in node.values():
+            harden_schema(value)
+    elif isinstance(node, list):
+        for item in node:
+            harden_schema(item)
+    return node
+
+
 def _strip_code_fence(text: str) -> str:
     """
     Remove a markdown fence the model may have wrapped the JSON in.
@@ -175,6 +218,7 @@ def complete_json(
     system: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     api_key: str | None = None,
+    schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Run one prompt and return the JSON object the model produced.
@@ -185,7 +229,10 @@ def complete_json(
             downstream as "the model found nothing", which is a different and
             much more expensive statement than "the answer was unreadable".
     """
-    raw = complete(prompt, system=system, max_tokens=max_tokens, api_key=api_key)
+    raw = complete(
+        prompt, system=system, max_tokens=max_tokens,
+        api_key=api_key, schema=schema,
+    )
     payload = _strip_code_fence(raw)
 
     try:

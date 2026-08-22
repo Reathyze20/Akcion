@@ -115,6 +115,28 @@ def _upsert_coverage(
     return row
 
 
+def _purge_filings(db: Session, ticker: str) -> int:
+    """
+    Drop everything stored for a ticker we can no longer resolve.
+
+    Called when a refresh concludes the ticker is not an SEC filer after all.
+    Keeping the rows would leave another company's numbers presented as this
+    holding's.
+    """
+    filings = db.query(SecFiling).filter(SecFiling.ticker == ticker).delete()
+    insider = (
+        db.query(InsiderTransactionRow)
+        .filter(InsiderTransactionRow.ticker == ticker)
+        .delete()
+    )
+    if filings or insider:
+        logger.warning(
+            "{}: mazu {} podani a {} insider zaznamu ulozenych pod chybnym parovanim",
+            ticker, filings, insider,
+        )
+    return filings + insider
+
+
 def _store_filings(db: Session, coverage: TickerCoverage) -> int:
     stored = 0
     for filing in coverage.filings:
@@ -306,8 +328,36 @@ def sync_ticker(
         note=coverage.note,
     )
 
-    if coverage.status is not CoverageStatus.COVERED:
+    # A foreign private issuer files 20-F and 6-K rather than 10-K/10-Q, and
+    # `fetch_coverage` has already collected them. Returning here on anything
+    # that is not COVERED threw those away and left RADCOM — a real holding —
+    # with zero stored filings and nothing to analyse.
+    if coverage.status is CoverageStatus.FOREIGN_PRIVATE_ISSUER:
+        result.filings_stored = _store_filings(db, coverage)
+        result.insider_stored = _store_insider(db, coverage)
+    elif coverage.status is not CoverageStatus.COVERED:
+        # Anything stored under a previous, wrong resolution has to go. DBO.TO
+        # was matched to "Invesco DB Oil Fund" by an earlier version that
+        # stripped the exchange suffix, and four of that fund's filings ended
+        # up attached to a Toronto holding. Fixing the matcher does not unstick
+        # rows already written, and a wrong company reads exactly as
+        # trustworthy as the right one.
+        _purge_filings(db, coverage.ticker)
         db.commit()
+        return result
+
+    if coverage.status is CoverageStatus.FOREIGN_PRIVATE_ISSUER:
+        # XBRL still carries their numbers even on the foreign form schedule.
+        try:
+            foreign_data = fetch_fundamentals(
+                coverage.ticker, coverage.cik, client=client
+            )
+            result.findings = foreign_data.findings
+            result.gaps = foreign_data.gaps
+        except SecError as e:
+            result.error = f"Výsledky se nepodařilo načíst: {e}"
+        db.commit()
+        _analyze_newest(db, coverage.ticker, client, with_outlook)
         return result
 
     result.filings_stored = _store_filings(db, coverage)
@@ -326,24 +376,33 @@ def sync_ticker(
 
     db.commit()
 
-    # Outlook: narrative, so it goes through the model. Done after the commit
-    # so a failed analysis never costs us the filings we already fetched.
-    if with_outlook:
-        pending = (
-            db.query(SecFiling)
-            .filter(
-                SecFiling.ticker == coverage.ticker,
-                SecFiling.analysis.is_(None),
-            )
-            .order_by(SecFiling.filed_date.desc())
-            .limit(1)
-            .all()
-        )
-        for filing in pending:
-            if analyze_filing(db, filing, client=client) is not None:
-                db.commit()
-
+    _analyze_newest(db, coverage.ticker, client, with_outlook)
     return result
+
+
+def _analyze_newest(
+    db: Session,
+    ticker: str,
+    client: SecEdgarClient,
+    with_outlook: bool,
+) -> None:
+    """
+    Read the newest unanalysed filing's narrative.
+
+    Runs after the commit, so a failed analysis never costs us the filings we
+    already fetched.
+    """
+    if not with_outlook:
+        return
+
+    newest = (
+        db.query(SecFiling)
+        .filter(SecFiling.ticker == ticker, SecFiling.analysis.is_(None))
+        .order_by(SecFiling.filed_date.desc())
+        .first()
+    )
+    if newest is not None and analyze_filing(db, newest, client=client) is not None:
+        db.commit()
 
 
 def sync_held_tickers(

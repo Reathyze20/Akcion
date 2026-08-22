@@ -40,6 +40,7 @@ from datetime import date, datetime
 from typing import Any, Final
 
 from loguru import logger
+from pydantic import BaseModel, Field, ValidationError
 
 from app.services.sec_edgar import SecEdgarClient, SecError
 
@@ -504,6 +505,39 @@ patří tam null nebo prázdné pole. Vymyšlený výhled je horší než žádn
 """
 
 
+class Outlook(BaseModel):
+    """
+    The shape an outlook answer must take.
+
+    Exists to be handed to structured outputs, not for validation alone. A
+    10-Q's guidance section can run long, and an unconstrained answer that ends
+    mid-string parses as nothing at all — which is exactly how the VirTra
+    filing failed while six others in the same batch succeeded.
+    """
+
+    guidance: str | None = Field(
+        None, description="What the company says about future revenue/profit"
+    )
+    guidance_direction: str = Field(
+        "NONE", description="RAISED | LOWERED | MAINTAINED | NONE"
+    )
+    orders_backlog: str | None = Field(None, description="Orders, backlog, pipeline")
+    cylinders_evidence: list[str] = Field(
+        default_factory=list,
+        description="Operational facts bearing on the canon's cylinder count",
+    )
+    risks_new: list[str] = Field(
+        default_factory=list, description="Risks stated as new or worsened"
+    )
+    summary_cs: str = Field("", description="Two or three sentences in Czech")
+
+
+#: Generous, and it needs to be. Adaptive thinking is billed against the same
+#: ceiling as the answer, and a 10-K's narrative sections are long. 8000 was
+#: not enough for VirTra.
+OUTLOOK_MAX_TOKENS: Final[int] = 32000
+
+
 def analyze_outlook(
     text: str,
     *,
@@ -514,15 +548,26 @@ def analyze_outlook(
     """
     Read guidance and operational facts out of a filing's narrative.
 
+    The response is constrained to `Outlook` and then validated against it, so
+    a caller receives either a complete answer or an exception — never a
+    half-parsed one.
+
     Raises:
         LLMError: on any failure. Never returns a partial or empty outlook that
             a caller could mistake for "the filing said nothing".
     """
-    from app.services.llm import complete_json
+    from app.services.llm import LLMError, complete_json, harden_schema
 
-    return complete_json(
+    payload = complete_json(
         OUTLOOK_PROMPT.format(
             ticker=ticker, form=form, period=period, text=text
         ),
-        max_tokens=8000,
+        max_tokens=OUTLOOK_MAX_TOKENS,
+        schema=harden_schema(Outlook.model_json_schema()),
     )
+
+    try:
+        # A constrained response is not the same as a checked one.
+        return Outlook.model_validate(payload).model_dump()
+    except ValidationError as e:
+        raise LLMError(f"Výhled neodpovídá očekávanému tvaru: {e}") from e

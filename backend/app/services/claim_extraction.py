@@ -401,7 +401,7 @@ def extract_claims(
     client = anthropic.Anthropic(api_key=api_key)
     system = build_prompt(source_type, today_iso)
 
-    schema = _harden_schema(ExtractionResult.model_json_schema())
+    schema = llm.harden_schema(ExtractionResult.model_json_schema())
 
     try:
         # Streaming is mandatory at this ceiling — the SDK refuses a

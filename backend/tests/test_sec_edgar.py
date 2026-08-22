@@ -342,3 +342,50 @@ class TestIdentityIsNotGuessed:
         }
         assert len(statuses) == 4
         assert CoverageStatus.COVERED not in statuses
+
+
+# ==============================================================================
+# The outlook answer cannot be half-parsed
+# ==============================================================================
+
+class TestOutlookIsConstrained:
+    def test_the_outlook_shape_is_a_model_not_a_free_dict(self):
+        """
+        VirTra's 10-Q analysis ended mid-string and parsed as nothing, while
+        six others in the same batch succeeded. Constraining the response to a
+        schema is what stops a long answer failing that way.
+        """
+        from app.services.sec_fundamentals import Outlook
+
+        fields = Outlook.model_fields
+        assert {"guidance", "guidance_direction", "orders_backlog",
+                "cylinders_evidence", "risks_new", "summary_cs"} <= set(fields)
+
+    def test_absent_guidance_is_none_not_an_empty_string(self):
+        """
+        "The company gave no guidance" is a real finding about a quarter. It
+        must not be storable as an empty string that reads like a blank field.
+        """
+        from app.services.sec_fundamentals import Outlook
+
+        outlook = Outlook()
+        assert outlook.guidance is None
+        assert outlook.guidance_direction == "NONE"
+        assert outlook.cylinders_evidence == []
+
+    def test_the_ceiling_leaves_room_for_a_long_filing(self):
+        from app.services.sec_fundamentals import OUTLOOK_MAX_TOKENS
+
+        assert OUTLOOK_MAX_TOKENS >= 32000
+
+    def test_the_schema_is_acceptable_to_structured_outputs(self):
+        """
+        Every object needs additionalProperties:false, and range keywords are
+        rejected outright.
+        """
+        from app.services.llm import harden_schema
+        from app.services.sec_fundamentals import Outlook
+
+        schema = harden_schema(Outlook.model_json_schema())
+        assert schema["additionalProperties"] is False
+        assert "minLength" not in str(schema)
