@@ -131,12 +131,28 @@ class YahooFinanceCache:
             
             if not success:
                 logger.warning(f"Failed to refresh {ticker}, returning stale cache")
-                return cached  # Return stale data rather than None
+                # Serving the old row is the right call — a missing price is
+                # worse than an old one. Serving it *unlabelled* is not: the
+                # caller cannot tell this apart from a successful fetch, and
+                # the one that mattered went on to stamp it "updated now".
+                if cached is not None:
+                    cached = dict(cached)
+                    cached["is_stale"] = True
+                    cached["stale_reason"] = (
+                        f"Stažení z Yahoo selhalo, cena je z "
+                        f"{cached.get('market_data_updated') or 'neznámého data'}"
+                    )
+                return cached
             
             # Reload from DB after refresh
             cached = self._get_cached_data(ticker)
         else:
             logger.info(f"{ticker} using cache (fresh)")
+        
+        if cached is not None:
+            cached = dict(cached)
+            cached.setdefault("is_stale", False)
+            cached.setdefault("stale_reason", None)
         
         return cached
     
@@ -487,15 +503,22 @@ class YahooFinanceCache:
             raise
     
     def _increment_error_count(self, ticker: str, error_message: str) -> None:
-        """Zvýší error count pro ticker."""
+        """
+        Record that a fetch failed.
+
+        Deliberately does not touch `last_updated`. It used to set it to NOW(),
+        which meant the more often Yahoo failed for a ticker, the fresher its
+        data looked — the freshness stamp measured our last attempt rather than
+        our last success. Only `_upsert_cache`, on the success path, may move
+        it.
+        """
         try:
             self.db.execute(
                 text("""
                     UPDATE yahoo_finance_cache
                     SET 
                         error_count = COALESCE(error_count, 0) + 1,
-                        last_fetch_error = :error,
-                        last_updated = NOW()
+                        last_fetch_error = :error
                     WHERE ticker = :ticker
                 """),
                 {"ticker": ticker, "error": error_message}

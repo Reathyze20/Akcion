@@ -17,7 +17,7 @@ Zdroje: [audit 22. 8.](AUDIT_2026-08-22_AKCNI_PLAN.md) (56 ověřených nálezů
 
 ## P0 — appka buď nefunguje, nebo tvrdí čísla, která nejsou pravda
 
-### `[ ]` B1. Analýza je mrtvá od 1. června
+### `[x]` B1. Analýza je mrtvá od 1. června
 
 `gomes_deep_dd.py:73` volá `gemini-2.0-flash`, který byl vyřazen **1. 6. 2026**. Tlačítko „Analyzovat"
 nefunguje ~12 týdnů. Stejný mrtvý model i v `constants.py:143`, `core/analysis.py`,
@@ -29,7 +29,7 @@ V `.env` je platný `ANTHROPIC_API_KEY` (108 znaků) i `GEMINI_API_KEY`. Extrakc
 **Hotovo když:** „Analyzovat" doběhne na živém modelu a vrátí skóre. Kdo model volá, ať ho volá z jednoho
 místa, ne z pěti.
 
-### `[ ]` B2. Neúspěšné stažení ceny se razítkuje jako čerstvé
+### `[x]` B2. Neúspěšné stažení ceny se razítkuje jako čerstvé
 
 `yahoo_cache.py:498` — `_increment_error_count` nastaví `last_updated = NOW()`. Selhání tím **vyřadí
 jedinou pojistku proti starým datům**: čím víc fetch selhává, tím čerstvěji cena vypadá. Přesně opačně,
@@ -41,7 +41,7 @@ dnešní.
 **Hotovo když:** neúspěch nesahá na `last_updated`. Stáří ceny na UI je stáří posledního *úspěšného*
 stažení.
 
-### `[ ]` B3. Včerejší close se vydává za aktuální cenu
+### `[x]` B3. Včerejší close se vydává za aktuální cenu
 
 `market_data.py:168-170` — když Finnhub nemá kotaci, potichu vrátí `pc` (previous close) a ta jde dál
 jako „current price". Massive/Polygon vrací včerejší close pořád.
@@ -90,7 +90,7 @@ Závisí na B6 (kanál) a B2 (poctivé stáří dat).
 **Hotovo když:** týden nespuštěná appka ti pošle nejvýš pár zpráv a žádná z nich není postavená na
 starých datech vydávaných za čerstvá.
 
-### `[ ]` B8. Health endpoint lže
+### `[x]` B8. Health endpoint lže
 
 Hlásí model, který neexistuje, a inzeruje `google_search`, který je vypnutý. Health, kterému se nedá
 věřit, je horší než žádný — je to první místo, kam se podíváš, když něco nesedí.
@@ -151,3 +151,7 @@ opravdu jde (gap #6). Nejmenší dopad z P2 — dokud nejsi v Yellow/Orange, nes
 - `[x]` Chybějící data na pozici se zodpovídala SELL příkazem — commit `eed1265`
 - `[x]` Verbatim guard mazal pravdivé claimy přes časové značky — commit `6440f64`
 - `[x]` Portfolio tabulka odpovídala na „bez analýzy" verdiktem — commit `31184dc`
+- `[x]` B1 Analýza volala model vyřazený 1. 6. 2026 — commit `f179e58`
+- `[x]` B8 Health endpoint hlásil neexistující model a web přístup, který appka nemá — commit `f179e58`
+- `[x]` B2 Neúspěšné stažení dávalo staré ceně razítko „teď“ a tím vypínalo jedinou pojistku
+- `[x]` B3 Finnhub dosazoval včerejší close za chybějící kotaci; Massive se jmenoval, jako by vracel živou cenu
