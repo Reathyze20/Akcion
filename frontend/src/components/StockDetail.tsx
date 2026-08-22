@@ -22,7 +22,8 @@ import {
   SafetyGaugeRow,
   ThesisCard,
   TradeForm,
-  TradingDeck
+  TradingDeck,
+  SecFilingsCard
 } from './stock-detail';
 import type { MarketAlert, TradeSide } from '../types';
 import {
@@ -305,7 +306,12 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                   primaryCatalyst={stock.primary_catalyst ?? null}
                   catalystDate={stock.catalyst_date ?? null}
                 />
-                
+
+                {/* What the company told the regulator. Above the price
+                    targets on purpose: reported results outrank anyone's
+                    estimate of where the price should go. */}
+                <SecFilingsCard ticker={stock.ticker} />
+
                 {/* Price Targets */}
                 {(stock.price_target || stock.price_target_short || stock.price_target_long) && (
                   <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">

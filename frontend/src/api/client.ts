@@ -293,6 +293,33 @@ class ApiClient {
     return response.data;
   }
 
+  // ==========================================================================
+  // SEC EDGAR — results, outlook, insiders
+  // ==========================================================================
+
+  async getSecData(ticker: string): Promise<SecTickerData> {
+    const response = await this.client.get<SecTickerData>(
+      `/api/sec/${encodeURIComponent(ticker)}`
+    );
+    return response.data;
+  }
+
+  async syncSecTicker(ticker: string, withOutlook = true): Promise<SecSyncResult> {
+    const response = await this.client.post<SecSyncResult>(
+      `/api/sec/sync/${encodeURIComponent(ticker)}`,
+      null,
+      { params: { with_outlook: withOutlook } }
+    );
+    return response.data;
+  }
+
+  async syncSecAll(withOutlook = false): Promise<SecSyncResult[]> {
+    const response = await this.client.post<SecSyncResult[]>(
+      '/api/sec/sync', null, { params: { with_outlook: withOutlook } }
+    );
+    return response.data;
+  }
+
   async deletePosition(positionId: number): Promise<void> {
     await this.client.delete(`/api/portfolio/positions/${positionId}`);
   }
@@ -933,6 +960,74 @@ export interface DailyActionsResponse {
   actions: DailyAction[];
   warnings: string[];
   generated_at: string;
+}
+
+// ==========================================================================
+// SEC EDGAR
+// ==========================================================================
+
+/**
+ * Why a ticker has the SEC data it has — or has none.
+ *
+ * Four distinct absences, none of which means the company reported nothing:
+ * a foreign listing, an ISIN stored where a symbol belongs, a foreign private
+ * issuer on the 20-F schedule, and EDGAR being unreachable.
+ */
+export type SecCoverageStatus =
+  | 'COVERED'
+  | 'NOT_AN_SEC_FILER'
+  | 'FOREIGN_PRIVATE_ISSUER'
+  | 'NOT_A_TICKER'
+  | 'LOOKUP_FAILED';
+
+export interface SecFiling {
+  form: string;
+  filed_date: string;
+  period_date: string | null;
+  url: string | null;
+  /** Czech reading of the filing's narrative. null = not analysed yet. */
+  analysis: string | null;
+  analyzed: boolean;
+}
+
+export interface SecInsiderTrade {
+  insider_name: string;
+  role: string;
+  transaction_date: string | null;
+  code: string;
+  code_label: string | null;
+  /** Only BUY and SELL reach the UI; the rest are counted, not listed. */
+  signal: 'BUY' | 'SELL' | 'NO_SIGNAL';
+  shares: number | null;
+  price_per_share: number | null;
+}
+
+export interface SecTickerData {
+  ticker: string;
+  status: SecCoverageStatus;
+  company_name: string | null;
+  note: string | null;
+  last_checked_at: string | null;
+  /** Exact figures from XBRL, each carrying the period it covers. */
+  findings: string[];
+  /** Line items the company does not tag. A gap, not a zero. */
+  gaps: string[];
+  filings: SecFiling[];
+  insider_trades: SecInsiderTrade[];
+  /** Grants, gifts, tax withholding — recorded, but no decision behind them. */
+  insider_non_signal_count: number;
+}
+
+export interface SecSyncResult {
+  ticker: string;
+  status: SecCoverageStatus | 'ERROR';
+  company_name?: string | null;
+  filings_stored?: number;
+  insider_stored?: number;
+  findings?: string[];
+  gaps?: string[];
+  note?: string | null;
+  error?: string | null;
 }
 
 // Export singleton instance

@@ -18,3 +18,6 @@ export type { TradingDeckProps } from './TradingDeck';
 
 export { TradeForm } from './TradeForm';
 export type { TradeFormProps } from './TradeForm';
+
+export { SecFilingsCard } from './SecFilingsCard';
+export type { SecFilingsCardProps } from './SecFilingsCard';
