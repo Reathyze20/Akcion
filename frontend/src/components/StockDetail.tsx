@@ -56,7 +56,7 @@ interface EnrichedPosition {
   action_signal?: 'BUY' | 'HOLD' | 'SELL' | 'SNIPER';
   next_catalyst?: string;
   max_allocation_cap?: number;
-  trend_status?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  trend_status?: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
   is_deteriorated?: boolean;
 }
 

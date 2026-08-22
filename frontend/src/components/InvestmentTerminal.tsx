@@ -3743,9 +3743,23 @@ export const InvestmentTerminal: React.FC = () => {
               }), { costBasis: 0, marketValue: 0, unrealizedPL: 0, cash: 0 });
               
               const totalValue = totals.marketValue + totals.cash;
-              const plPercent = totals.costBasis > 0 
-                ? ((totals.marketValue / totals.costBasis) - 1) * 100 
+
+              // Three of the fifteen positions have no purchase price, so they
+              // add market value while adding no cost. Dividing the value of
+              // ALL of them by the cost of SOME of them reported −36 % on a
+              // portfolio that is nearer −42 %; the loss looked smaller than
+              // it is, purely because of a gap in the data.
+              //
+              // The absolute figure only ever summed positions whose P/L is
+              // known, so the percentage is derived from it and the two now
+              // agree by construction.
+              const plPercent = totals.costBasis > 0
+                ? (totals.unrealizedPL / totals.costBasis) * 100
                 : 0;
+
+              const allPositions = portfolios.flatMap(p => p.positions ?? []);
+              const pricedCount = allPositions.filter(p => p.avg_cost != null).length;
+              const missingCost = allPositions.length - pricedCount;
               
               return (
                 <>
@@ -3760,6 +3774,13 @@ export const InvestmentTerminal: React.FC = () => {
                     <div className="text-2xl font-bold text-text-secondary">
                       {totals.costBasis.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                     </div>
+                    {/* Otherwise this sits next to Total Value inviting a
+                        subtraction that covers a different set of positions. */}
+                    {missingCost > 0 && (
+                      <div className="text-[10px] text-warning mt-1">
+                        jen {pricedCount} z {allPositions.length} pozic — {missingCost} bez nákupní ceny
+                      </div>
+                    )}
                   </div>
                   <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
                     <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Unrealized P/L</div>

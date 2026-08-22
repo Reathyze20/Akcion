@@ -36,7 +36,7 @@ interface EnrichedPosition {
   unrealized_pl_percent: number;
   stock?: Stock;
   conviction_score: number | null;
-  trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
   is_deteriorated: boolean;
   target_weight_pct: number;
   weight_in_portfolio: number;
@@ -58,7 +58,7 @@ interface EnrichedPosition {
   unrealized_pl_percent: number;
   stock?: Stock;
   conviction_score: number | null;
-  trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
   is_deteriorated: boolean;
   target_weight_pct: number;
   weight_in_portfolio: number;
