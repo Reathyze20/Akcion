@@ -111,7 +111,7 @@ def verify_gomes_compliance(
     
     RULE C (Trend Protection):
         - IF Stage 4 (price < falling WMA) AND action == BUY -> 422
-        - Message: "Weinstein Stage 4: Don't catch a falling knife."
+        - Message: "Wait Time — kánon §3 říká nebýt investovaný."
     
     RULE D (Low Conviction):
         - IF gomes_score < 7 AND action == BUY -> WARNING (not blocking)
@@ -166,25 +166,40 @@ def verify_gomes_compliance(
                 }
             )
         
-        # RULE C: Weinstein Stage 4 (price below falling 30 WMA)
-        # Infer from current_price vs green_line (proxy for 30 WMA)
-        if (
-            stock.current_price is not None and
-            stock.green_line is not None and
-            stock.inflection_status == 'WAIT_TIME' and
-            stock.current_price < stock.green_line * 0.95  # 5% buffer
-        ):
-            percent_below = ((stock.green_line - stock.current_price) / stock.green_line * 100)
-            logger.warning(f"📉 ORDER BLOCKED: {ticker} - Weinstein Stage 4 ({percent_below:.1f}% below support)")
+        # RULE C: Wait Time — the canon's own refusal (canon §3)
+        #
+        # This rule used to call itself "Weinstein Stage 4 (price below falling
+        # 30 WMA)". There is no 30 WMA in it and never was; the condition read
+        # `current_price < green_line * 0.95`, and its own comment admitted to
+        # using the green line as a "proxy". The green line is a DCF-derived
+        # valuation floor, not a moving average, and the two say opposite
+        # things: canon §4a puts a price at or below the green line at an R/R
+        # score of 10 — the strongest buy the method produces. So the rule
+        # rejected the exact purchase the methodology calls for, under the
+        # heading "Gomes Rule Violation".
+        #
+        # Worse, because the price test was ANDed with the phase test, a
+        # WAIT_TIME position priced *above* its green line passed the guard —
+        # dead money at a full price, which is the case actually worth
+        # stopping.
+        #
+        # What survives is the half that is canonical: canon §3 says of Wait
+        # Time, plainly, "NEBÝT INVESTOVANÝ". The price plays no part in it.
+        if stock.inflection_status == 'WAIT_TIME':
+            logger.warning(f"⏸ ORDER BLOCKED: {ticker} — Wait Time (kánon §3)")
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
-                    "error": "WEINSTEIN_STAGE_4",
-                    "message": f"Gomes Rule Violation: Weinstein Stage 4. Price is {percent_below:.1f}% below support. Don't catch a falling knife.",
+                    "error": "WAIT_TIME",
+                    "message": (
+                        f"Gomes: {ticker} je ve fázi Wait Time — hype opadl, "
+                        f"story ještě nechytila. Kánon §3: nebýt investovaný. "
+                        f"Cena na tom nic nemění."
+                    ),
                     "ticker": ticker,
                     "action": action,
                     "current_price": stock.current_price,
-                    "support_level": stock.green_line,
+                    "green_line": stock.green_line,
                 }
             )
         

@@ -101,7 +101,7 @@ věřit, je horší než žádný — je to první místo, kam se podíváš, kd
 
 ## P2 — věrnost metodě (kánon říká, kód nemá)
 
-### `[?]` B9. Weinstein pilíř odporuje kánonu — tvoje rozhodnutí
+### `[x]` B9. Weinstein pilíř odporuje kánonu — tvoje rozhodnutí
 
 Master Signal má „Weinstein Guard" (30 WMA, 15 % váhy) = technická analýza. Gomes explicitně píše, že
 metoda *„has almost NOTHING to do with technical analysis"* (kánon gap #3).
@@ -158,3 +158,13 @@ opravdu jde (gap #6). Nejmenší dopad z P2 — dokud nejsi v Yellow/Orange, nes
 - `[x]` B4 Kurzy z ledna 2025 se používaly tiše; neznámá měna dostávala kurz dolaru
 - `[x]` B5 Analýza commitla nové skóre a teprve pak spadla na chybějícím poli
 - `[x]` B6 Automatizovaný stack četl názvy proměnných, které v `.env` nejsou; e-mail padal na neplatném format specu
+- `[x]` B9 „Weinstein Stage 4“ nebyl Weinstein a blokoval nákup pod green line — tvoje volba: označit jako vlastní rozšíření
+
+---
+
+## Vyžaduje tvůj zásah (ne kód)
+
+- **Gmail app password vypršelo.** Ověřeno 22. 8. živým odesláním: server odpověděl
+  `535 BadCredentials`. Kanál se postaví a dojde až ke Gmailu, ale nepřihlásí se.
+  Vygeneruj nové app password na myaccount.google.com → Security → App passwords
+  a přepiš `SMTP_PASSWORD` v `backend/.env`. Do té doby ti appka nemůže nic poslat.

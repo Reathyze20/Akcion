@@ -152,6 +152,10 @@ class EmailChannel(NotificationChannel):
         self.password = password
         self.from_email = from_email
         self.to_email = to_email
+        #: Why the last send failed, in Czech, or None. A channel that cannot
+        #: deliver has to be able to say so — silence is the one answer this
+        #: app must never give about a message it failed to send.
+        self.last_error: str | None = None
     
     async def send(self, alert: Alert) -> bool:
         """Send email notification"""
@@ -173,9 +177,24 @@ class EmailChannel(NotificationChannel):
                 server.send_message(msg)
             
             logger.info(f"Email alert sent for {alert.ticker}")
+            self.last_error = None
             return True
-            
+
+        except smtplib.SMTPAuthenticationError as e:
+            # Not a hiccup. The credential is dead and stays dead until you
+            # replace it — retrying for a week changes nothing. Verified on
+            # 2026-08-22: Gmail answered 535 BadCredentials, which is how we
+            # learned the app password had expired since January.
+            self.last_error = (
+                f"E-mail nelze odeslat: server odmítl přihlášení ({e.smtp_code}). "
+                f"Nejspíš vypršelo app password — vygeneruj nové a přepiš "
+                f"SMTP_PASSWORD v backend/.env"
+            )
+            logger.error(self.last_error)
+            return False
+
         except Exception as e:
+            self.last_error = f"E-mail nelze odeslat: {e}"
             logger.error(f"Failed to send email alert: {e}")
             return False
     
@@ -260,6 +279,8 @@ class NotificationService:
         #: Why each channel could not be built. Kept so "nothing was sent" can
         #: be answered with a reason instead of silence.
         self.unconfigured: list[str] = []
+        #: Why each channel's last send failed, keyed by channel name.
+        self.last_errors: dict[str, str] = {}
     
     def add_channel(self, channel: NotificationChannel) -> None:
         """Add notification channel"""
@@ -279,7 +300,23 @@ class NotificationService:
             channel_name = channel.__class__.__name__
             success = await channel.send(alert)
             results[channel_name] = success
-        
+            if not success:
+                self.last_errors[channel_name] = (
+                    getattr(channel, "last_error", None)
+                    or f"{channel_name}: odeslání selhalo bez uvedení důvodu"
+                )
+            else:
+                self.last_errors.pop(channel_name, None)
+
+        if results and not any(results.values()):
+            # Every channel failed. This is the state where the app has stopped
+            # being able to reach you at all, which for a week away is the
+            # difference between the app working and not existing.
+            logger.error(
+                "ŽÁDNÝ notifikační kanál nedoručil alert %s: %s",
+                alert.ticker, "; ".join(self.last_errors.values()),
+            )
+
         return results
     
     @classmethod

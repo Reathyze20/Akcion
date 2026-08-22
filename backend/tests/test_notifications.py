@@ -158,3 +158,54 @@ class TestSending:
         with patch("app.services.notifications.smtplib.SMTP",
                    side_effect=OSError("connection refused")):
             assert await _channel().send(_alert()) is False
+
+
+# ==============================================================================
+# A channel that cannot deliver has to say so
+# ==============================================================================
+
+class TestDeliveryFailuresAreLoud:
+    @pytest.mark.asyncio
+    async def test_dead_credentials_name_the_setting_to_replace(self):
+        """
+        Verified against Gmail on 2026-08-22: the app password in .env had
+        expired and the server answered 535 BadCredentials. That is not a
+        hiccup — no amount of retrying fixes it — so it must not read like one.
+        """
+        import smtplib
+
+        channel = _channel()
+        with patch("app.services.notifications.smtplib.SMTP",
+                   side_effect=smtplib.SMTPAuthenticationError(535, b"BadCredentials")):
+            assert await channel.send(_alert()) is False
+
+        assert "SMTP_PASSWORD" in channel.last_error
+        assert "535" in channel.last_error
+
+    @pytest.mark.asyncio
+    async def test_a_successful_send_clears_the_last_error(self):
+        channel = _channel()
+        channel.last_error = "něco starého"
+        with patch("app.services.notifications.smtplib.SMTP") as smtp_cls:
+            smtp_cls.return_value.__enter__.return_value = MagicMock()
+            await channel.send(_alert())
+        assert channel.last_error is None
+
+    @pytest.mark.asyncio
+    async def test_total_delivery_failure_is_recorded_per_channel(self):
+        """
+        Every channel failing means the app has stopped being able to reach you
+        at all — for someone who may be away a week, that is the difference
+        between the app working and not existing.
+        """
+        service = NotificationService()
+        channel = _channel()
+        service.add_channel(channel)
+
+        with patch("app.services.notifications.smtplib.SMTP",
+                   side_effect=OSError("connection refused")):
+            results = await service.send_alert(_alert())
+
+        assert results == {"EmailChannel": False}
+        assert "EmailChannel" in service.last_errors
+        assert "connection refused" in service.last_errors["EmailChannel"]

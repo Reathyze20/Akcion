@@ -42,10 +42,12 @@ Tvá analýza musí generovat MASTER SIGNAL, který kombinuje 3 pilíře:
    - Valuace: Green Line (koupit) vs Red Line (prodat)
    - Price Zone: DEEP_VALUE | BUY_ZONE | FAIR_VALUE | OVERVALUED | EXTREME_PREMIUM
 
-**3. WEINSTEIN GUARD (15% váhy)**
+**3. WEINSTEIN GUARD (0% váhy — NENÍ z Gomesovy metody)**
+   - Gomes o své metodě píše, že "nemá skoro nic společného s technickou
+     analýzou". Tenhle pilíř je naše vlastní rozšíření, ne kánon, a proto
+     do skóre nevstupuje — slouží jen jako informativní odznak.
    - Technická fáze: Phase 1 (basing), Phase 2 (uptrend), Phase 3 (topping), Phase 4 (decline)
-   - NIKDY nekupuj v Phase 4 (cena pod klesající 30 WMA)
-   - Preferuj Phase 2 breakouty
+   - Phase 4 (cena pod klesající 30 WMA) hlas neblokuje, jen upozorňuje.
 
 ### LIFECYCLE PHASES (Rozhodující pro akci)
 
