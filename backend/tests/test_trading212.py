@@ -8,6 +8,7 @@ key, and the absence of any order-placing capability.
 """
 
 import ast
+import base64
 import inspect
 
 import pytest
@@ -57,15 +58,29 @@ def test_every_public_method_is_a_read():
 # ==============================================================================
 
 @pytest.mark.parametrize("bad", ["", "   ", None])
-def test_missing_key_fails_loudly_at_construction(bad):
+def test_missing_secret_fails_loudly_at_construction(bad):
     """Failing at construction beats failing on the first read at 6am."""
     with pytest.raises(Trading212AuthError, match="T212_API_KEY"):
-        Trading212Client(bad)  # type: ignore[arg-type]
+        Trading212Client(bad, "some-key-id")  # type: ignore[arg-type]
 
 
-def test_key_is_trimmed():
-    client = Trading212Client("  abc123  ")
-    assert client._key == "abc123"
+@pytest.mark.parametrize("bad", ["", "   ", None])
+def test_missing_key_id_fails_loudly_too(bad):
+    """
+    Trading 212 needs BOTH credentials — Basic auth over `id:secret`. The
+    secret alone answers 401 in every header shape, so a missing id must fail
+    here rather than surfacing later as an unexplained auth error.
+    """
+    with pytest.raises(Trading212AuthError, match="T212_API_KEY_ID"):
+        Trading212Client("some-secret", bad)  # type: ignore[arg-type]
+
+
+def test_credentials_are_trimmed_and_combined_into_basic_auth():
+    client = Trading212Client("  secret123  ", "  key-id-456  ")
+    assert client._key == "secret123"
+    assert client._key_id == "key-id-456"
+    expected = base64.b64encode(b"key-id-456:secret123").decode()
+    assert client._auth == f"Basic {expected}"
 
 
 # ==============================================================================
