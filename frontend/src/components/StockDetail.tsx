@@ -14,15 +14,17 @@
  * @fiduciary This component prioritizes capital protection over information density.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Stock } from '../types';
 import { apiClient } from '../api/client';
 import {
   GomesHeader,
   SafetyGaugeRow,
   ThesisCard,
+  TradeForm,
   TradingDeck
 } from './stock-detail';
+import type { MarketAlert, TradeSide } from '../types';
 import {
   BarChart3,
   FileText,
@@ -64,7 +66,12 @@ interface StockDetailProps {
   position?: EnrichedPosition;
   onClose: () => void;
   onUpdate?: () => void;
-  marketAlert?: 'RED' | 'YELLOW' | 'GREEN';
+  /**
+   * Optional override. When omitted the modal fetches the real traffic light
+   * itself — it used to default to GREEN, and since neither call site ever
+   * passed it, the RED-market buy block was unreachable in the shipped app.
+   */
+  marketAlert?: MarketAlert;
 }
 
 type TabId = 'overview' | 'trading' | 'analysis' | 'metadata' | 'position';
@@ -80,7 +87,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({
   position,
   onClose,
   onUpdate,
-  marketAlert = 'GREEN'
+  marketAlert: marketAlertOverride,
 }) => {
   // Derive stock from either prop or position
   const stock = stockProp ?? position?.stock;
@@ -96,6 +103,30 @@ export const StockDetail: React.FC<StockDetailProps> = ({
   ];
 
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+
+  // Real traffic light. Stays null until it actually loads — null means
+  // "unknown", which TradingDeck treats as a hard blocker, not as GREEN.
+  const [fetchedAlert, setFetchedAlert] = useState<MarketAlert | null>(null);
+  const marketAlert: MarketAlert | null = marketAlertOverride ?? fetchedAlert;
+
+  useEffect(() => {
+    if (marketAlertOverride) return;
+    let cancelled = false;
+    apiClient
+      .getMarketStatus()
+      .then((data) => {
+        if (!cancelled) setFetchedAlert(data.status as MarketAlert);
+      })
+      .catch(() => {
+        // Deliberately leave it null: a failed fetch must not read as GREEN.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [marketAlertOverride]);
+
+  // Which trade form is open, if any.
+  const [trade, setTrade] = useState<{ side: TradeSide; requireReason: boolean } | null>(null);
 
   // Position edit — the only reachable way to fill in a purchase price
   // (Degiro imports leave it null; see AKCION_SPEC §4/§7).
@@ -180,13 +211,12 @@ export const StockDetail: React.FC<StockDetailProps> = ({
     }).format(value);
   };
 
-  const handleBuyClick = () => {
-    console.log(`Buy clicked for ${stock.ticker}`);
-  };
-
-  const handleSellClick = () => {
-    console.log(`Sell clicked for ${stock.ticker}`);
-  };
+  const handleBuyClick = () => setTrade({ side: 'BUY', requireReason: false });
+  const handleSellClick = () => setTrade({ side: 'SELL', requireReason: false });
+  // Reached only via "už jsem obchod udělal" — the trade went against the
+  // rules, so the reason field becomes mandatory.
+  const handleRecordOffPlan = (side: TradeSide) =>
+    setTrade({ side, requireReason: true });
 
   // Use position's current_price if available, otherwise stock's
   const currentPrice = position?.current_price ?? stock.current_price;
@@ -334,6 +364,28 @@ export const StockDetail: React.FC<StockDetailProps> = ({
             {/* Trading Tab */}
             {activeTab === 'trading' && (
               <div className="space-y-5">
+                {/* Recording a trade takes over the panel while it is open. */}
+                {trade && position && (
+                  <TradeForm
+                    positionId={position.id}
+                    ticker={stock.ticker}
+                    side={trade.side}
+                    currentPrice={currentPrice}
+                    sharesHeld={displayShares ?? 0}
+                    avgCost={displayAvgCost}
+                    currency={position.currency ?? null}
+                    requireReason={trade.requireReason}
+                    onRecorded={() => { void onUpdate?.(); }}
+                    onCancel={() => setTrade(null)}
+                  />
+                )}
+
+                {trade && !position && (
+                  <p className="text-sm text-warning">
+                    ⚠️ Obchod nelze zapsat — tahle akcie zatím není pozicí v portfoliu.
+                  </p>
+                )}
+
                 {/* Trading Deck */}
                 <TradingDeck
                   ticker={stock.ticker}
@@ -347,8 +399,11 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                   maxBuyPrice={stock.max_buy_price ?? null}
                   stopLossPrice={stock.stop_loss_price ?? null}
                   actionVerdict={stock.action_verdict}
+                  currency={position?.currency ?? null}
+                  sharesHeld={displayShares ?? 0}
                   onBuyClick={handleBuyClick}
                   onSellClick={handleSellClick}
+                  onRecordOffPlan={handleRecordOffPlan}
                 />
                 
                 {/* Entry/Exit Zones */}

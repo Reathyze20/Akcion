@@ -12,6 +12,7 @@ Clean Code Principles Applied:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -81,6 +82,48 @@ class PositionUpdate(BaseModel):
     currency: str | None = None
     company_name: str | None = None
     ticker: str | None = None
+
+
+class TradeRequest(BaseModel):
+    """
+    A trade the owner actually executed at his broker, being recorded here.
+
+    The app is decision-support: it never places orders. This records what
+    already happened so the ledger stays the source of truth for realized P/L
+    and for the guardrails that read it (cooldown after a loss, revenge-trade
+    detection).
+    """
+
+    side: Literal["BUY", "SELL"]
+    shares: float = Field(..., gt=0, description="Shares traded (must be > 0)")
+    price: float = Field(..., gt=0, description="Price per share actually paid/received")
+    emotion_tag: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Why, in the owner's words — 'bál jsem se, ale koupil jsem dip'",
+    )
+    note: str | None = Field(default=None, max_length=500)
+
+
+class TradeResponse(BaseModel):
+    """Result of recording a trade: what was written and where the position landed."""
+
+    success: bool
+    log_id: int
+    ticker: str
+    side: str
+    shares: float
+    price: float
+    currency: str | None
+    gross_amount: float
+    # None (not 0) when the position's purchase price was never known.
+    realized_pl: float | None
+    cost_basis: float | None
+    new_shares_count: float
+    new_avg_cost: float | None
+    avg_cost_known: bool
+    position_closed: bool
+    message: str
 
 
 class PositionResponse(PositionBase):

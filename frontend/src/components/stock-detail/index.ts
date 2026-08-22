@@ -15,3 +15,6 @@ export type { ThesisCardProps } from './ThesisCard';
 
 export { TradingDeck } from './TradingDeck';
 export type { TradingDeckProps } from './TradingDeck';
+
+export { TradeForm } from './TradeForm';
+export type { TradeFormProps } from './TradeForm';

@@ -32,6 +32,8 @@ from ..models.portfolio import (
 )
 from ..schemas.portfolio import (
     CSVUploadResponse,
+    TradeRequest,
+    TradeResponse,
     MarketStatusResponse,
     MarketStatusUpdate,
     PortfolioCreate,
@@ -795,6 +797,72 @@ def update_position(
     db.refresh(db_position)
     
     return db_position
+
+
+@router.post("/positions/{position_id}/trade", response_model=TradeResponse)
+def record_position_trade(
+    position_id: int,
+    trade: TradeRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Record a BUY/SELL the owner already executed at his broker.
+
+    Writes an immutable `investment_logs` row AND moves the position, in one
+    transaction. Before this existed, exits were recorded by overwriting
+    `shares_count`, which discarded the sale price — realized P/L was
+    unrecoverable and the loss-cooldown guardrail had nothing to read.
+
+    `realized_pl` comes back as null (never 0) when the position's purchase
+    price was never known, e.g. a Degiro import predating 2026-07-26.
+    """
+    from ..services.trade_ledger import TradeError, TradeSide, record_trade
+
+    try:
+        position, log, outcome = record_trade(
+            db,
+            position_id=position_id,
+            side=TradeSide(trade.side),
+            shares=trade.shares,
+            price=trade.price,
+            emotion_tag=trade.emotion_tag,
+            note=trade.note,
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Position not found")
+    except TradeError as e:
+        # A bad trade is the caller's mistake, not a server fault — say what.
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if outcome.realized_pl is None and trade.side == "SELL":
+        pl_msg = "realizovaný zisk nelze spočítat — chybí nákupní cena"
+    elif trade.side == "SELL":
+        pl_msg = f"realizováno {outcome.realized_pl:+.2f} {position.currency or ''}".strip()
+    else:
+        pl_msg = "pozice navýšena"
+
+    logger.info(
+        "Trade recorded via API: position=%s %s %s @ %s",
+        position_id, trade.side, trade.shares, trade.price,
+    )
+
+    return TradeResponse(
+        success=True,
+        log_id=log.id,
+        ticker=position.ticker,
+        side=trade.side,
+        shares=trade.shares,
+        price=trade.price,
+        currency=position.currency,
+        gross_amount=outcome.gross_amount,
+        realized_pl=outcome.realized_pl,
+        cost_basis=outcome.cost_basis,
+        new_shares_count=outcome.new_shares,
+        new_avg_cost=outcome.new_avg_cost,
+        avg_cost_known=outcome.avg_cost_known,
+        position_closed=outcome.closes_position,
+        message=pl_msg,
+    )
 
 
 @router.delete("/positions/{position_id}")

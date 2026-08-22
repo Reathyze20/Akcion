@@ -26,6 +26,9 @@ import type {
   MarketStatusData,
   BrokerType,
   MarketStatus,
+  // Trade ledger
+  TradeRequest,
+  TradeResponse,
   // Gomes Analyzer types
   ConvictionScoreResponse,
   AnalyzeRequest,
@@ -308,6 +311,24 @@ class ApiClient {
     const response = await this.client.put<Position>(
       `/api/portfolio/positions/${positionId}`,
       data
+    );
+    return response.data;
+  }
+
+  /**
+   * Record a BUY/SELL already executed at the broker.
+   *
+   * Writes the ledger row and moves the position server-side in ONE
+   * transaction — do not emulate this with updatePosition(), which discards
+   * the trade price and leaves realized P/L unrecoverable.
+   */
+  async recordTrade(
+    positionId: number,
+    trade: TradeRequest
+  ): Promise<TradeResponse> {
+    const response = await this.client.post<TradeResponse>(
+      `/api/portfolio/positions/${positionId}/trade`,
+      trade
     );
     return response.data;
   }

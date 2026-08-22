@@ -12,6 +12,7 @@
  */
 
 import React from 'react';
+import type { MarketAlert } from '../../types';
 import { 
   Lock, 
   Unlock, 
@@ -26,7 +27,13 @@ export interface TradingDeckProps {
   ticker: string;
   currentPrice: number | null;
   // Safety Conditions
-  marketAlert: 'RED' | 'YELLOW' | 'GREEN';
+  /**
+   * Current market traffic light. `null` means NOT YET KNOWN (still loading,
+   * or the fetch failed) — it is deliberately NOT the same as GREEN and must
+   * block buying. Defaulting an unknown market to GREEN is how this component
+   * shipped for months with the RED-market block unreachable.
+   */
+  marketAlert: MarketAlert | null;
   cashRunwayMonths: number | null;
   inflectionStatus: 'WAIT_TIME' | 'UPCOMING' | 'ACTIVE_GOLD_MINE' | null;
   priceZone: string | null;
@@ -37,8 +44,19 @@ export interface TradingDeckProps {
   stopLossPrice: number | null;
   // Action
   actionVerdict: string | null;
+  /** Position currency, so prices are not all rendered as USD. */
+  currency?: string | null;
+  /** Shares held — selling is only possible if there is something to sell. */
+  sharesHeld?: number;
   onBuyClick?: () => void;
   onSellClick?: () => void;
+  /**
+   * Record a trade the owner already executed at the broker despite the
+   * blockers. Always available: blocking the *encouragement* to trade is the
+   * guardrail; blocking the *truth* about what he did would only make the
+   * ledger wrong.
+   */
+  onRecordOffPlan?: (side: 'BUY' | 'SELL') => void;
 }
 
 interface TradeBlocker {
@@ -52,11 +70,28 @@ interface TradeBlocker {
 const evaluateTradeBlockers = (props: TradingDeckProps): TradeBlocker[] => {
   const blockers: TradeBlocker[] = [];
   
-  // Rule 1: Market Alert (Traffic Light)
-  if (props.marketAlert === 'RED') {
+  // Rule 1: Market Alert (Traffic Light) — canon §2.
+  // Unknown blocks too: when we don't know the market state, the fiduciary
+  // answer is "don't buy", never "go ahead".
+  if (props.marketAlert === null) {
+    blockers.push({
+      reason: 'Stav trhu není známý — dokud se nenačte, nekupuj',
+      severity: 'critical',
+    });
+  } else if (props.marketAlert === 'RED') {
     blockers.push({
       reason: 'Trh je v režimu RED - Cash is King, žádné nákupy',
       severity: 'critical',
+    });
+  } else if (props.marketAlert === 'ORANGE') {
+    blockers.push({
+      reason: 'Trh je v režimu ORANGE - navyšuj hotovost, nekupuj',
+      severity: 'critical',
+    });
+  } else if (props.marketAlert === 'YELLOW') {
+    blockers.push({
+      reason: 'Trh je v režimu YELLOW - spekulativní nákupy stop',
+      severity: 'warning',
     });
   }
   
@@ -114,8 +149,11 @@ export const TradingDeck: React.FC<TradingDeckProps> = (props) => {
     maxBuyPrice,
     stopLossPrice,
     actionVerdict,
+    currency,
+    sharesHeld = 0,
     onBuyClick,
     onSellClick,
+    onRecordOffPlan,
   } = props;
   
   const blockers = evaluateTradeBlockers(props);
@@ -251,11 +289,11 @@ export const TradingDeck: React.FC<TradingDeckProps> = (props) => {
         {/* Sell Button */}
         <button
           onClick={onSellClick}
-          disabled={!isSellAction}
+          disabled={sharesHeld <= 0}
           className={`
             flex-1 flex items-center justify-center gap-2 py-3 rounded-lg
             font-semibold transition-all
-            ${isSellAction
+            ${sharesHeld > 0
               ? 'bg-negative text-white hover:bg-negative/90 cursor-pointer'
               : 'bg-text-muted/20 text-text-muted cursor-not-allowed'}
           `}
@@ -265,11 +303,29 @@ export const TradingDeck: React.FC<TradingDeckProps> = (props) => {
         </button>
       </div>
       
+      {/* Already traded anyway? The ledger must still be able to record it. */}
+      {onRecordOffPlan && (
+        <div className="px-4 pb-3 -mt-1 text-center">
+          <button
+            onClick={() => onRecordOffPlan(isTradeable && isBuyAction ? 'BUY' : 'SELL')}
+            className="text-xs text-text-muted underline hover:text-text-primary"
+          >
+            Už jsem obchod udělal u brokera — zapsat ho
+          </button>
+        </div>
+      )}
+
       {/* Current Price Reference */}
       {currentPrice !== null && (
         <div className="px-4 py-2 bg-primary-card/30 border-t border-border text-center">
           <span className="text-xs text-text-muted">Aktuální cena: </span>
-          <span className="text-sm font-mono font-bold text-text-primary">${currentPrice.toFixed(2)}</span>
+          <span className="text-sm font-mono font-bold text-text-primary">
+            {new Intl.NumberFormat('cs-CZ', {
+              style: currency ? 'currency' : 'decimal',
+              currency: currency ?? undefined,
+              maximumFractionDigits: 2,
+            }).format(currentPrice)}
+          </span>
         </div>
       )}
     </div>
