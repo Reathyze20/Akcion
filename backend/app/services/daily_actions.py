@@ -92,12 +92,23 @@ def generate_daily_actions(
     cash_czk: float | None,
     fx_rate_to_czk: Callable[[str], float],
     now: datetime | None = None,
+    behaviour_brakes: Callable[[float], list[str]] | None = None,
+    reentry_note: Callable[[str], str | None] | None = None,
 ) -> DailyActionResponse:
     """
     Build the daily action list. Pure function — inject FX and clock for tests.
 
     `analyses` should hold the latest take per (ticker, source_key); tickers
     not in `positions` are treated as watchlist BUY candidates.
+
+    `behaviour_brakes` is called with the computed portfolio value and returns
+    observations about recent trading — a loss just taken, a burst of activity.
+    They are appended to `warnings`, never to `actions`: they inform the
+    decision, they do not make it.
+
+    `reentry_note` is called with each proposed BUY ticker and returns a note
+    if that ticker was sold at a loss recently. Same contract: it annotates the
+    buy, it never removes it.
     """
     now = now or datetime.utcnow()
     warnings: list[str] = []
@@ -235,6 +246,19 @@ def generate_daily_actions(
         )
 
     # ------------------------------------------------------------------
+    # Behavioural observations — what the trade ledger says about how the last
+    # few days went. Warnings, never actions: the app names the pattern, the
+    # decision stays with the owner.
+    # ------------------------------------------------------------------
+    if behaviour_brakes is not None:
+        try:
+            warnings.extend(behaviour_brakes(portfolio_value_czk))
+        except Exception:
+            # A brake that cannot be computed must not take the day's actions
+            # down with it — those still hold without it.
+            logger.exception("Emoční brzdy se nepodařilo spočítat")
+
+    # ------------------------------------------------------------------
     # Watchlist: BUY candidates through the hard Buy Guard
     # ------------------------------------------------------------------
     for ticker, analysis in sorted(gomes_by_ticker.items()):
@@ -252,6 +276,21 @@ def generate_daily_actions(
     # ------------------------------------------------------------------
     candidates.sort(key=lambda a: (-a.urgency_score, a.ticker))
     actions = candidates[:MAX_ACTIONS]
+
+    # A buy-back into something sold at a loss is worth a second look at the
+    # moment it is proposed, not buried in a list further down. The buy still
+    # stands — this only puts the question next to it.
+    if reentry_note is not None:
+        for action in actions:
+            if not action.action_type.startswith("BUY"):
+                continue
+            try:
+                note = reentry_note(action.ticker)
+            except Exception:
+                logger.exception("Kontrola zpětného nákupu %s selhala", action.ticker)
+                continue
+            if note:
+                warnings.append(note)
 
     return DailyActionResponse(
         market_alert=alert.value if alert else "UNKNOWN",

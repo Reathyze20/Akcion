@@ -109,14 +109,14 @@ metoda *„has almost NOTHING to do with technical analysis"* (kánon gap #3).
 Tři možnosti: označit jako **vlastní rozšíření mimo Gomese**, snížit váhu, nebo odstranit.
 Neudělám to za tebe — je to tvoje metodické rozhodnutí, ne bug.
 
-### `[ ]` B10. Yellow neflagne držené WAIT_TIME pozice
+### `[x]` B10. Yellow neflagne držené WAIT_TIME pozice
 
 Kánon §2: v Yellow se prodávají **všechny spekulativní i „Wait Time"** akcie. `get_blocked_tiers`
 blokuje jen TERTIARY tier, ne držené WAIT_TIME pozice (gap #9). Půlka pravidla chybí.
 
 Data jsou: `inflection_status` se od commitu `31184dc` konečně čte z reálného záznamu.
 
-### `[ ]` B11. Emoční brzdy — cooldown po ztrátě, detekce revenge-tradingu
+### `[x]` B11. Emoční brzdy — cooldown po ztrátě, detekce revenge-tradingu
 
 Audit je označil za neexistující, protože nebyla kniha obchodů. **Ta teď existuje**
 (`services/trade_ledger.py`, zapisuje i `emotion_tag`) — takže brzdy jdou konečně postavit.

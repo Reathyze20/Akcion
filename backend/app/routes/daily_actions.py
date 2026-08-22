@@ -22,6 +22,7 @@ from app.models.portfolio import MarketStatus, Portfolio, Position
 from app.models.stock import Stock
 from app.schemas.daily_actions import DailyActionResponse
 from app.services.currency import CurrencyService
+from app.services.emotional_brakes import check_reentry, collect_brakes
 from app.services.daily_actions import (
     AnalysisInput,
     PositionInput,
@@ -139,6 +140,13 @@ def get_daily_actions(db: Session = Depends(get_db)) -> DailyActionResponse:
             analyses,
             cash_czk,
         ) = load_daily_action_inputs(db)
+        def brakes(portfolio_value_czk: float) -> list[str]:
+            """What the trade ledger says about the last few days."""
+            return [
+                brake.message
+                for brake in collect_brakes(db, portfolio_value_czk)
+            ]
+
         return generate_daily_actions(
             market_alert=market_alert,
             market_alert_updated_at=alert_updated_at,
@@ -146,6 +154,12 @@ def get_daily_actions(db: Session = Depends(get_db)) -> DailyActionResponse:
             analyses=analyses,
             cash_czk=cash_czk,
             fx_rate_to_czk=CurrencyService.get_rate_to_czk,
+            behaviour_brakes=brakes,
+            reentry_note=lambda ticker: (
+                brake.message
+                if (brake := check_reentry(db, ticker)) is not None
+                else None
+            ),
         )
     except Exception as e:
         logger.exception("Daily actions failed")
