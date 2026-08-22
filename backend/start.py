@@ -41,15 +41,15 @@ def main():
         sys.exit(1)
     
     print("\nStarting FastAPI server...")
-    print("   API will be available at: http://localhost:8000")
-    print("   API Documentation: http://localhost:8000/docs")
+    print("   API will be available at: http://localhost:8002")
+    print("   API Documentation: http://localhost:8002/api/docs")
     print("   Press Ctrl+C to stop the server")
     print("=" * 50)
     print()
     
     try:
         subprocess.run(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8002"],
             check=True
         )
     except KeyboardInterrupt:

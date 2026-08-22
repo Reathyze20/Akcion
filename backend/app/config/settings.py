@@ -43,6 +43,12 @@ class Settings(BaseSettings):
         alias="GEMINI_API_KEY",
         description="Google Gemini API key",
     )
+
+    anthropic_api_key: str | None = Field(
+        default=None,
+        alias="ANTHROPIC_API_KEY",
+        description="Anthropic Claude API key — research layer (web_search + MCP)",
+    )
     
     # Market Data API
     massive_api_key: str | None = Field(
@@ -102,7 +108,7 @@ class Settings(BaseSettings):
     
     # API Settings (for FastAPI)
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
-    api_port: int = Field(default=8000, alias="API_PORT")
+    api_port: int = Field(default=8002, alias="API_PORT")
     
     # CORS Settings
     cors_origins: str | list[str] = Field(

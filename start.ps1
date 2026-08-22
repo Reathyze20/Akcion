@@ -20,7 +20,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$frontendPath
 
 Write-Host "`n✅ Full stack started!" -ForegroundColor Green
 Write-Host "`n📝 URLs:" -ForegroundColor White
-Write-Host "   Backend API: http://localhost:8000" -ForegroundColor Gray
-Write-Host "   Swagger Docs: http://localhost:8000/api/docs" -ForegroundColor Gray
+Write-Host "   Backend API: http://localhost:8002" -ForegroundColor Gray
+Write-Host "   Swagger Docs: http://localhost:8002/api/docs" -ForegroundColor Gray
 Write-Host "   Frontend: http://localhost:5173" -ForegroundColor Gray
 Write-Host "`n💡 Tip: Close terminal windows to stop servers" -ForegroundColor Yellow

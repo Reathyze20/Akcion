@@ -56,8 +56,8 @@ copy .env.example .env
 python start.py
 ```
 
-Backend: **http://localhost:8000**  
-API Docs: **http://localhost:8000/docs**
+Backend: **http://localhost:8002**  
+API Docs: **http://localhost:8002/api/docs**
 
 ### 2. Frontend
 
@@ -233,7 +233,7 @@ DEBUG=True
 ### Frontend (.env)
 
 ```env
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8002
 ```
 
 ---
