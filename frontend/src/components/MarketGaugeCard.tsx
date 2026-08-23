@@ -19,6 +19,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Check, Info, RefreshCw, TrendingUp } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { alertDot, alertName, day, decimal, percent } from '../lib/format';
+import Term from './ui/Term';
 import type { ChannelPosition, MarketGauge } from '../api/client';
 
 interface MarketGaugeCardProps {
@@ -54,13 +56,6 @@ const POSITION_STYLE: Record<
     pill: 'bg-positive-bg text-positive border-positive-border',
     marker: 'bg-positive',
   },
-};
-
-const ALERT_DOT: Record<string, string> = {
-  GREEN: '🟢',
-  YELLOW: '🟡',
-  ORANGE: '🟠',
-  RED: '🔴',
 };
 
 const formatIndex = (value: number): string =>
@@ -135,11 +130,11 @@ export const MarketGaugeCard: React.FC<MarketGaugeCardProps> = ({ className = ''
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-text-muted" />
             <h3 className="text-text-primary text-sm font-semibold">
-              {gauge.index} na {gauge.years.toFixed(0)}letém grafu
+              {gauge.index} na dlouhodobém grafu
             </h3>
           </div>
           <p className="text-text-muted text-xs mt-1">
-            Kánon §2 z tohohle odvozuje semafor. Data k {gauge.as_of}.
+            Kánon §2 z tohohle odvozuje semafor. Data k {day(gauge.as_of)}.
           </p>
         </div>
         <button
@@ -155,7 +150,8 @@ export const MarketGaugeCard: React.FC<MarketGaugeCardProps> = ({ className = ''
       <div className="flex items-baseline gap-3 mt-4">
         <span className="text-text-primary text-2xl font-semibold tabular-nums">
           {gauge.z_score > 0 ? '+' : ''}
-          {gauge.z_score.toFixed(2)}σ
+          {decimal(gauge.z_score, 2)}
+          <Term id="sigma">σ</Term>
         </span>
         <span
           className={`px-2 py-0.5 rounded border text-[11px] font-medium ${style.pill}`}
@@ -163,7 +159,7 @@ export const MarketGaugeCard: React.FC<MarketGaugeCardProps> = ({ className = ''
           {style.label}
         </span>
         <span className="text-text-muted text-xs">
-          {gauge.percentile.toFixed(0)}. percentil za {gauge.years.toFixed(1)} let
+          {Math.round(gauge.percentile)}. percentil za {decimal(gauge.years)} let
         </span>
       </div>
 
@@ -198,8 +194,12 @@ export const MarketGaugeCard: React.FC<MarketGaugeCardProps> = ({ className = ''
             <AlertTriangle size={14} className="text-warning shrink-0" />
           )}
           <span className="text-text-primary">
-            Graf odpovídá {ALERT_DOT[gauge.suggested_alert] ?? ''}{' '}
-            <strong>{gauge.suggested_alert}</strong>
+            Graf odpovídá stupni{' '}
+            <span
+              className={`inline-block h-2 w-2 rounded-full align-middle ${alertDot(gauge.suggested_alert)}`}
+              aria-hidden="true"
+            />{' '}
+            <strong>{alertName(gauge.suggested_alert)}</strong>
           </span>
         </div>
         <p className="text-text-secondary text-xs mt-2">{gauge.agreement_cs}</p>
@@ -212,7 +212,7 @@ export const MarketGaugeCard: React.FC<MarketGaugeCardProps> = ({ className = ''
       </div>
 
       <p className="text-[10px] text-text-muted mt-3">
-        Dlouhodobý trend {gauge.trend_pct_per_year.toFixed(1)} % ročně. Semafor
+        Dlouhodobý trend {percent(gauge.trend_pct_per_year)} ročně. Semafor
         se z tohohle nepřepíná automaticky — je to podklad, ne verdikt.
       </p>
     </div>

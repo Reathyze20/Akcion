@@ -29,6 +29,7 @@ import AwayModeCard from './AwayModeCard';
 import ClearPortfolioButton from './ClearPortfolioButton';
 import RiskMeter from './RiskMeter';
 import Term from './ui/Term';
+import { percent, plural } from '../lib/format';
 import GoalPage from './goal/GoalPage';
 import ThemeToggle from './ui/ThemeToggle';
 
@@ -450,11 +451,11 @@ const PortfolioRow: React.FC<{
               </div>
               {position.avg_cost != null ? (
                 <div className="text-[9px] text-text-muted">
-                  Cost: {formatPrice(position.avg_cost, position.currency)}
+                  Nákup: {formatPrice(position.avg_cost, position.currency)}
                 </div>
               ) : (
                 <div className="text-[9px] text-text-muted" title="Broker export neobsahuje nákupní cenu — doplň ji v detailu pozice">
-                  Cost: <span className="text-warning">doplň</span>
+                  Nákup: <span className="text-warning">doplň</span>
                 </div>
               )}
             </>
@@ -1125,7 +1126,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               </div>
               
               <div className="border-t border-border pt-3 flex justify-between">
-                <span className="text-text-secondary">Cost Basis</span>
+                <span className="text-text-secondary">Pořizovací cena</span>
                 <span className="font-mono text-text-secondary">
                   {position.cost_basis != null ? formatCurrency(position.cost_basis, position.currency || 'USD') : '⚠️ chybí nákupní cena'}
                 </span>
@@ -1135,7 +1136,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                 <span className="font-mono text-text-primary">{formatCurrency(position.market_value, position.currency || 'USD')}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Unrealized P/L</span>
+                <span className="text-text-secondary">Nerealizovaný <Term id="pl">P/L</Term></span>
                 <div className="text-right">
                   {position.unrealized_pl != null && position.unrealized_pl_percent != null ? (
                     <>
@@ -3020,12 +3021,15 @@ export const InvestmentTerminal: React.FC = () => {
                   return months > 0 ? (
                     <div className="text-[10px] text-accent mt-1 flex items-center justify-center gap-1">
                       <span>
-                        {years > 0 ? `${years}y ` : ''}{remainingMonths}m to target
-                        {' '}(15% return + 20k/mo)
+                        {years > 0 ? `${years} ${plural(years, 'rok', 'roky', 'let')} ` : ''}
+                        {remainingMonths > 0
+                          ? `${remainingMonths} ${plural(remainingMonths, 'měsíc', 'měsíce', 'měsíců')} `
+                          : ''}
+                        do cíle{' '}(při 15 % ročně a vkladu 20 tis. Kč měsíčně)
                       </span>
                     </div>
                   ) : (
-                    <div className="text-[10px] text-positive mt-1">Target reached!</div>
+                    <div className="text-[10px] text-positive mt-1">Cíl splněn.</div>
                   );
                 })()}
               </div>
@@ -3120,7 +3124,7 @@ export const InvestmentTerminal: React.FC = () => {
                     ≈ €{(familyData.totalCash / (exchangeRates.EUR || 25)).toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
                   </div>
                   <div className="text-xs text-text-muted mt-1">
-                    {familyData.totalValue > 0 ? ((familyData.totalCash / familyData.totalValue) * 100).toFixed(1) : 0}% portfolia
+                    {percent(familyData.totalValue > 0 ? (familyData.totalCash / familyData.totalValue) * 100 : 0)} portfolia
                   </div>
                 </>
               )}
@@ -3273,13 +3277,13 @@ export const InvestmentTerminal: React.FC = () => {
               return (
                 <>
                   <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Total Value</div>
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Hodnota celkem</div>
                     <div className="text-2xl font-bold text-text-primary">
                       {totalValue.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                     </div>
                   </div>
                   <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Cost Basis</div>
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Pořizovací cena</div>
                     <div className="text-2xl font-bold text-text-secondary">
                       {totals.costBasis.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                     </div>
@@ -3292,7 +3296,7 @@ export const InvestmentTerminal: React.FC = () => {
                     )}
                   </div>
                   <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Unrealized P/L</div>
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Nerealizovaný <Term id="pl">P/L</Term></div>
                     <div className={`text-2xl font-bold ${totals.unrealizedPL >= 0 ? 'text-positive' : 'text-negative'}`}>
                       {totals.unrealizedPL >= 0 ? '+' : ''}{totals.unrealizedPL.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                       <span className="text-sm ml-2">
@@ -3301,7 +3305,7 @@ export const InvestmentTerminal: React.FC = () => {
                     </div>
                   </div>
                   <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Cash Balance</div>
+                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Hotovost</div>
                     <div className="text-2xl font-bold text-accent">
                       {totals.cash.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
                     </div>

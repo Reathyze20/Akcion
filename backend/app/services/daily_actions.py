@@ -22,7 +22,7 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Callable
+from typing import Callable, Final
 
 from app.core.sources import verdict_stance
 from app.services.currency import CurrencyError, currency_mismatch
@@ -222,11 +222,11 @@ def generate_daily_actions(
     )
     _grouped(
         warnings, unjudgeable,
-        "⚠️ NEZNÁMÁ KVALITA: {t} nemá fázi ani konvikční skóre — v {alert} "
-        "Alert nedokážu posoudit, jestli ji držet; rozhodni sám",
+        "⚠️ NEZNÁMÁ KVALITA: {t} nemá fázi ani konvikční skóre — při stupni "
+        "{alert} nedokážu posoudit, jestli ji držet; rozhodni sám",
         "⚠️ NEZNÁMÁ KVALITA u {n} pozic ({tickers}) — chybí fáze i konvikční "
-        "skóre, v {alert} Alert je neposoudím; rozhodni sám",
-        alert=alert.value if alert else "?",
+        "skóre, při stupni {alert} je neposoudím; rozhodni sám",
+        alert=_alert_cs(alert),
     )
     _grouped(
         warnings, currency_conflict,
@@ -321,6 +321,21 @@ def generate_daily_actions(
 # ==============================================================================
 # Rule helpers
 # ==============================================================================
+
+_ALERT_CS: Final[dict[str, str]] = {
+    "GREEN": "zelená",
+    "YELLOW": "žlutá",
+    "ORANGE": "oranžová",
+    "RED": "červená",
+}
+
+
+def _alert_cs(alert) -> str:
+    """Stupeň semaforu česky. Hodnota z databáze nepatří do věty pro čtenáře."""
+    if alert is None:
+        return "neznámý"
+    return _ALERT_CS.get(alert.value.upper(), alert.value)
+
 
 def _grouped(
     warnings: list[str],

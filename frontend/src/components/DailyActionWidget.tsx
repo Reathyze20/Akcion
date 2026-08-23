@@ -31,21 +31,53 @@ interface DailyActionWidgetProps {
   refreshKey?: number;
 }
 
-const ALERT_STYLE: Record<string, { emoji: string; label: string; pill: string }> = {
-  GREEN: { emoji: '🟢', label: 'TRH JE V POŘÁDKU', pill: 'bg-positive-bg text-positive border-positive-border' },
-  YELLOW: { emoji: '🟡', label: 'TRH: YELLOW — jen nejlepší setupy', pill: 'bg-warning-bg text-warning border-warning-border' },
-  ORANGE: { emoji: '🟠', label: 'TRH: ORANGE — defenziva', pill: 'bg-warning-bg text-warning border-warning-border' },
-  RED: { emoji: '🔴', label: 'TRH: RED — hotovost je král', pill: 'bg-negative-bg text-negative border-negative-border' },
-  UNKNOWN: { emoji: '⚠️', label: 'SEMAFOR NENÍ NASTAVEN', pill: 'bg-warning-bg text-warning border-warning-border' },
+/*
+ * Stupeň semaforu nese barevný bod, ne emoji. Emoji se vykresluje písmem
+ * systému, takže na každém stroji vypadá jinak a v tištěné podobě zmizí
+ * úplně; navíc se nedá přebarvit s tématem.
+ */
+const ALERT_STYLE: Record<string, { dot: string; label: string; pill: string }> = {
+  GREEN: {
+    dot: 'bg-signal-green',
+    label: 'Trh je v pořádku',
+    pill: 'bg-positive-bg text-positive border-positive-border',
+  },
+  YELLOW: {
+    dot: 'bg-signal-amber',
+    label: 'Žlutá — jen nejlepší příležitosti',
+    pill: 'bg-warning-bg text-warning border-warning-border',
+  },
+  ORANGE: {
+    dot: 'bg-signal-orange',
+    label: 'Oranžová — obranné držení',
+    pill: 'bg-warning-bg text-warning border-warning-border',
+  },
+  RED: {
+    dot: 'bg-signal-red',
+    label: 'Červená — přednost má hotovost',
+    pill: 'bg-negative-bg text-negative border-negative-border',
+  },
+  UNKNOWN: {
+    dot: 'bg-text-muted',
+    label: 'Semafor není nastaven',
+    pill: 'bg-warning-bg text-warning border-warning-border',
+  },
+};
+
+const ALERT_NAME: Record<string, string> = {
+  GREEN: 'zelená',
+  YELLOW: 'žlutá',
+  ORANGE: 'oranžová',
+  RED: 'červená',
 };
 
 // Semantic tokens only — the emoji + label carry the alert level, color stays quiet.
 const ACTION_STYLE: Record<string, { border: string; badge: string; label: string }> = {
-  BUY: { border: 'border-positive-border', badge: 'bg-positive-bg text-positive', label: 'BUY' },
-  TRIM: { border: 'border-warning-border', badge: 'bg-warning-bg text-warning', label: 'TRIM / TAKE PROFIT' },
-  SELL: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'SELL / DE-RISK' },
-  SELL_WAIT_TIME: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'SELL — WAIT TIME' },
-  LIQUIDATE_HEAVY: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'LIQUIDATE' },
+  BUY: { border: 'border-positive-border', badge: 'bg-positive-bg text-positive', label: 'Koupit' },
+  TRIM: { border: 'border-warning-border', badge: 'bg-warning-bg text-warning', label: 'Odebrat — vybrat zisk' },
+  SELL: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Prodat — snížit riziko' },
+  SELL_WAIT_TIME: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Prodat — kapitál nepracuje' },
+  LIQUIDATE_HEAVY: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Zlikvidovat pozici' },
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -134,12 +166,15 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
       {/* Header row: alert pill + cash pill + refresh */}
       <div className="flex items-center justify-between px-5 pt-4">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-xs font-bold px-3 py-1 rounded-full border ${alertStyle.pill}`}>
-            {alertStyle.emoji} MARKET ALERT: {data.market_alert}
+          <span
+            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${alertStyle.pill}`}
+          >
+            <span className={`h-2 w-2 rounded-full ${alertStyle.dot}`} aria-hidden="true" />
+            Semafor: {ALERT_NAME[data.market_alert] ?? data.market_alert}
           </span>
-          <span className="text-xs font-bold px-3 py-1 rounded-full border border-accent/40 bg-accent/10 text-accent flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
             <Wallet className="w-3.5 h-3.5" />
-            BOXX / Cash: {formatCzk(data.available_cash_czk)}
+            Volná hotovost: {formatCzk(data.available_cash_czk)}
           </span>
         </div>
         <button
@@ -155,13 +190,11 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
         /* State A: Nic. Drž. — the correct answer most days */
         <div className="px-5 py-8 text-center">
           <ShieldCheck className="w-12 h-12 mx-auto mb-3 text-positive/80" />
-          <h2 className="text-2xl font-black tracking-wide text-text-primary">
-            {alertStyle.emoji} {alertStyle.label}
-            <span className="mx-3 text-text-muted font-light">|</span>
-            STAV: <span className="text-positive">NIC. DRŽ.</span>
+          <h2 className="font-display text-3xl font-bold tracking-tight text-text-primary">
+            Dnes není co dělat.
           </h2>
-          <p className="text-sm text-text-secondary mt-2">
-            Žádné pravidlo nebylo porušeno. Kapitál je chráněn. Nemusíš nic dělat.
+          <p className="mt-2 text-sm text-text-secondary">
+            {alertStyle.label}. Žádné pravidlo nebylo porušeno, kapitál je chráněn.
           </p>
         </div>
       ) : (
