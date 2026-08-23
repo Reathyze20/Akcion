@@ -1744,7 +1744,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
           );
           onSuccess();
           setTimeout(() => onClose(), 1500);
-        } catch (uploadErr) {
+        } catch {
           setError('Portfolio created, but CSV upload failed. Try importing again.');
           onSuccess(); // Still refresh to show new portfolio
         }
@@ -1752,7 +1752,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
         setSuccess(`Portfolio "${portfolio.name}" created! Now select a CSV file.`);
         onSuccess();
       }
-    } catch (err) {
+    } catch {
       setError('Failed to create portfolio');
     } finally {
       setLoading(false);
@@ -1788,7 +1788,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
       } else {
         setError(result.message || 'Import failed');
       }
-    } catch (err) {
+    } catch {
       setError('Upload failed. Check file format.');
     } finally {
       setLoading(false);
@@ -2016,7 +2016,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
         onSuccess();
         onClose();
       }, 1000);
-    } catch (err) {
+    } catch {
       setError('Failed to add position');
     } finally {
       setLoading(false);
@@ -2184,7 +2184,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
     try {
       await onSubmit(transcript, ticker || undefined, inputType, url || undefined);
       onClose();
-    } catch (err) {
+    } catch {
       setError('Analysis failed. Please try again.');
     } finally {
       setLoading(false);
