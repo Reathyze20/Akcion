@@ -30,7 +30,9 @@ from sqlalchemy.orm import Session
 from app.models.sec import InsiderTransaction as InsiderTransactionRow
 from app.models.sec import SecCoverage, SecFiling
 from app.services.sec_edgar import (
+    WRAPPER_FORMS,
     CoverageStatus,
+    FilingDocument,
     SecEdgarClient,
     SecError,
     TickerCoverage,
@@ -45,6 +47,17 @@ from app.services.sec_fundamentals import (
 #: characters, so this leaves headroom for a long 10-K without ever sending an
 #: unbounded document. Truncation is reported, never silent.
 MAX_FILING_CHARS: Final[int] = 400_000
+
+#: Below this, what we read is a cover page rather than a report. A 6-K cover
+#: runs 1,400-2,400 characters of "the following is furnished herewith"; the
+#: shortest real quarterly announcement we have seen is an order of magnitude
+#: larger. The number only decides whether to *say* the source was thin — the
+#: text is analysed either way.
+MIN_SUBSTANTIVE_CHARS: Final[int] = 6_000
+
+#: At most this many exhibits are appended to one filing. A 20-F carries a
+#: dozen; reading all of them would send a novel to the model for no gain.
+MAX_EXHIBITS: Final[int] = 3
 
 
 @dataclass
@@ -88,6 +101,97 @@ def extract_text(html: str) -> tuple[str, bool]:
     if len(text) > MAX_FILING_CHARS:
         return text[:MAX_FILING_CHARS], True
     return text, False
+
+
+@dataclass(frozen=True)
+class FilingText:
+    """The text of a filing, and an honest account of where it came from."""
+
+    text: str
+    truncated: bool
+    #: Filenames actually read, in the order they were concatenated.
+    sources: list[str]
+    #: Set when the text is too thin to be a report. Carried into the summary
+    #: so "we read a cover page" cannot be mistaken for "the quarter was quiet".
+    thin_note: str | None = None
+
+
+def read_filing(
+    client: SecEdgarClient,
+    *,
+    url: str,
+    form: str,
+    cik: str,
+    accession: str,
+) -> FilingText | None:
+    """
+    Assemble everything worth reading in one filing.
+
+    For a 10-K or 10-Q the filed document *is* the report. For a 6-K or 8-K it
+    is a cover page naming an exhibit, and the exhibit is the quarter — so
+    those forms get their EX-99 attachments appended. A filing whose primary
+    document is unexpectedly thin gets the same treatment regardless of form,
+    because the wrapper habit is not confined to the two forms that mandate it.
+
+    Returns None only when the primary document itself cannot be fetched. An
+    exhibit that fails is logged and skipped: three quarters of a report beats
+    discarding it.
+    """
+    try:
+        primary = extract_text(client._get(url).text)[0]
+    except SecError as e:
+        logger.warning("Nelze stáhnout {}: {}", url, e)
+        return None
+
+    parts = [primary]
+    sources = [url.rsplit("/", 1)[-1]]
+
+    needs_exhibits = (
+        form.upper() in WRAPPER_FORMS or len(primary) < MIN_SUBSTANTIVE_CHARS
+    )
+    if needs_exhibits:
+        for exhibit in _substantive_exhibits(client, cik=cik, accession=accession):
+            if exhibit.filename in sources:
+                continue
+            try:
+                text = extract_text(client._get(exhibit.url).text)[0]
+            except SecError as e:
+                logger.warning("Přílohu {} nelze přečíst: {}", exhibit.filename, e)
+                continue
+            label = exhibit.description or exhibit.type
+            parts.append(
+                f"\n\n=== {exhibit.type} — {label} ===\n{text}"
+            )
+            sources.append(exhibit.filename)
+
+    combined = "".join(parts)
+    truncated = len(combined) > MAX_FILING_CHARS
+    if truncated:
+        combined = combined[:MAX_FILING_CHARS]
+
+    thin_note = None
+    if len(combined) < MIN_SUBSTANTIVE_CHARS:
+        thin_note = (
+            f"Podání má jen průvodní stranu ({len(combined)} znaků) a žádnou "
+            f"věcnou přílohu. Co v souhrnu nenajdeš, v přečteném dokumentu "
+            f"nebylo — neznamená to, že se nic nestalo."
+        )
+
+    return FilingText(
+        text=combined, truncated=truncated, sources=sources, thin_note=thin_note,
+    )
+
+
+def _substantive_exhibits(
+    client: SecEdgarClient, *, cik: str, accession: str,
+) -> list[FilingDocument]:
+    """The EX-99 attachments of one filing, newest sequence first, capped."""
+    try:
+        documents = client.fetch_documents(cik, accession)
+    except SecError as e:
+        logger.warning("Seznam příloh {} nelze přečíst: {}", accession, e)
+        return []
+    return [d for d in documents if d.is_substantive_exhibit][:MAX_EXHIBITS]
 
 
 # ==============================================================================
@@ -221,22 +325,28 @@ def analyze_filing(
     """
     client = client or SecEdgarClient()
 
-    try:
-        html = client._get(filing.url).text
-    except SecError as e:
-        logger.warning("Nelze stáhnout {}: {}", filing.url, e)
+    source = read_filing(
+        client,
+        url=filing.url,
+        form=filing.form,
+        cik=filing.cik,
+        accession=filing.accession,
+    )
+    if source is None:
         return None
 
-    text, truncated = extract_text(html)
-    if truncated:
+    if source.truncated:
         logger.info("{} {} zkráceno na {} znaků",
                     filing.ticker, filing.form, MAX_FILING_CHARS)
+    if len(source.sources) > 1:
+        logger.info("{} {}: čteno {} dokumentů ({})", filing.ticker, filing.form,
+                    len(source.sources), ", ".join(source.sources))
 
     from app.services.llm import LLMError
 
     try:
         outlook = analyze_outlook(
-            text,
+            source.text,
             ticker=filing.ticker,
             form=filing.form,
             period=str(filing.period_date or filing.filed_date),
@@ -245,13 +355,17 @@ def analyze_filing(
         logger.warning("Analýza {} {} selhala: {}", filing.ticker, filing.form, e)
         return None
 
-    summary = format_outlook(outlook, truncated=truncated)
+    summary = format_outlook(
+        outlook, truncated=source.truncated, thin_note=source.thin_note,
+    )
     filing.analysis = summary
     filing.analyzed_at = datetime.now(timezone.utc)
     return summary
 
 
-def format_outlook(outlook: dict, *, truncated: bool = False) -> str:
+def format_outlook(
+    outlook: dict, *, truncated: bool = False, thin_note: str | None = None,
+) -> str:
     """
     Render the model's reading of a filing as Czech text.
 
@@ -309,6 +423,9 @@ def format_outlook(outlook: dict, *, truncated: bool = False) -> str:
             "\n_Pozn.: dokument byl pro analýzu zkrácen — konec zprávy nebyl "
             "přečten._"
         )
+
+    if thin_note:
+        lines.append(f"\n_Pozn.: {thin_note}_")
 
     return "\n".join(lines)
 

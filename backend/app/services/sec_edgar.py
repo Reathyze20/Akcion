@@ -39,6 +39,7 @@ requests are limited to 10/second. Both are honoured here.
 
 from __future__ import annotations
 
+import html as html_lib
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -62,6 +63,9 @@ USER_AGENT: Final[str] = "Akcion Investment Research reathyze20@gmail.com"
 TICKER_INDEX_URL: Final[str] = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL: Final[str] = "https://data.sec.gov/submissions/CIK{cik}.json"
 ARCHIVE_URL: Final[str] = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}"
+INDEX_HEADERS_URL: Final[str] = (
+    "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{accession_dashed}-index-headers.html"
+)
 
 REQUEST_TIMEOUT_SECONDS: Final[int] = 20
 
@@ -196,6 +200,57 @@ class Filing:
             cik=self.cik.lstrip("0"),
             accession=self.accession.replace("-", ""),
             document=self.document,
+        )
+
+
+#: Forms whose filed document is a cover page, not the report. SEC's own
+#: instruction for Form 6-K is that the material being furnished is attached as
+#: an exhibit; the 6-K itself says "the following is furnished herewith" and
+#: names it. 8-K works the same way for a results announcement.
+#:
+#: Found 2026-08-23 on a live holding: RADCOM's 2026-08-12 6-K rendered to 1,777
+#: characters — the entire second quarter, 133 kB of it, was the EX-99.1 sitting
+#: beside it. Analysing the cover page alone returned no findings, and "no
+#: findings" is what the app then showed for 9.9 % of the portfolio. That is the
+#: envelope being reported as the letter.
+WRAPPER_FORMS: Final[frozenset[str]] = frozenset({"6-K", "8-K"})
+
+#: EX-99 is where furnished substance lives: press releases, results tables,
+#: investor decks. Other exhibit families are contracts, consents and
+#: certifications — real documents, but not this quarter's news.
+SUBSTANTIVE_EXHIBIT: Final[re.Pattern[str]] = re.compile(r"^EX-99(\.\d+)*$", re.I)
+
+_DOCUMENT_BLOCK: Final[re.Pattern[str]] = re.compile(
+    r"<DOCUMENT>(.*?)(?:</DOCUMENT>|\Z)", re.S | re.I
+)
+
+
+def _sgml_field(block: str, name: str) -> str | None:
+    """Read one `<TAG>value` line out of an EDGAR document header."""
+    match = re.search(rf"<{name}>[ \t]*(.*)", block, re.I)
+    return match.group(1).strip() or None if match else None
+
+
+@dataclass(frozen=True)
+class FilingDocument:
+    """One file inside a filing, as EDGAR's own manifest describes it."""
+
+    type: str
+    filename: str
+    description: str | None
+    accession: str
+    cik: str
+
+    @property
+    def is_substantive_exhibit(self) -> bool:
+        return bool(SUBSTANTIVE_EXHIBIT.match(self.type))
+
+    @property
+    def url(self) -> str:
+        return ARCHIVE_URL.format(
+            cik=self.cik.lstrip("0"),
+            accession=self.accession.replace("-", ""),
+            document=self.filename,
         )
 
 
@@ -444,6 +499,41 @@ class SecEdgarClient:
             recent, cik, ticker, max_insider_filings
         )
         return coverage
+
+    def fetch_documents(self, cik: str, accession: str) -> list[FilingDocument]:
+        """
+        Every file inside one filing, with the type EDGAR itself assigned it.
+
+        Read from `-index-headers.html`, which carries the submission's SGML
+        manifest — `<TYPE>EX-99.1`, `<FILENAME>`, `<DESCRIPTION>`. Guessing the
+        type from the filename would work for one filing agent and quietly fail
+        for the next; the manifest is what EDGAR indexes on.
+
+        Raises SecError if the manifest cannot be read. An empty list means the
+        manifest was read and lists nothing, which is a different answer.
+        """
+        url = INDEX_HEADERS_URL.format(
+            cik=cik.lstrip("0"),
+            accession=accession.replace("-", ""),
+            accession_dashed=accession,
+        )
+        # The manifest is HTML-escaped SGML: the tags arrive as &lt;TYPE&gt;.
+        raw = html_lib.unescape(self._get(url).text)
+
+        documents: list[FilingDocument] = []
+        for block in _DOCUMENT_BLOCK.findall(raw):
+            type_ = _sgml_field(block, "TYPE")
+            filename = _sgml_field(block, "FILENAME")
+            if not type_ or not filename:
+                continue
+            documents.append(FilingDocument(
+                type=type_.upper(),
+                filename=filename,
+                description=_sgml_field(block, "DESCRIPTION"),
+                accession=accession,
+                cik=cik,
+            ))
+        return documents
 
     @staticmethod
     def _parse_date(value: str | None) -> date | None:

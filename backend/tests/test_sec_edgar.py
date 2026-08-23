@@ -571,3 +571,219 @@ class TestRedFlagsHaveTheirOwnField:
         })
         assert rendered.index("pochybnost o pokracovani") < rendered.index("drobnost")
         assert "Varovné signály" in rendered
+
+
+# ==============================================================================
+# A 6-K cover page is not the report
+# ==============================================================================
+
+RDCM_MANIFEST = """<html><body><pre>
+&lt;SEC-HEADER&gt;
+COMPANY CONFORMED NAME: RADCOM LTD
+&lt;/SEC-HEADER&gt;
+&lt;DOCUMENT&gt;
+&lt;TYPE&gt;6-K
+&lt;SEQUENCE&gt;1
+&lt;FILENAME&gt;ea0301737-6k_radcom.htm
+&lt;DESCRIPTION&gt;REPORT OF FOREIGN PRIVATE ISSUER
+&lt;TEXT&gt;
+&lt;/DOCUMENT&gt;
+&lt;DOCUMENT&gt;
+&lt;TYPE&gt;EX-99.1
+&lt;SEQUENCE&gt;2
+&lt;FILENAME&gt;ea030173701ex99-1.htm
+&lt;DESCRIPTION&gt;PRESS RELEASE REPORTING SECOND QUARTER RESULTS
+&lt;TEXT&gt;
+&lt;/DOCUMENT&gt;
+&lt;DOCUMENT&gt;
+&lt;TYPE&gt;GRAPHIC
+&lt;SEQUENCE&gt;3
+&lt;FILENAME&gt;ea030173701_ex99-1img1.jpg
+&lt;DESCRIPTION&gt;GRAPHIC
+&lt;TEXT&gt;
+&lt;/DOCUMENT&gt;
+</pre></body></html>"""
+
+FILING_URL = (
+    "https://www.sec.gov/Archives/edgar/data/1016838/"
+    "000121390026088035/ea0301737-6k_radcom.htm"
+)
+ACCESSION = "0001213900-26-088035"
+CIK = "0001016838"
+
+
+def _serving(pages: dict):
+    """A client whose every fetch is answered from `pages`, or refused."""
+    from unittest.mock import MagicMock
+
+    from app.services.sec_edgar import SecEdgarClient
+
+    client = SecEdgarClient()
+
+    def fake_get(url):
+        for fragment, body in pages.items():
+            if fragment in url:
+                response = MagicMock()
+                response.status_code = 200
+                response.text = body
+                return response
+        raise AssertionError(f"nečekaný požadavek: {url}")
+
+    client._get = fake_get
+    return client
+
+
+class TestFilingManifest:
+    """
+    Which file inside a filing holds the substance is stated by EDGAR itself in
+    `-index-headers.html`. Reading the manifest rather than guessing at
+    filenames is the difference between working for every filing agent and
+    working for the one we happened to look at.
+    """
+
+    def _docs(self, text=RDCM_MANIFEST):
+        return _serving({"index-headers": text}).fetch_documents(CIK, ACCESSION)
+
+    def test_the_manifest_is_parsed_into_typed_documents(self):
+        docs = self._docs()
+
+        assert [d.type for d in docs] == ["6-K", "EX-99.1", "GRAPHIC"]
+        assert docs[1].filename == "ea030173701ex99-1.htm"
+        assert "SECOND QUARTER" in docs[1].description
+
+    def test_only_ex99_counts_as_substance(self):
+        assert [d.type for d in self._docs() if d.is_substantive_exhibit] == ["EX-99.1"]
+
+    def test_an_exhibit_url_points_at_the_raw_file(self):
+        assert self._docs()[1].url == (
+            "https://www.sec.gov/Archives/edgar/data/1016838/"
+            "000121390026088035/ea030173701ex99-1.htm"
+        )
+
+    def test_a_manifest_listing_nothing_is_not_an_error(self):
+        """
+        Empty means we read it and it lists nothing. A failure to read means
+        something else entirely, and raises.
+        """
+        assert self._docs("<html><body><pre>nic tu není</pre></body></html>") == []
+
+
+class TestWrapperFormsReadTheirExhibits:
+    """
+    Found 2026-08-23 on RADCOM, 9.9 % of the portfolio: its newest 6-K rendered
+    to 1,777 characters of "the following is furnished herewith". The quarter —
+    revenue, guidance, the lot — was the 133 kB EX-99.1 beside it. The app read
+    the cover page, found nothing, and displayed nothing found.
+    """
+
+    COVER = (
+        "<html><body>The following is furnished herewith: Exhibit 99.1."
+        "</body></html>"
+    )
+    EXHIBIT = (
+        "<html><body>"
+        + ("RADCOM reports record second quarter revenue. " * 300)
+        + "</body></html>"
+    )
+
+    def _read(self, pages, form="6-K"):
+        from app.services.sec_sync import read_filing
+
+        return read_filing(
+            _serving(pages), url=FILING_URL, form=form, cik=CIK, accession=ACCESSION,
+        )
+
+    def test_the_exhibit_is_read_and_not_the_cover_alone(self):
+        result = self._read({
+            "index-headers": RDCM_MANIFEST,
+            "ea0301737-6k_radcom.htm": self.COVER,
+            "ea030173701ex99-1.htm": self.EXHIBIT,
+        })
+
+        assert "record second quarter revenue" in result.text
+        assert result.sources == ["ea0301737-6k_radcom.htm", "ea030173701ex99-1.htm"]
+        assert result.thin_note is None
+
+    def test_a_cover_with_no_exhibit_says_so(self):
+        """
+        RADCOM's 2026-05-27 6-K genuinely carries no attachment. Rendering that
+        the same as a quiet quarter is the defect this fix exists for.
+        """
+        result = self._read({
+            "index-headers": RDCM_MANIFEST.replace("EX-99.1", "EX-1.1"),
+            "ea0301737-6k_radcom.htm": self.COVER,
+        })
+
+        assert result.thin_note is not None
+        assert "průvodní stran" in result.thin_note
+
+    def test_a_10q_is_read_as_filed(self):
+        """
+        A 10-Q is the report. Fetching a manifest for one would be a request per
+        filing for nothing — `_serving` refuses any fetch we did not expect.
+        """
+        report = "<html><body>" + ("Quarterly report body. " * 500) + "</body></html>"
+        result = self._read({"ea0301737-6k_radcom.htm": report}, form="10-Q")
+
+        assert result.sources == ["ea0301737-6k_radcom.htm"]
+        assert result.thin_note is None
+
+    def test_a_thin_primary_document_reaches_for_exhibits_whatever_the_form(self):
+        """The wrapper habit is not confined to the forms that mandate it."""
+        result = self._read({
+            "index-headers": RDCM_MANIFEST,
+            "ea0301737-6k_radcom.htm": self.COVER,
+            "ea030173701ex99-1.htm": self.EXHIBIT,
+        }, form="10-Q")
+
+        assert "record second quarter revenue" in result.text
+
+    def test_an_unreadable_exhibit_does_not_discard_the_filing(self):
+        from app.services.sec_edgar import SecError
+
+        client = _serving({
+            "index-headers": RDCM_MANIFEST,
+            "ea0301737-6k_radcom.htm": self.COVER,
+        })
+        served = client._get
+
+        def refuse_the_exhibit(url):
+            if "ex99" in url:
+                raise SecError("SEC vrátila 503")
+            return served(url)
+
+        client._get = refuse_the_exhibit
+
+        from app.services.sec_sync import read_filing
+
+        result = read_filing(
+            client, url=FILING_URL, form="6-K", cik=CIK, accession=ACCESSION,
+        )
+        assert result is not None
+        assert result.sources == ["ea0301737-6k_radcom.htm"]
+        assert result.thin_note is not None
+
+    def test_an_unreachable_primary_document_returns_nothing(self):
+        """Not an empty analysis — nothing, so `analysis` stays NULL."""
+        from app.services.sec_edgar import SecEdgarClient, SecError
+        from app.services.sec_sync import read_filing
+
+        client = SecEdgarClient()
+
+        def sec_is_down(url):
+            raise SecError("SEC vrátila 503")
+
+        client._get = sec_is_down
+
+        assert read_filing(
+            client, url=FILING_URL, form="6-K", cik=CIK, accession=ACCESSION,
+        ) is None
+
+    def test_the_thin_note_reaches_the_rendered_summary(self):
+        from app.services.sec_sync import format_outlook
+
+        rendered = format_outlook(
+            {"guidance": None},
+            thin_note="Podání má jen průvodní stranu (2385 znaků).",
+        )
+        assert "průvodní stranu" in rendered
