@@ -79,16 +79,38 @@ volání.
 
 **Hotovo když:** jeden kanál skutečně odešle zprávu na tvůj účet, ověřeno odesláním.
 
-### `[ ]` B7. Away mode neexistuje
+### `[x]` B7. Away mode neexistuje
 
-Ani v jedné podobě. Scheduler žije uvnitř ručně spuštěného localhost procesu — zavřeš appku, skončí
-všechno. Přitom je to ta funkce, kterou při relapsu potřebuješ nejvíc: utaženější stopy, default na
-raise cash, **jeden** nejnaléhavější push místo šumu, a stará data viditelně označená.
+Ani v jedné podobě. Scheduler žil uvnitř ručně spuštěného localhost procesu — zavřel jsi appku,
+skončilo všechno. Přitom je to ta funkce, kterou při relapsu potřebuješ nejvíc: utaženější stopy,
+default na raise cash, **jeden** nejnaléhavější push místo šumu, a stará data viditelně označená.
 
-Závisí na B6 (kanál) a B2 (poctivé stáří dat).
+**Hotovo (23. 8.):**
 
-**Hotovo když:** týden nespuštěná appka ti pošle nejvýš pár zpráv a žádná z nich není postavená na
-starých datech vydávaných za čerstvá.
+- `app/services/away_mode.py` — čistá pravidla, bez DB a HTTP:
+  - **Cestuje jen to, co chrání kapitál.** BUY se v away mode neposílá nikdy. Promeškaný nákup
+    stojí příležitost, promeškaný prodej peníze, které už máš.
+  - **Nic akční se nestaví na datech starších dvou dnů.** Běžná cesta toleruje tři dny a varuje;
+    away mode ne. Naléhavá akce na starých datech pošle „otevři aplikaci" — bez ceny, bez kusů.
+  - **Jedna zpráva, ne proud.** Nejnaléhavější věc plus počet ostatních. Druhá jde jen když je
+    o 10 bodů naléhavější. Test simuluje týden po půlhodinách: odejde 7–8 zpráv.
+- `app/services/away_runner.py` + `app/routes/away.py` + `away_mode_state` (jeden řádek, `last_push_*`
+  přežije restart — scheduler, který zapomene, co poslal, to pošle znovu).
+- `backend/scripts/away_check.py` — **nepotřebuje běžící appku.** Pověsíš na Windows Task Scheduler
+  a away mode funguje se zavřenou aplikací. Pořád to chce zapnutý stroj a funkční SMTP.
+
+**Utažená stopka je semafor o stupeň dřív, ne vymyšlená cena.** První verze tohohle modulu si
+vymyslela stopku 5 % nad červenou linkou. Měla linky obráceně: zelená je kde se nakupuje, červená
+je **cílová cena k prodeji** — cena pod červenou linkou je normální stav pozice, která nedošla na
+cíl. Na živém portfoliu ta verze nařídila prodat IZEA, VTSI a KUYA.V, jednu z nich 86 % pod cílem.
+Nahradilo to escalation semaforu: GREEN se pro odlehčování bere jako YELLOW, YELLOW jako ORANGE.
+ORANGE se **nezvyšuje** na RED — „prodej skoro všechno" není rozhodnutí, které se dělá za někoho,
+kdo nemůže odpovědět. Je to rozšíření aplikace, ne kánon, a každá zpráva to říká.
+
+**Známý limit, ověřeno na živém portfoliu:** away mode teď reálně nemá na čem zabrat. Všech 15 pozic
+nemá fázi ani konvikční skóre, takže se motor odmítá k nim vyjádřit (což je záměrná pojistka) a away
+mode mlčí. Aby se mlčení nedalo splést s „všechno je v pořádku", ukládá se k rozhodnutí i důvod —
+`⚠️ NEZNÁMÁ KVALITA u 15 pozic` je první v pořadí. Doplnit fáze pozicím je tvoje práce, ne kódu.
 
 ### `[x]` B8. Health endpoint lže
 
