@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { DailyAction, DailyActionsResponse } from '../api/client';
+import { groupWarnings } from '../lib/warnings';
+import { plural } from '../lib/format';
 
 interface DailyActionWidgetProps {
   /**
@@ -188,12 +190,15 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
 
       {isHold ? (
         /* State A: Nic. Drž. — the correct answer most days */
-        <div className="px-5 py-8 text-center">
-          <ShieldCheck className="w-12 h-12 mx-auto mb-3 text-positive/80" />
-          <h2 className="font-display text-3xl font-bold tracking-tight text-text-primary">
+        /* Klid je správná odpověď většinu dní, ale nezaslouží si třetinu
+           obrazovky. Dřív tu byl vycentrovaný štít 48 px a nadpis 30 px
+           na jednu větu. */
+        <div className="flex items-baseline gap-2.5 px-5 py-3.5">
+          <ShieldCheck className="w-4 h-4 shrink-0 translate-y-0.5 text-positive/80" aria-hidden="true" />
+          <h2 className="font-display text-lg font-bold tracking-tight text-text-primary">
             Dnes není co dělat.
           </h2>
-          <p className="mt-2 text-sm text-text-secondary">
+          <p className="text-[13px] text-text-secondary">
             {alertStyle.label}. Žádné pravidlo nebylo porušeno, kapitál je chráněn.
           </p>
         </div>
@@ -258,11 +263,35 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
 
       {/* Data-honesty warnings — always visible, both states */}
       {data.warnings.length > 0 && (
-        <div className="mx-5 mb-4 p-3 rounded-lg bg-warning-bg border border-warning-border">
-          {data.warnings.map((warning) => (
-            <p key={warning} className="text-xs text-warning py-0.5">
-              {warning}
-            </p>
+        /* Devět skoro stejných vět podle tickeru se čte jako spam. Tři až
+           čtyři skupiny podle problému se čtou za dvě vteřiny — a u každé
+           stojí, co kvůli ní aplikace nemůže. Nic se nezahazuje: varování,
+           kterému skládání nerozumí, se ukáže samo za sebe. */
+        <div className="mx-5 mb-4 divide-y divide-warning-border rounded-lg border border-warning-border bg-warning-bg">
+          {groupWarnings(data.warnings).map((group, index) => (
+            <div key={`${group.kind}-${index}`} className="px-3 py-2">
+              <div className="flex items-baseline gap-2">
+                <AlertTriangle
+                  className="w-3 h-3 shrink-0 translate-y-0.5 text-warning"
+                  aria-hidden="true"
+                />
+                <span className="font-mono text-[12px] font-medium text-warning">
+                  {group.kind === 'JINE'
+                    ? group.label
+                    : `${group.count} ${plural(group.count, 'pozice', 'pozice', 'pozic')} — ${group.label}`}
+                </span>
+              </div>
+              {group.consequence && (
+                <p className="mt-0.5 pl-5 text-[11.5px] leading-relaxed text-text-secondary">
+                  {group.consequence}
+                </p>
+              )}
+              {group.tickers.length > 0 && group.tickers.length <= 6 && (
+                <p className="mt-0.5 pl-5 font-mono text-[10.5px] text-text-muted">
+                  {group.tickers.join(' · ')}
+                </p>
+              )}
+            </div>
           ))}
         </div>
       )}

@@ -2979,6 +2979,26 @@ export const InvestmentTerminal: React.FC = () => {
               <span className="font-mono text-[17px] font-medium tabular-nums text-text-primary">
                 {formatCurrency(familyData.totalValue)}
               </span>
+              {/* Nerealizovaný výsledek. Dřív byl až uprostřed stránky ve
+                  čtveřici karet, které zbytek jen opakovaly hlavičku. Je to
+                  nejdůležitější číslo na obrazovce a patří vedle celku. */}
+              {(() => {
+                const t = portfolios.reduce((a, x) => ({
+                  cost: a.cost + (x.total_cost_basis || 0),
+                  pl: a.pl + (x.total_unrealized_pl || 0),
+                }), { cost: 0, pl: 0 });
+                if (t.cost <= 0) return null;
+                const pct = (t.pl / t.cost) * 100;
+                const down = t.pl < 0;
+                return (
+                  <span
+                    className={`font-mono text-[13px] tabular-nums ${down ? 'text-negative' : 'text-positive'}`}
+                    title={`Pořizovací cena ${formatCurrency(t.cost)}`}
+                  >
+                    {down ? '' : '+'}{formatCurrency(t.pl)} ({percent(pct, { sign: true })})
+                  </span>
+                );
+              })()}
               <span className="font-mono text-[11px] text-text-muted">
                 ≈ €{familyData.totalValueEUR.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })}
               </span>
@@ -3206,78 +3226,6 @@ export const InvestmentTerminal: React.FC = () => {
           </div>
         )}
 
-        {/* Portfolio Summary Stats */}
-        {activeTab === 'portfolio' && portfolios.length > 0 && (
-          <div className="grid grid-cols-4 gap-4 mb-4">
-            {(() => {
-              // Calculate totals across all portfolios
-              const totals = portfolios.reduce((acc, p) => ({
-                costBasis: acc.costBasis + (p.total_cost_basis || 0),
-                marketValue: acc.marketValue + (p.total_market_value || 0),
-                unrealizedPL: acc.unrealizedPL + (p.total_unrealized_pl || 0),
-                cash: acc.cash + (p.cash_balance || 0),
-              }), { costBasis: 0, marketValue: 0, unrealizedPL: 0, cash: 0 });
-              
-              const totalValue = totals.marketValue + totals.cash;
-
-              // Three of the fifteen positions have no purchase price, so they
-              // add market value while adding no cost. Dividing the value of
-              // ALL of them by the cost of SOME of them reported −36 % on a
-              // portfolio that is nearer −42 %; the loss looked smaller than
-              // it is, purely because of a gap in the data.
-              //
-              // The absolute figure only ever summed positions whose P/L is
-              // known, so the percentage is derived from it and the two now
-              // agree by construction.
-              const plPercent = totals.costBasis > 0
-                ? (totals.unrealizedPL / totals.costBasis) * 100
-                : 0;
-
-              const allPositions = portfolios.flatMap(p => p.positions ?? []);
-              const pricedCount = allPositions.filter(p => p.avg_cost != null).length;
-              const missingCost = allPositions.length - pricedCount;
-              
-              return (
-                <>
-                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Hodnota celkem</div>
-                    <div className="text-2xl font-bold text-text-primary">
-                      {totalValue.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
-                    </div>
-                  </div>
-                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Pořizovací cena</div>
-                    <div className="text-2xl font-bold text-text-secondary">
-                      {totals.costBasis.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
-                    </div>
-                    {/* Otherwise this sits next to Total Value inviting a
-                        subtraction that covers a different set of positions. */}
-                    {missingCost > 0 && (
-                      <div className="text-[10px] text-warning mt-1">
-                        jen {pricedCount} z {allPositions.length} pozic — {missingCost} bez nákupní ceny
-                      </div>
-                    )}
-                  </div>
-                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Nerealizovaný <Term id="pl">P/L</Term></div>
-                    <div className={`text-2xl font-bold ${totals.unrealizedPL >= 0 ? 'text-positive' : 'text-negative'}`}>
-                      {totals.unrealizedPL >= 0 ? '+' : ''}{totals.unrealizedPL.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
-                      <span className="text-sm ml-2">
-                        ({plPercent >= 0 ? '+' : ''}{plPercent.toFixed(2)}%)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Hotovost</div>
-                    <div className="text-2xl font-bold text-accent">
-                      {totals.cash.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
 
         {/* Gomes Allocation Plan - Monthly Summary */}
         {activeTab === 'portfolio' && (
