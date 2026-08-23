@@ -21,6 +21,7 @@ import {
   contributionAtHorizon,
   DEFAULT_INFLATION,
   project,
+  RETURN_SPREAD_PP,
   summarise,
 } from '../../lib/compound';
 import { czk, duration, estimate, percent, plural } from '../../lib/format';
@@ -100,9 +101,11 @@ export const GoalPage: React.FC<GoalPageProps> = ({
     [state, annualReturn],
   );
 
-  // Graf sahá o pár let za cíl, aby bylo vidět, že křivka pokračuje.
+  // Graf sahá rok za cíl — jen tolik, aby bylo vidět, že křivka pokračuje.
+  // Víc ne: při patnácti procentech ročně by přestřelení osu roztáhlo
+  // natolik, že by se meta zmáčkla ke dnu grafu.
   const horizon = summary.years !== null
-    ? Math.min(60, Math.max(5, summary.years + 3))
+    ? Math.min(60, Math.max(5, summary.years + 1))
     : FALLBACK_HORIZON;
 
   const points = useMemo(
@@ -139,7 +142,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
         </div>
 
         <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <span className="font-mono text-2xl font-medium text-frame-text">
+          <span className="font-display text-2xl font-semibold tabular-nums tracking-tight text-frame-text">
             {czk(state.presentValue)}
           </span>
           <span className="text-frame-muted" aria-hidden="true">→</span>
@@ -203,7 +206,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
                 className="h-3 w-5 bg-signal-green/20"
                 aria-hidden="true"
               />
-              rozpětí při horším a lepším výnosu
+              rozpětí {percent(Math.max(0, state.annualReturnPct - RETURN_SPREAD_PP * 100), { digits: 0 })} až {percent(state.annualReturnPct + RETURN_SPREAD_PP * 100, { digits: 0 })} ročně
             </span>
             <span className="flex items-center gap-2 text-[11.5px] text-sheet-muted">
               <span

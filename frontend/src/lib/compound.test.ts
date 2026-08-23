@@ -16,7 +16,7 @@ import {
   monthsToTarget,
   project,
   realValue,
-  RETURN_SPREAD,
+  RETURN_SPREAD_PP,
   summarise,
 } from './compound';
 
@@ -134,15 +134,24 @@ describe('project', () => {
     expect(late).toBeGreaterThan(early);
   });
 
-  it('pesimistická dráha počítá s výnosem nižším o třetinu', () => {
+  it('pesimistická dráha ubírá tři procentní body', () => {
     const points = project({ ...input, years: 1 });
     const expected = futureValue(
       input.presentValue,
       input.monthlyContribution,
-      input.annualReturn * (1 - RETURN_SPREAD),
+      input.annualReturn - RETURN_SPREAD_PP,
       12,
     );
     expect(points[1].low).toBeCloseTo(expected, 6);
+  });
+
+  it('spodní dráha se nepropadne do záporného výnosu', () => {
+    // Při očekávání 1 % by odečtení tří bodů dalo −2 %. Klesající pás
+    // kolem rostoucího očekávání je jiný scénář, ne „vyšlo to hůř".
+    const points = project({ ...input, annualReturn: 0.01, years: 10 });
+    for (const point of points) {
+      expect(point.low).toBeGreaterThanOrEqual(point.contributed - 1e-6);
+    }
   });
 });
 
