@@ -145,12 +145,32 @@ Audit je označil za neexistující, protože nebyla kniha obchodů. **Ta teď e
 
 Je to důvod, proč appka vznikla, a v běžícím kódu pro to zatím není nic.
 
-### `[ ]` B12. Market alert gauge
+### `[x]` B12. Market alert gauge
 
-Semafor je ručně nastavené pole. Kánon ho odvozuje z pozice S&P na 40letém valuačním grafu (gap #2).
-Aspoň asistovaný výpočet, aby GREEN nestál na tom, že si někdo vzpomněl přepnout přepínač.
+Semafor byl ručně nastavené pole. Kánon ho odvozuje z pozice S&P na 40letém valuačním grafu (gap #2).
 
-Souvisí s už opraveným `STALE_ALERT_AFTER = 14 dní`.
+**Hotovo (23. 8.):** `app/services/market_gauge.py` + `GET /api/market-gauge`. Měsíční closy ^GSPC
+za celé dostupné okno (1985→dnes, **41,7 roku** — přesně ten 40letý graf), log-lineární trend skrz ně,
+a dnešní cena vyjádřená v sigmách od trendu. Tři linky kánonu = z +2,5 / 0 / −2,0.
+
+**Ověřeno proti oběma RED alertům, které Gomes za život vyhlásil:**
+
+| kánon | co ukazatel našel |
+|---|---|
+| konec 1999 | **našel přesvědčivě** — prosinec 1999 `z=+2,74` a březen 2000 `z=+2,75` jsou dvě nejvyšší hodnoty za celých 41 let |
+| půlka 2007 | **nenašel vůbec** — červen 2007 `z=+0,58`, 78. percentil, úplně obyčejný měsíc |
+| (bonus) únor 2009 | nejlevnější měsíc řady, `z=−2,85` — generační příležitost |
+
+Vrchol 2007 stál na úvěrech a ziscích, které se chystaly zmizet. Cena proti vlastnímu trendu to
+strukturálně vidět nemůže. **Ukazatel proto tuhle svoji slepou skvrnu píše do každé odpovědi**
+(`blind_spot_cs`) a obě čísla jsou zapíchnutá v testech proti fixtuře reálné řady — kdyby je někdo
+rozbil, tvrzení v textu přestane být pravda a testy spadnou.
+
+Semafor **nepřepisuje**. `suggested_alert` je návrh; `AT_UPPER_LINE` navrhuje ORANGE a ne RED,
+protože RED je dvakrát za život a jednou z těch dvou tenhle ukazatel nevidí.
+
+Dnes: `z=+1,46`, 91. percentil, `EXPENSIVE` → návrh **YELLOW**, což **sedí** s tím, co máš ručně
+nastavené.
 
 ### `[ ]` B13. BOXX / RWM jako reálné instrumenty
 

@@ -41,6 +41,7 @@ from .routes import currency  # Currency exchange rates
 from .routes import yahoo_finance  # Yahoo Finance Smart Cache
 from .routes import sec  # SEC EDGAR — 10-K, 10-Q, Form 4
 from .routes import away  # Away mode — jedna zpráva místo šumu
+from .routes import market_gauge  # Semafor z 40letého grafu S&P
 from .routes import dev_utils  # Development utilities (DISABLE IN PRODUCTION!)
 
 # Import alert scheduler
@@ -139,6 +140,7 @@ app.include_router(currency.router)  # Currency exchange rates
 app.include_router(yahoo_finance.router)  # Yahoo Finance Smart Cache
 app.include_router(sec.router)  # SEC EDGAR — výsledky, výhledy, insideři
 app.include_router(away.router)  # Away mode — jedna zpráva místo šumu
+app.include_router(market_gauge.router)  # Asistovaný odhad semaforu
 
 if settings.debug:
     app.include_router(dev_utils.router)  # Raw SQL execution — DEBUG only, never in production
