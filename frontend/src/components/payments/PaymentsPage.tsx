@@ -259,7 +259,12 @@ export const PaymentsPage: React.FC<PaymentsPageProps> = ({
       {/* ------------------------------------------------------------------
           KNIHA — tabulka té odrážky, na které člověk stojí.
       ------------------------------------------------------------------ */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-surface-raised">
+      {/* Rám knihy roste s obsahem a zastaví se na kraji obrazovky. Když
+          dostal `flex-1`, natáhl se přes celou výšku a pod dvěma řádky
+          zůstalo šest set pixelů bílého vnitřku, který vypadal jako
+          chybějící obsah. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex max-h-full min-h-0 flex-col overflow-hidden rounded-card border border-border bg-surface-raised">
         <div className="flex shrink-0 items-center justify-between border-b border-border-subtle px-3 py-2">
           <h2 className="text-[13px] font-semibold text-text-primary">{active.label}</h2>
           <button
@@ -275,12 +280,12 @@ export const PaymentsPage: React.FC<PaymentsPageProps> = ({
           /* Prázdný stav na jednu řádku. Kolečko 80 × 80 px se zelenou
              fajfkou tu dřív slavilo, že se nic neeviduje — a zabíralo
              výšku pěti záznamů. */
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
             <p className="text-[13px] text-text-secondary">Zatím tu nic není.</p>
             <p className="max-w-sm text-[12px] text-text-muted">{active.emptyHint}</p>
           </div>
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 overflow-y-auto">
             <table className="w-full">
               <thead className="sticky top-0 z-10 bg-surface-raised">
                 <tr className="border-b border-border">
@@ -363,6 +368,7 @@ export const PaymentsPage: React.FC<PaymentsPageProps> = ({
             </table>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

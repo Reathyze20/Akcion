@@ -318,6 +318,15 @@ export interface PositionColumns {
   /** Cesta ke zdvojnásobení. Bez známé nákupní ceny se nedá spočítat. */
   freeride: boolean;
   /**
+   * Sloupec s pokynem.
+   *
+   * Když aplikace nemá analýzu ani u jedné pozice, napsala patnáctkrát pod
+   * sebe „DOPLŇ ANALÝZU". Patnáct stejných vět není sloupec — je to jedna
+   * věta, a ta stojí i s důsledkem v denním seznamu vlevo. Zůstane tu jen
+   * to, co platí pro konkrétní řádek: WAIT TIME a FREE RIDE.
+   */
+  action: boolean;
+  /**
    * Vysvětlivka „bez analýzy“ pod pokynem.
    *
    * Kreslí se jen tehdy, když se pozice v tomhle liší. Když analýzu nemá
@@ -445,9 +454,11 @@ const PortfolioRow: React.FC<{
           liší od ostatních — když ji nemá ani jedna pozice, stojí to
           jednou nad tabulkou místo patnáctkrát v ní. */}
       <td className="py-1.5 px-2.5">
-        <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
-          {actionCmd.text}
-        </div>
+        {(columns.action || actionCmd.text !== 'DOPLŇ ANALÝZU') && (
+          <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
+            {actionCmd.text}
+          </div>
+        )}
         {columns.analysisNote && !position.analysis_usable && position.analysis_note && (
           <div className="text-[9px] text-text-muted mt-0.5">{position.analysis_note}</div>
         )}
@@ -468,15 +479,21 @@ const PortfolioRow: React.FC<{
             <span className="font-mono text-sm font-semibold text-text-secondary">
               {position.weight_in_portfolio.toFixed(1)}%
             </span>
-            <span className="text-text-muted text-xs">/</span>
             {/* A target of "0.0 %" computed from a missing score used to read
-                as "sell it all". Without an analysis there is no target. */}
-            <span
-              className="font-mono text-xs text-text-muted"
-              title={position.analysis_usable ? undefined : 'Cílovou váhu aplikace bez konvikčního skóre nespočítá.'}
-            >
-              {position.analysis_usable ? `${position.max_allocation_cap.toFixed(1)}%` : '—'}
-            </span>
+                as "sell it all". Without an analysis there is no target — a
+                cílová váha se pak nekreslí vůbec, protože „/ —" na patnácti
+                řádcích je jen patnáctkrát tatáž pomlčka. */}
+            {columns.action && (
+              <>
+                <span className="text-text-muted text-xs">/</span>
+                <span
+                  className="font-mono text-xs text-text-muted"
+                  title={position.analysis_usable ? undefined : 'Cílovou váhu aplikace bez konvikčního skóre nespočítá.'}
+                >
+                  {position.analysis_usable ? `${position.max_allocation_cap.toFixed(1)}%` : '—'}
+                </span>
+              </>
+            )}
           </div>
           {position.analysis_usable && position.is_overweight ? (
             <div className="text-[9px] text-warning">NAD LIMITEM</div>
@@ -587,12 +604,11 @@ const PortfolioRow: React.FC<{
           není v tom směr — a prázdné, když linky nejsou. */}
       {columns.band && (
         <td className="py-1.5 px-2.5">
+          {/* Prázdno, ne pomlčka. Dvanáct pomlček pod sebou dělá svislý
+              pruh, který táhne oko a není v něm žádná informace; sloupec
+              už stojí jen tehdy, když ho vyplní aspoň pětina řádků. */}
           <div className="flex flex-col items-center gap-1">
-            {position.trend_status === 'UNKNOWN' ? (
-              <span className="text-[10px] text-text-muted" title="Chybí zelená/červená linka pro tento ticker">
-                —
-              </span>
-            ) : (
+            {position.trend_status === 'UNKNOWN' ? null : (
               <>
                 {trendIcon}
                 <span className={`text-[10px] font-medium ${
@@ -637,9 +653,7 @@ const PortfolioRow: React.FC<{
                 {position.unrealized_pl_percent.toFixed(0)} % ze 150 %
               </div>
             </div>
-          ) : (
-            <div className="text-[10px] text-text-muted">—</div>
-          )}
+          ) : null}
         </td>
       )}
 
@@ -2961,18 +2975,36 @@ export const InvestmentTerminal: React.FC = () => {
    * Sloupec se ukáže, jakmile pro něj má data aspoň jedna pozice. Nic se
    * neskrývá natrvalo: zmizí přesně to, o čem aplikace nic neví.
    */
-  const columns: PositionColumns = useMemo(() => ({
-    score: displayedPositions.some((p) => p.analysis_usable && p.conviction_score != null),
-    size: displayedPositions.some((p) => (p.optimal_size ?? 0) > 0),
-    catalyst: displayedPositions.some((p) => Boolean(p.next_catalyst)),
-    band: displayedPositions.some(
-      (p) => p.stock?.green_line != null || p.stock?.red_line != null,
-    ),
-    freeride: displayedPositions.some(
-      (p) => p.unrealized_pl_percent != null && p.unrealized_pl_percent > 0,
-    ),
-    analysisNote: displayedPositions.some((p) => p.analysis_usable),
-  }), [displayedPositions]);
+  const columns: PositionColumns = useMemo(() => {
+    /*
+     * Doplňkový sloupec má smysl, až když ho vyplní aspoň pětina řádků.
+     *
+     * Pravidlo „stačí jedna pozice" nechalo stát sloupec Katalyzátor s
+     * jediným záznamem ze čtrnácti a Pásmo se třemi — dva svislé pruhy
+     * pomlček přes celou tabulku. Údaj se neztrácí, je v detailu pozice;
+     * jen nedělá sloupec tam, kde ho nemá čím naplnit.
+     */
+    const alesponPetina = (test: (p: EnrichedPosition) => boolean) => {
+      const kolik = displayedPositions.filter(test).length;
+      return kolik > 0 && kolik >= Math.ceil(displayedPositions.length / 5);
+    };
+
+    return {
+      /* Skóre a dávka jsou vlastní výstupy aplikace. Ty se kreslí, jakmile
+         existuje aspoň jeden — na nich se rozhoduje. */
+      score: displayedPositions.some((p) => p.analysis_usable && p.conviction_score != null),
+      size: displayedPositions.some((p) => (p.optimal_size ?? 0) > 0),
+      catalyst: alesponPetina((p) => Boolean(p.next_catalyst)),
+      band: alesponPetina(
+        (p) => p.stock?.green_line != null || p.stock?.red_line != null,
+      ),
+      freeride: alesponPetina(
+        (p) => p.unrealized_pl_percent != null && p.unrealized_pl_percent > 0,
+      ),
+      analysisNote: displayedPositions.some((p) => p.analysis_usable),
+      action: displayedPositions.some((p) => p.analysis_usable),
+    };
+  }, [displayedPositions]);
 
   /** Kolik sloupců se opravdu kreslí — pro colSpan prázdného řádku. */
   const columnCount = 5
@@ -3234,7 +3266,9 @@ export const InvestmentTerminal: React.FC = () => {
                 <span className="font-mono text-[13px] tabular-nums">{celkem}</span>
                 <span className="text-[11px]">
                   {plural(celkem, 'pozice', 'pozice', 'pozic')}
-                  {bezHodnoceni > 0 && (vsechny ? ' · žádná hodnocená' : ` · ${bezHodnoceni} bez hodnocení`)}
+                  {/* Kolik z nich je bez hodnocení, stojí v denním seznamu
+                      i s důsledkem. Tady by to byla tatáž věta potřetí. */}
+                  {bezHodnoceni > 0 && !vsechny && ` · ${bezHodnoceni} bez hodnocení`}
                 </span>
               </span>
             );
@@ -3489,8 +3523,13 @@ export const InvestmentTerminal: React.FC = () => {
             <thead className="sticky top-0 z-10 bg-surface-raised">
               <tr className="border-b border-border">
                 <Th width="w-[150px]">Symbol</Th>
-                <Th width="w-[108px]">Pokyn</Th>
-                <Th width="w-[96px]" sub="teď / cíl">Váha</Th>
+                <Th
+                  width="w-[108px]"
+                  hint={columns.action ? undefined : 'Pokyn aplikace vydá, jen když má analýzu. U ostatních pozic zůstane prázdno — proč, stojí v denním seznamu vlevo.'}
+                >
+                  Pokyn
+                </Th>
+                <Th width="w-[96px]" sub={columns.action ? 'teď / cíl' : undefined}>Váha</Th>
                 {columns.score && (
                   <Th width="w-[62px]" align="center"><Term id="konvikcniSkore">Skóre</Term></Th>
                 )}
