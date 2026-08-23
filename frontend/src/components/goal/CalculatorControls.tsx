@@ -51,13 +51,31 @@ const Field: React.FC<FieldProps> = ({
   const id = React.useId();
   const shown = render ? render(value) : amount(value);
 
+  /*
+   * Řádek má dvě patra, ne tři.
+   *
+   * Třetí patro neslo vlevo hodnotu posuvníku — tedy „233 294" pod polem,
+   * ve kterém stálo 233294. Táž číslice dvakrát, o osmnáct pixelů níž.
+   * Vysvětlivka z jeho pravé strany se přesunula pod popisek, kam patří,
+   * a řádek zhubl z 89 px na necelých šedesát. Pět ovládacích prvků se
+   * tak vejde i na okno, kterému panel záložek a lišta oblíbených
+   * ukrojily sto padesát pixelů.
+   *
+   * Údaj `shown` nezmizel: formátovaná hodnota je v `title` pole, takže
+   * „30000000" jde ověřit jako „30 000 000" bez počítání nul.
+   */
   return (
-    <div className="border-b border-sheet-rule px-4 py-2 last:border-b-0">
-      <div className="flex items-baseline justify-between gap-3">
-        <label htmlFor={id} className="text-[13px] font-medium text-sheet-text">
-          {label}
-        </label>
-        <div className="flex items-baseline gap-1.5">
+    <div className="border-b border-sheet-rule px-4 py-1.5 last:border-b-0">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <label htmlFor={id} className="block truncate text-[13px] font-medium text-sheet-text">
+            {label}
+          </label>
+          {hint && (
+            <span className="block text-[11px] leading-tight text-sheet-muted">{hint}</span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-baseline gap-1.5">
           <input
             id={id}
             type="number"
@@ -65,6 +83,7 @@ const Field: React.FC<FieldProps> = ({
             max={max}
             step={step}
             value={value}
+            title={shown}
             onChange={(e) => {
               const next = Number(e.target.value);
               if (Number.isFinite(next)) onChange(Math.min(max, Math.max(min, next)));
@@ -84,13 +103,8 @@ const Field: React.FC<FieldProps> = ({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2 h-1 w-full cursor-pointer appearance-none rounded bg-sheet-rule accent-[rgb(var(--accent))]"
+        className="mt-1.5 h-1 w-full cursor-pointer appearance-none rounded bg-sheet-rule accent-[rgb(var(--accent))]"
       />
-
-      <div className="mt-0.5 flex items-baseline justify-between">
-        <span className="font-mono text-[10.5px] text-sheet-faint">{shown}</span>
-        {hint && <span className="text-[11px] text-sheet-muted">{hint}</span>}
-      </div>
     </div>
   );
 };
@@ -149,7 +163,7 @@ export const CalculatorControls: React.FC<CalculatorControlsProps> = ({
         hint={
           indexTrendPct != null ? (
             <>
-              dlouhodobý trend indexu {percent(indexTrendPct)}{' '}
+              trend indexu {percent(indexTrendPct)}{' '}
               <Term id="pa">p.&nbsp;a.</Term>
             </>
           ) : (

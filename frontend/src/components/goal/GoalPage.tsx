@@ -162,17 +162,15 @@ export const GoalPage: React.FC<GoalPageProps> = ({
        stránce: Cíl je jedna z obrazovek aplikace, která nescrolluje,
        a devadesát pixelů vzduchu mezi bloky stálo přesně to, kvůli
        čemu se muselo rolovat k „Co z toho plyne". */
-    <div className="flex flex-col gap-2.5">
+    <div className="flex h-full min-h-0 flex-col gap-2">
 
       {/* ---- panel: kde jsme, kam míříme ------------------------------- */}
 
-      <section className="panel rounded-card px-5 py-3">
-        <div className="flex items-center gap-2">
-          <Target size={15} className="text-frame-muted" aria-hidden="true" />
-          <h2 className="eyebrow text-frame-muted">Cíl</h2>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <section className="panel shrink-0 rounded-card px-5 py-2.5">
+        {/* Nadpis „CÍL" tu stál nad číslem, které je pod položkou Cíl
+            v levém menu, na které se právě stojí. Ikona zůstala, řádek ne. */}
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <Target size={15} className="self-center text-frame-muted" aria-hidden="true" />
           <span className="font-display text-2xl font-semibold tabular-nums tracking-tight text-frame-text">
             {czk(state.presentValue)}
           </span>
@@ -182,7 +180,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
           </span>
         </div>
 
-        <p className="mt-2 max-w-[68ch] text-[14px] leading-relaxed text-frame-muted">
+        <p className="mt-1.5 max-w-[68ch] text-[13.5px] leading-snug text-frame-muted">
           {reachable ? (
             <>
               Při vkladu {czk(state.monthlyContribution)} měsíčně a výnosu{' '}
@@ -208,17 +206,19 @@ export const GoalPage: React.FC<GoalPageProps> = ({
 
       {/* ---- list: graf + kalkulačka ----------------------------------- */}
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_340px]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[1fr_340px]">
 
-        <section className="sheet">
-          <div className="sheet-head">
+        <section className="sheet flex min-h-0 flex-col">
+          <div className="sheet-head shrink-0 py-2">
             <h3 className="sheet-title">Dráha portfolia</h3>
             <span className="ml-auto font-mono text-[11px] text-sheet-muted">
               {horizon} {plural(horizon, 'rok', 'roky', 'let')} dopředu
             </span>
           </div>
 
-          <div className="px-2 pt-2">
+          {/* Graf bere zbylou výšku. Legenda a mezníky pod ním mají
+              pevný obsah, takže se nesmí smrsknout. */}
+          <div className="min-h-[140px] flex-1 px-2 pt-2">
             <ProjectionChart
               points={points}
               target={state.target}
@@ -227,7 +227,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
           </div>
 
           {/* Legenda vysvětluje, které vrstvě se dá věřit. */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-sheet-rule px-4 py-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-t border-sheet-rule px-4 py-2">
             <span className="flex items-center gap-2 text-[11.5px] text-sheet-muted">
               <span className="h-0.5 w-5 bg-signal-green" aria-hidden="true" />
               očekávaná dráha
@@ -248,15 +248,17 @@ export const GoalPage: React.FC<GoalPageProps> = ({
             </span>
           </div>
 
-          <div className="border-t border-sheet-rule px-4 py-2">
+          <div className="shrink-0 border-t border-sheet-rule px-4 py-2">
             <MilestoneLadder current={state.presentValue} target={state.target} />
           </div>
         </section>
 
-        <section className="sheet self-start">
-          <div className="sheet-head">
+        <section className="sheet flex min-h-0 flex-col self-stretch overflow-hidden">
+          <div className="sheet-head shrink-0 py-2">
             <h3 className="sheet-title">Kalkulačka</h3>
           </div>
+          {/* Na nízkém okně roluje kalkulačka sama v sobě. Stránka ne. */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
           <CalculatorControls
             value={state}
             actualValue={portfolioValue}
@@ -275,23 +277,33 @@ export const GoalPage: React.FC<GoalPageProps> = ({
               currentAge: next.currentAge,
             })}
           />
+          </div>
         </section>
       </div>
 
       {/* ---- list: co z toho plyne ------------------------------------- */}
 
-      <section className="sheet">
-        <div className="sheet-head">
+      <section className="sheet shrink-0">
+        {/* Upozornění, že jde o projekce, stálo pod pruhem jako čtyřřádkový
+            odstavec — a bralo tolik výšky, že kalkulačka vedle grafu musela
+            rolovat. Patří k nadpisu, ne za čísla, tak je u něj. */}
+        <div className="sheet-head py-2">
           <h3 className="sheet-title">Co z toho plyne</h3>
+          <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-sheet-muted">
+            <Info size={12} className="shrink-0" aria-hidden="true" />
+            <span title="Vycházejí z jediného předpokladu — konstantního výnosu — a ten trh nikdy nedodrží. Skutečná dráha bude hrbolatější v obou směrech; proto je v grafu pás a ne čára.">
+              kromě dnešní hodnoty portfolia jsou všechna čísla projekce, ne předpověď
+            </span>
+          </span>
         </div>
 
         <dl className="grid grid-cols-1 divide-y divide-sheet-rule sm:grid-cols-3 sm:divide-x sm:divide-y-0">
 
-          <div className="px-4 py-3">
+          <div className="px-4 py-2">
             <dt className="text-[12.5px] text-sheet-muted">
               Kolik vložíš a kolik přidá trh
             </dt>
-            <dd className="mt-2">
+            <dd className="mt-1">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-[12.5px] text-sheet-muted">vložíš</span>
                 <span className="font-mono text-[15px] text-sheet-text">
@@ -304,7 +316,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
                   {atGoal.growth > 0 ? estimate(atGoal.growth) : '—'}
                 </span>
               </div>
-              <p className="mt-2 text-[12px] leading-relaxed text-sheet-faint">
+              <p className="mt-1.5 text-[12px] leading-snug text-sheet-faint">
                 {atGoal.growth > atGoal.contributed
                   ? 'Po téhle době přidá trh víc, než kolik sám odložíš. To je celý smysl toho čekat.'
                   : 'Zatím převažuje to, co odložíš. Zlom přijde později — čím delší doba, tím větší podíl výnosu.'}
@@ -312,17 +324,17 @@ export const GoalPage: React.FC<GoalPageProps> = ({
             </dd>
           </div>
 
-          <div className="px-4 py-3">
+          <div className="px-4 py-2">
             <dt className="text-[12.5px] text-sheet-muted">
               Co za to bude ke koupi
             </dt>
-            <dd className="mt-2">
+            <dd className="mt-1">
               <span className="font-mono text-[17px] text-sheet-text">
                 {summary.targetInTodaysMoney !== null
                   ? estimate(summary.targetInTodaysMoney)
                   : '—'}
               </span>
-              <p className="mt-2 text-[12px] leading-relaxed text-sheet-faint">
+              <p className="mt-1.5 text-[12px] leading-snug text-sheet-faint">
                 {summary.targetInTodaysMoney !== null ? (
                   <>
                     Tolik je {estimate(state.target)} v cílovém roce v dnešní{' '}
@@ -337,15 +349,15 @@ export const GoalPage: React.FC<GoalPageProps> = ({
             </dd>
           </div>
 
-          <div className="px-4 py-3">
+          <div className="px-4 py-2">
             <dt className="text-[12.5px] text-sheet-muted">
               Co udělá jeden dnešní vklad
             </dt>
-            <dd className="mt-2">
+            <dd className="mt-1">
               <span className="font-mono text-[17px] text-sheet-text">
                 {estimate(oneDeposit)}
               </span>
-              <p className="mt-2 text-[12px] leading-relaxed text-sheet-faint">
+              <p className="mt-1.5 text-[12px] leading-snug text-sheet-faint">
                 Tolik bude z dnešních {czk(state.monthlyContribution)} v cíli, když
                 se jich nikdo nedotkne. Jeden vklad, úročený celou dobu —
                 ne rozdíl dvou scénářů.
@@ -354,15 +366,6 @@ export const GoalPage: React.FC<GoalPageProps> = ({
           </div>
         </dl>
 
-        <p className="flex gap-2 border-t border-sheet-rule px-4 py-3 text-[12px] leading-relaxed text-sheet-muted">
-          <Info size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span>
-            Všechna čísla na téhle stránce kromě dnešní hodnoty portfolia jsou
-            projekce, ne předpověď. Vycházejí z jediného předpokladu — konstantního
-            výnosu — a ten trh nikdy nedodrží. Skutečná dráha bude hrbolatější
-            v obou směrech; proto je v grafu pás a ne čára.
-          </span>
-        </p>
       </section>
     </div>
   );
