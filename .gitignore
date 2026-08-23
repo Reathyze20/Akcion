@@ -47,3 +47,6 @@ Thumbs.db
 # Logs
 *.log
 .gstack/
+
+# LongHorizon-Harness run state
+.lh-harness/runs/

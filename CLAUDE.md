@@ -17,3 +17,24 @@ Key routing rules:
 - Save progress → invoke /context-save
 - Resume context → invoke /context-restore
 - Author a backlog-ready spec/issue → invoke /spec
+
+## Verification commands
+
+Every LongHorizon-Harness role starts with an empty context and reads this file,
+so the auditor knows no command that is not written down here.
+
+- Backend tests: `python -m pytest` from `backend/`. Use the **system** Python —
+  pytest is not installed in `.venv` and is not in `requirements.txt`.
+- Frontend build: `npm run build` from `frontend/` (runs `tsc -b` first, so it
+  is also the type check).
+- Frontend lint: `npm run lint` from `frontend/`.
+
+A subtask counts as done only when the relevant command above exits 0. An
+executor's claim that something works is not evidence.
+
+## Invariants
+
+- `backend/.env` holds live brokerage and SMTP credentials. Never read it into
+  output, never copy it, never commit it.
+- Never send a real notification or place a real order to verify a change. Use
+  `--dry-run` (see `backend/scripts/away_check.py`) or a test double.

@@ -1,0 +1,53 @@
+# LongHorizon-Harness project defaults.
+# Explicit CLI arguments override these values.
+
+[run]
+agent = "claude_code"
+model = "claude-opus-5"
+
+# Reasoning depth, forwarded to whichever backend exposes it (Claude Code
+# through `--effort`). Manager and auditor run at xhigh below: those two roles
+# are short prompts where judgment quality decides whether a round is accepted,
+# so the extra cost is small and lands where it matters.
+reasoning_effort = "high"
+
+env = "local"
+runs_root = "./.lh-harness/runs"
+
+prompt_language = "en"
+mcp_add_dirs = []
+
+# Build/cache directories the auditor read-only guard should not snapshot.
+# These churn on every test run and would otherwise read as "the auditor
+# mutated the workspace".
+guard_exclude_paths = [".venv", "node_modules", "frontend/node_modules", "frontend/dist", ".pytest_cache", "backend/.pytest_cache"]
+
+max_rounds = 25
+dashboard = true
+dashboard_port = 0
+
+[run.timeouts]
+manager = 300
+gui_executor = 1800
+cli_executor = 1800
+auditor = 300
+
+[run.roles.manager]
+reasoning_effort = "xhigh"
+
+[run.roles.executor]
+
+[run.roles.gui_executor]
+
+[run.roles.cli_executor]
+
+[run.roles.auditor]
+reasoning_effort = "xhigh"
+
+[run.roles.gui_auditor]
+
+[run.roles.cli_auditor]
+reasoning_effort = "xhigh"
+
+# Writes the closing reply to you; falls back to the manager's agent/model.
+[run.roles.final_response]
