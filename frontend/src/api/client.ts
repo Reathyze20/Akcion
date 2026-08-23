@@ -320,6 +320,48 @@ class ApiClient {
     return response.data;
   }
 
+
+  // ==========================================================================
+  // Away mode — one message a day, and never one built on stale data
+  // ==========================================================================
+
+  async getAwayStatus(): Promise<AwayStatus> {
+    const response = await this.client.get<AwayStatus>('/api/away');
+    return response.data;
+  }
+
+  async setAwayMode(update: AwayUpdate): Promise<AwayStatus> {
+    const response = await this.client.put<AwayStatus>('/api/away', update);
+    return response.data;
+  }
+
+  async previewAway(): Promise<AwayPreview> {
+    const response = await this.client.post<AwayPreview>('/api/away/preview');
+    return response.data;
+  }
+
+  // ==========================================================================
+  // Market gauge — where the S&P sits on its 40-year chart
+  // ==========================================================================
+
+  async getMarketGauge(refresh = false): Promise<MarketGauge> {
+    const response = await this.client.get<MarketGauge>(
+      '/api/market-gauge', { params: { refresh } }
+    );
+    return response.data;
+  }
+
+  // ==========================================================================
+  // Cash and hedge — the semafor in instruments, not percentages
+  // ==========================================================================
+
+  async getCashHedgePlan(alert?: string): Promise<CashHedgePlan> {
+    const response = await this.client.get<CashHedgePlan>(
+      '/api/cash-hedge', { params: alert ? { alert } : undefined }
+    );
+    return response.data;
+  }
+
   async deletePosition(positionId: number): Promise<void> {
     await this.client.delete(`/api/portfolio/positions/${positionId}`);
   }
@@ -1028,6 +1070,120 @@ export interface SecSyncResult {
   gaps?: string[];
   note?: string | null;
   error?: string | null;
+}
+
+
+// ============================================================================
+// Away mode
+// ============================================================================
+
+export interface AwayStatus {
+  is_away: boolean;
+  /** On *and* inside its window. An `until` in the past reads as off. */
+  active: boolean;
+  since?: string | null;
+  until?: string | null;
+  reason?: string | null;
+  days_away?: number | null;
+  last_push_at?: string | null;
+  last_push_subject?: string | null;
+  /**
+   * Why the last cycle did or did not send. Away mode is quiet on purpose;
+   * this is what makes the quiet readable rather than indistinguishable from
+   * the app having stopped working.
+   */
+  last_digest_reason?: string | null;
+  max_data_age_hours: number;
+  quiet_period_hours: number;
+}
+
+export interface AwayUpdate {
+  is_away: boolean;
+  until?: string | null;
+  reason?: string | null;
+}
+
+export interface AwayPreview {
+  away: boolean;
+  would_send: boolean;
+  decision: string;
+  subject?: string | null;
+  body?: string | null;
+  /** What was held back, and why. Never silently dropped. */
+  held: string[];
+}
+
+// ============================================================================
+// Market gauge
+// ============================================================================
+
+export type ChannelPosition =
+  | 'AT_UPPER_LINE'
+  | 'EXPENSIVE'
+  | 'ABOVE_TREND'
+  | 'BELOW_GREY'
+  | 'AT_LOWER_LINE';
+
+export interface MarketGauge {
+  index: string;
+  as_of: string;
+  close: number;
+  z_score: number;
+  percentile: number;
+  position: ChannelPosition;
+  position_cs: string;
+  /** A suggestion. Nothing in the app acts on it by itself. */
+  suggested_alert: string;
+  current_alert?: string | null;
+  agreement_cs: string;
+  trend_value: number;
+  upper_line: number;
+  grey_line: number;
+  lower_line: number;
+  trend_pct_per_year: number;
+  years: number;
+  /** What this measure cannot see — it finds the 1999 top, misses 2007. */
+  blind_spot_cs: string;
+}
+
+// ============================================================================
+// Cash and hedge
+// ============================================================================
+
+export type HedgeAvailability =
+  | 'LIKELY_AVAILABLE'
+  | 'LIKELY_BLOCKED_EU_RETAIL'
+  | 'UNKNOWN';
+
+export interface CashHedgeLeg {
+  ticker: string;
+  name: string;
+  role: 'CASH_PARK' | 'HEDGE';
+  currency: string;
+  exchange: string;
+  availability: HedgeAvailability;
+  note_cs: string;
+  target_czk: number;
+  price?: number | null;
+  /** null when the price or the rate could not be read — never a guess. */
+  shares?: number | null;
+  blocker_cs?: string | null;
+}
+
+export interface CashHedgePlan {
+  alert: string;
+  portfolio_czk: number;
+  stocks_pct: number;
+  cash_pct: number;
+  hedge_pct: number;
+  canon_text: string;
+  /** True when the percentages are the app's reading, not the canon's. */
+  interpreted: boolean;
+  legs: CashHedgeLeg[];
+  fallback_cs?: string | null;
+  /** Proof that UCITS inverse ETFs exist — explicitly not a substitute. */
+  ucits_example?: CashHedgeLeg | null;
+  gaps: string[];
 }
 
 // Export singleton instance

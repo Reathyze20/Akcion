@@ -23,6 +23,9 @@ import type {
 import { StockDetail } from './StockDetail';
 import NotificationBell from './NotificationBell';
 import DailyActionWidget from './DailyActionWidget';
+import MarketGaugeCard from './MarketGaugeCard';
+import CashHedgeCard from './CashHedgeCard';
+import AwayModeCard from './AwayModeCard';
 import ClearPortfolioButton from './ClearPortfolioButton';
 
 // ============================================================================
@@ -3728,6 +3731,18 @@ export const InvestmentTerminal: React.FC = () => {
               return false;
             }}
           />
+        )}
+
+        {/* Semafor podle 40letého grafu, hotovost/hedge v kusech, a away mode.
+            Sedí hned pod denním seznamem: první dvě karty vysvětlují, proč ten
+            seznam říká, co říká, a třetí je to, co se stane, když se na appku
+            týden nepodíváš. */}
+        {activeTab === 'portfolio' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <MarketGaugeCard />
+            <CashHedgeCard />
+            <AwayModeCard className="lg:col-span-2" />
+          </div>
         )}
 
         {/* Portfolio Summary Stats */}
