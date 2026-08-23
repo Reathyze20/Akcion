@@ -10,7 +10,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  TrendingUp, TrendingDown, AlertTriangle, Shield, Rocket, Anchor,
+  TrendingUp, TrendingDown, AlertTriangle, Shield,
   DollarSign, Users, PlusCircle, RefreshCw, Search,
   Target, Zap, AlertCircle, X, Check, Clock, BarChart3,
   Upload, Plus, FileSpreadsheet, Edit3
@@ -23,12 +23,15 @@ import type {
 import { StockDetail } from './StockDetail';
 import NotificationBell from './NotificationBell';
 import DailyActionWidget from './DailyActionWidget';
-import MarketGaugeCard from './MarketGaugeCard';
-import CashHedgeCard from './CashHedgeCard';
-import AwayModeCard from './AwayModeCard';
 import ClearPortfolioButton from './ClearPortfolioButton';
+import RiskMeter from './RiskMeter';
+import Term from './ui/Term';
+import { percent, plural } from '../lib/format';
 import GoalPage from './goal/GoalPage';
 import ThemeToggle from './ui/ThemeToggle';
+import SideRail from './shell/SideRail';
+import ContextPanel from './shell/ContextPanel';
+import PaymentsPage from './payments/PaymentsPage';
 
 // ============================================================================
 // TYPES
@@ -299,83 +302,74 @@ const getTrendStatus = (
 // SUB-COMPONENTS
 // ============================================================================
 
-// Risk Meter Component - warns when Growth > 60%
-const RiskMeter: React.FC<{ 
-  rocketCount: number; 
-  anchorCount: number; 
-  waitTimeCount: number; 
-  unanalyzedCount: number;
-  riskScore: number 
-}> = ({
-  rocketCount, anchorCount, waitTimeCount, unanalyzedCount, riskScore
-}) => {
-  // Risk thresholds: >60% Growth = Orange warning, >70% = Red danger
-  const analyzedTotal = rocketCount + anchorCount + waitTimeCount;
-  const isOverexposed = analyzedTotal > 0 && riskScore > 60;
-  const isDangerous = analyzedTotal > 0 && riskScore > 70;
-  const hasUnanalyzed = unanalyzedCount > 0;
-  const riskColor = isDangerous ? 'text-negative' : isOverexposed ? 'text-warning' : 'text-positive';
-  const borderColor = isDangerous ? 'border-negative/50' : isOverexposed ? 'border-warning/50' : hasUnanalyzed ? 'border-border' : 'border-border-subtle';
-  
-  return (
-    <div className={`bg-surface-raised/50 rounded-xl p-4 border ${borderColor} ${isDangerous ? 'animate-pulse' : ''}`}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-xs text-text-secondary uppercase tracking-wider">Risk Exposure</div>
-        {hasUnanalyzed && !isOverexposed && (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-600 text-text-secondary">
-            RUN DEEP DD
-          </span>
-        )}
-        {isOverexposed && (
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isDangerous ? 'bg-negative/20 text-negative' : 'bg-warning/20 text-warning'}`}>
-            {isDangerous ? 'REBALANCE' : 'MONITOR'}
-          </span>
-        )}
-      </div>
-      
-      {/* Score display */}
-      <div className={`text-3xl font-black ${riskColor} text-center mb-3`}>
-        {riskScore}%
-      </div>
-      
-      {/* Categories row */}
-      <div className="grid grid-cols-4 gap-1 text-center">
-        <div className="flex flex-col items-center">
-          <Rocket className={`w-4 h-4 mb-0.5 ${rocketCount > 0 ? 'text-accent' : 'text-text-muted'}`} />
-          <span className={`font-bold text-sm ${rocketCount > 0 ? 'text-accent' : 'text-text-muted'}`}>{rocketCount}</span>
-          <span className="text-[8px] text-text-muted">Growth</span>
-        </div>
-        <div className="flex flex-col items-center">
-          <Anchor className={`w-4 h-4 mb-0.5 ${anchorCount > 0 ? 'text-accent' : 'text-slate-600'}`} />
-          <span className={`font-bold text-sm ${anchorCount > 0 ? 'text-accent' : 'text-slate-600'}`}>{anchorCount}</span>
-          <span className="text-[8px] text-text-muted">Core</span>
-        </div>
-        <div className="flex flex-col items-center">
-          <Clock className={`w-4 h-4 mb-0.5 ${waitTimeCount > 0 ? 'text-warning' : 'text-text-muted'}`} />
-          <span className={`font-bold text-sm ${waitTimeCount > 0 ? 'text-warning' : 'text-text-muted'}`}>{waitTimeCount}</span>
-          <span className="text-[8px] text-text-muted">Wait</span>
-        </div>
-        <div className="flex flex-col items-center">
-          <AlertCircle className={`w-4 h-4 mb-0.5 ${unanalyzedCount > 0 ? 'text-text-secondary' : 'text-slate-600'}`} />
-          <span className={`font-bold text-sm ${unanalyzedCount > 0 ? 'text-text-secondary' : 'text-slate-600'}`}>{unanalyzedCount}</span>
-          <span className="text-[8px] text-text-muted">New</span>
-        </div>
-      </div>
-      
-      {isOverexposed && (
-        <div className={`mt-2 text-[10px] text-center ${isDangerous ? 'text-negative' : 'text-warning'}`}>
-          {isDangerous ? 'Rebalance needed' : 'Monitor growth allocation'}
-        </div>
-      )}
-    </div>
-  );
-};
-
 // Portfolio Row Component
+/**
+ * Které nepovinné sloupce má smysl kreslit.
+ *
+ * Deset sloupců, z nichž čtyři jsou u čtrnácti z patnácti řádků prázdné,
+ * není tabulka — je to mřížka pomlček. Sloupec, pro který nemá data ani
+ * jedna pozice, se proto nevykreslí vůbec a řádek se o jeho výšku zkrátí.
+ */
+export interface PositionColumns {
+  score: boolean;
+  size: boolean;
+  catalyst: boolean;
+  band: boolean;
+  /** Cesta ke zdvojnásobení. Bez známé nákupní ceny se nedá spočítat. */
+  freeride: boolean;
+  /**
+   * Sloupec s pokynem.
+   *
+   * Když aplikace nemá analýzu ani u jedné pozice, napsala patnáctkrát pod
+   * sebe „DOPLŇ ANALÝZU". Patnáct stejných vět není sloupec — je to jedna
+   * věta, a ta stojí i s důsledkem v denním seznamu vlevo. Zůstane tu jen
+   * to, co platí pro konkrétní řádek: WAIT TIME a FREE RIDE.
+   */
+  action: boolean;
+  /**
+   * Vysvětlivka „bez analýzy“ pod pokynem.
+   *
+   * Kreslí se jen tehdy, když se pozice v tomhle liší. Když analýzu nemá
+   * ani jedna, je to vlastnost portfolia, ne řádku — a stojí to jednou
+   * v denním seznamu vlevo, se všemi důsledky, místo patnáctkrát tady.
+   */
+  analysisNote: boolean;
+}
+
+/**
+ * Hlavička sloupce.
+ *
+ * Devět hlaviček psaných ručně mělo šest různých kombinací velikosti,
+ * tučnosti a odsazení, a dvouřádkové („Váha" nad „Aktuální / Cíl")
+ * přidávaly hlavičce výšku, kterou pak neměla tabulka. Upřesnění se
+ * proto píše za název, ne pod něj.
+ */
+const Th: React.FC<{
+  children: React.ReactNode;
+  width: string;
+  align?: 'left' | 'center' | 'right';
+  /** Upřesnění za názvem — „teď / cíl", „tento měsíc". */
+  sub?: string;
+  hint?: string;
+}> = ({ children, width, align = 'left', sub, hint }) => (
+  <th
+    title={hint}
+    className={`eyebrow px-2.5 py-2 font-medium text-text-muted ${width} ${
+      align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
+    }`}
+  >
+    {children}
+    {sub && (
+      <span className="ml-1 font-normal normal-case tracking-normal opacity-60">{sub}</span>
+    )}
+  </th>
+);
+
 const PortfolioRow: React.FC<{
   position: EnrichedPosition;
+  columns: PositionColumns;
   onClick: () => void;
-}> = ({ position, onClick }) => {
+}> = ({ position, columns, onClick }) => {
   const scoreColor = position.conviction_score 
     ? position.conviction_score >= 7 ? 'text-positive' 
       : position.conviction_score >= 5 ? 'text-warning' 
@@ -436,16 +430,16 @@ const PortfolioRow: React.FC<{
         border-b border-border/50 cursor-pointer transition-all
         hover:bg-surface-raised/70
         ${isHardExit ? 'bg-negative/15' : ''}
-        ${position.is_deteriorated && !isHardExit ? 'animate-pulse bg-negative/10' : ''}
+        ${position.is_deteriorated && !isHardExit ? 'bg-negative/10' : ''}
       `}
     >
       {/* Ticker & Name */}
-      <td className="py-3 px-3">
+      <td className="py-1.5 px-2.5">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <span className="font-bold text-text-primary text-base">{position.ticker}</span>
             {position.is_deteriorated && (
-              <span className="px-1.5 py-0.5 bg-negative/20 text-negative text-[10px] font-bold rounded animate-pulse">
+              <span className="px-1.5 py-0.5 bg-negative/20 text-negative text-[10px] font-bold rounded">
                 REVIEW
               </span>
             )}
@@ -456,13 +450,16 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* ACTION - Dynamic Command */}
-      <td className="py-3 px-3">
-        <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
-          {actionCmd.text}
-        </div>
-        {/* Why there is no verdict — the gap itself, stated */}
-        {!position.analysis_usable && position.analysis_note && (
+      {/* Pokyn. Věta „bez analýzy“ pod ním se kreslí, jen když se tím
+          liší od ostatních — když ji nemá ani jedna pozice, stojí to
+          jednou nad tabulkou místo patnáctkrát v ní. */}
+      <td className="py-1.5 px-2.5">
+        {(columns.action || actionCmd.text !== 'DOPLŇ ANALÝZU') && (
+          <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
+            {actionCmd.text}
+          </div>
+        )}
+        {columns.analysisNote && !position.analysis_usable && position.analysis_note && (
           <div className="text-[9px] text-text-muted mt-0.5">{position.analysis_note}</div>
         )}
         {isWaitTime && (
@@ -472,8 +469,9 @@ const PortfolioRow: React.FC<{
         )}
       </td>
 
-      {/* Weight % - Aktuální vs Cílová */}
-      <td className="py-3 px-3">
+      {/* Váha aktuální / cílová. Pomlčka na místě cíle už říká, že cíl
+          neznáme — řádek „CÍL NEZNÁMÝ“ pod ní byl totéž podruhé. */}
+      <td className="py-1.5 px-2.5">
         <div className="flex flex-col">
           {/* Numbers stay neutral; only the small status tag carries color.
               A column of red values reads as panic — this is a caution, not a loss. */}
@@ -481,199 +479,186 @@ const PortfolioRow: React.FC<{
             <span className="font-mono text-sm font-semibold text-text-secondary">
               {position.weight_in_portfolio.toFixed(1)}%
             </span>
-            <span className="text-text-muted text-xs">/</span>
             {/* A target of "0.0 %" computed from a missing score used to read
-                as "sell it all". Without an analysis there is no target. */}
-            <span className="font-mono text-xs text-text-muted">
-              {position.analysis_usable ? `${position.max_allocation_cap.toFixed(1)}%` : '—'}
-            </span>
+                as "sell it all". Without an analysis there is no target — a
+                cílová váha se pak nekreslí vůbec, protože „/ —" na patnácti
+                řádcích je jen patnáctkrát tatáž pomlčka. */}
+            {columns.action && (
+              <>
+                <span className="text-text-muted text-xs">/</span>
+                <span
+                  className="font-mono text-xs text-text-muted"
+                  title={position.analysis_usable ? undefined : 'Cílovou váhu aplikace bez konvikčního skóre nespočítá.'}
+                >
+                  {position.analysis_usable ? `${position.max_allocation_cap.toFixed(1)}%` : '—'}
+                </span>
+              </>
+            )}
           </div>
-          {!position.analysis_usable ? (
-            <div className="text-[9px] text-text-muted">CÍL NEZNÁMÝ</div>
-          ) : position.is_overweight ? (
-            <div className="text-[9px] text-warning">OVERWEIGHT</div>
-          ) : position.is_underweight ? (
-            <div className="text-[9px] text-text-muted">UNDERWEIGHT</div>
+          {position.analysis_usable && position.is_overweight ? (
+            <div className="text-[9px] text-warning">NAD LIMITEM</div>
+          ) : position.analysis_usable && position.is_underweight ? (
+            <div className="text-[9px] text-text-muted">POD CÍLEM</div>
           ) : null}
         </div>
       </td>
 
-      {/* Conviction Score — a number with no date reads as today's view */}
-      <td className="py-3 px-3 text-center">
-        <div className={`text-xl font-black ${position.analysis_usable ? scoreColor : 'text-text-muted'}`}>
-          {position.conviction_score ?? '—'}
-        </div>
-        {position.conviction_score !== null && !position.analysis_usable && (
-          <div className="text-[9px] text-warning" title={position.analysis_note ?? ''}>
-            neaktuální
+      {/* Konvikční skóre — číslo bez data se čte jako dnešní pohled. */}
+      {columns.score && (
+        <td className="py-1.5 px-2.5 text-center">
+          <div className={`text-xl font-black ${position.analysis_usable ? scoreColor : 'text-text-muted'}`}>
+            {position.conviction_score ?? '—'}
           </div>
-        )}
-      </td>
+          {position.conviction_score !== null && !position.analysis_usable && (
+            <div className="text-[9px] text-warning" title={position.analysis_note ?? ''}>
+              neaktuální
+            </div>
+          )}
+        </td>
+      )}
 
-      {/* Current Price */}
-      <td className="py-3 px-3 text-right">
+      {/* Cena. Nákupní cena se píše, jen když ji známe — že chybí, stojí
+          ve sloupci P/L, kde na ní záleží. */}
+      <td className="py-1.5 px-2.5 text-right">
         <div className="flex flex-col items-end">
           {position.current_price ? (
             <>
               <div className="text-sm font-bold text-text-primary font-mono">
                 {formatPrice(position.current_price, position.currency)}
               </div>
-              {position.avg_cost != null ? (
+              {position.avg_cost != null && (
                 <div className="text-[9px] text-text-muted">
-                  Cost: {formatPrice(position.avg_cost, position.currency)}
-                </div>
-              ) : (
-                <div className="text-[9px] text-text-muted" title="Broker export neobsahuje nákupní cenu — doplň ji v detailu pozice">
-                  Cost: <span className="text-warning">doplň</span>
+                  Nákup: {formatPrice(position.avg_cost, position.currency)}
                 </div>
               )}
             </>
           ) : (
-            <div className="text-xs text-text-muted">-</div>
+            <div className="text-xs text-text-muted">—</div>
           )}
         </div>
       </td>
 
-      {/* Optimal Size - GAP ANALYSIS */}
-      <td className="py-3 px-3">
-        {!position.analysis_usable ? (
-          <div className="flex flex-col">
+      {/* Optimální dávka na tento měsíc. */}
+      {columns.size && (
+        <td className="py-1.5 px-2.5">
+          {!position.analysis_usable ? (
             <div className="text-text-muted font-mono text-xs">—</div>
-            <div className="text-[9px] text-slate-600">bez analýzy nepočítám</div>
-          </div>
-        ) : position.action_signal === 'SELL' ? (
-          <div className="flex flex-col">
-            <div className="text-negative font-bold text-xs">SELL</div>
-            <div className="text-[9px] text-negative/80">Score &lt; 5</div>
-          </div>
-        ) : position.optimal_size < 0 ? (
-          // OVERWEIGHT: Show how much to SELL (negative optimal_size)
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1">
-              <span className="text-warning font-bold text-[9px]">TRIM</span>
-              <span className="text-sm font-bold text-warning font-mono">
-                {formatCurrency(Math.abs(position.optimal_size))}
-              </span>
+          ) : position.action_signal === 'SELL' ? (
+            <div className="flex flex-col">
+              <div className="text-negative font-bold text-xs">PRODAT</div>
+              <div className="text-[9px] text-negative/80">Skóre &lt; 5</div>
             </div>
-            <div className="text-[9px] text-warning/80">
-              Nad limit {position.max_allocation_cap.toFixed(1)}%
-            </div>
-          </div>
-        ) : position.optimal_size > 0 ? (
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1">
-              {position.action_signal === 'SNIPER' && <span className="text-warning text-[9px] font-bold">SNIPER</span>}
-              <span className="text-sm font-bold text-positive font-mono">
-                {formatCurrency(position.optimal_size)}
-              </span>
-            </div>
-            <div className="text-[9px] text-text-muted">
-              Gap: {formatCurrency(position.gap_czk)}
-            </div>
-            {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
-              <div className="text-[9px] text-warning font-bold">
-                #{position.allocation_priority} priorita
+          ) : position.optimal_size < 0 ? (
+            // OVERWEIGHT: Show how much to SELL (negative optimal_size)
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <span className="text-warning font-bold text-[9px]">ODEBRAT</span>
+                <span className="text-sm font-bold text-warning font-mono">
+                  {formatCurrency(Math.abs(position.optimal_size))}
+                </span>
               </div>
+              <div className="text-[9px] text-warning/80">
+                Nad limit {position.max_allocation_cap.toFixed(1)}%
+              </div>
+            </div>
+          ) : position.optimal_size > 0 ? (
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                {position.action_signal === 'SNIPER' && <span className="text-warning text-[9px] font-bold">SNIPER</span>}
+                <span className="text-sm font-bold text-positive font-mono">
+                  {formatCurrency(position.optimal_size)}
+                </span>
+              </div>
+              {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
+                <div className="text-[9px] text-warning font-bold">
+                  #{position.allocation_priority} priorita
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              <div className="text-text-muted font-mono text-xs">0 Kč</div>
+              <div className="text-[9px] text-text-muted">
+                {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
+              </div>
+            </div>
+          )}
+        </td>
+      )}
+
+      {/* Nejbližší katalyzátor. */}
+      {columns.catalyst && (
+        <td className="py-1.5 px-2.5">
+          {position.next_catalyst ? (
+            <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
+              {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
+            </div>
+          ) : (
+            // Absent data is not a red flag about the company.
+            <div className="text-[9px] text-text-muted uppercase">—</div>
+          )}
+        </td>
+      )}
+
+      {/* Kde cena leží mezi zelenou a červenou linkou. Není to trend —
+          není v tom směr — a prázdné, když linky nejsou. */}
+      {columns.band && (
+        <td className="py-1.5 px-2.5">
+          {/* Prázdno, ne pomlčka. Dvanáct pomlček pod sebou dělá svislý
+              pruh, který táhne oko a není v něm žádná informace; sloupec
+              už stojí jen tehdy, když ho vyplní aspoň pětina řádků. */}
+          <div className="flex flex-col items-center gap-1">
+            {position.trend_status === 'UNKNOWN' ? null : (
+              <>
+                {trendIcon}
+                <span className={`text-[10px] font-medium ${
+                  position.trend_status === 'BULLISH' ? 'text-positive' :
+                  position.trend_status === 'BEARISH' ? 'text-negative' :
+                  'text-text-muted'
+                }`}>
+                  {position.trend_status === 'BULLISH' ? 'U ZELENÉ'
+                    : position.trend_status === 'BEARISH' ? 'U ČERVENÉ'
+                    : 'STŘED'}
+                </span>
+              </>
             )}
           </div>
-        ) : (
-          <div className="flex flex-col">
-            <div className="text-text-muted font-mono text-xs">0 Kč</div>
-            <div className="text-[9px] text-slate-600">
-              {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
-            </div>
-          </div>
-        )}
-      </td>
+        </td>
+      )}
 
-      {/* NEXT CATALYST */}
-      <td className="py-3 px-3">
-        {position.next_catalyst ? (
-          <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
-            {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
-          </div>
-        ) : (
-          // Absent data is not a red flag about the company.
-          <div className="text-[9px] text-text-muted uppercase">—</div>
-        )}
-      </td>
+      {/* Cesta k free ride.
 
-      {/* Where the price sits in the green/red band. Not a trend — it has
-          no direction in it — and blank when there are no lines to sit in. */}
-      <td className="py-3 px-3">
-        <div className="flex flex-col items-center gap-1">
-          {position.trend_status === 'UNKNOWN' ? (
-            <>
-              <span className="text-[10px] text-text-muted">—</span>
-              <span className="text-[9px] text-text-muted" title="Chybí zelená/červená linka pro tento ticker">
-                bez linek
-              </span>
-            </>
-          ) : (
-            <>
-              {trendIcon}
-              <span className={`text-[10px] font-medium ${
-                position.trend_status === 'BULLISH' ? 'text-positive' :
-                position.trend_status === 'BEARISH' ? 'text-negative' :
-                'text-text-muted'
-              }`}>
-                {position.trend_status === 'BULLISH' ? 'U ZELENÉ'
-                  : position.trend_status === 'BEARISH' ? 'U ČERVENÉ'
-                  : 'STŘED'}
-              </span>
-            </>
-          )}
-        </div>
-      </td>
-
-      {/* STRATEGY - Position Health */}
-      <td className="py-3 px-3">
-        {isFreeRideEligible ? (
-          <div className="flex flex-col">
-            <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
-            <div className="text-[8px] text-warning/70">
-              Sell {sharesToSellForFreeRide} shares
+          Tenhle sloupec dřív psal „VE ZTRÁTĚ“, pruh a „−60 % od nákupu“ —
+          tedy potřetí totéž, co vedle stojí jako −60,30 % a −746,53 US$.
+          Zbylo z něj jen to, co P/L neříká: jak daleko je pozice ke
+          zdvojnásobení, po kterém se podle kánonu vybírá vklad. */}
+      {columns.freeride && (
+        <td className="py-1.5 px-2.5">
+          {isFreeRideEligible ? (
+            <div className="flex flex-col">
+              <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
+              <div className="text-[8px] text-warning/70">
+                prodat {sharesToSellForFreeRide} ks
+              </div>
             </div>
-          </div>
-        ) : position.unrealized_pl_percent == null ? (
-          <div className="flex flex-col">
-            <div className="text-[9px] text-warning uppercase">NEZNÁMÝ STAV</div>
-            <div className="text-[8px] text-slate-600 mt-0.5">⚠️ bez nákup. ceny</div>
-          </div>
-        ) : position.unrealized_pl_percent < 0 ? (
-          // This said "GROWING" for every position, including one down 94 %.
-          // Worse, the bar had no lower clamp, so a loss produced a negative
-          // CSS width the browser discarded — and rendered full green.
-          <div className="flex flex-col">
-            <div className="text-[9px] text-negative uppercase">VE ZTRÁTĚ</div>
-            <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden mt-1">
-              <div
-                className="h-full bg-negative/70 transition-all"
-                style={{ width: `${Math.min(100, Math.abs(position.unrealized_pl_percent))}%` }}
-              />
+          ) : position.unrealized_pl_percent != null && position.unrealized_pl_percent > 0 ? (
+            <div className="flex flex-col gap-1">
+              <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-positive/60 transition-all"
+                  style={{ width: `${progressTo150}%` }}
+                />
+              </div>
+              <div className="text-[8px] text-text-muted">
+                {position.unrealized_pl_percent.toFixed(0)} % ze 150 %
+              </div>
             </div>
-            <div className="text-[8px] text-slate-600 mt-0.5">
-              {position.unrealized_pl_percent.toFixed(0)}% od nákupu
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col">
-            <div className="text-[9px] text-positive uppercase">V ZISKU</div>
-            <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden mt-1">
-              <div
-                className="h-full bg-gradient-to-r from-surface-overlay to-positive transition-all"
-                style={{ width: `${progressTo150}%` }}
-              />
-            </div>
-            <div className="text-[8px] text-slate-600 mt-0.5">
-              {position.unrealized_pl_percent.toFixed(0)}% / 150%
-            </div>
-          </div>
-        )}
-      </td>
+          ) : null}
+        </td>
+      )}
 
       {/* P/L % — unknown cost basis renders as a prompt, never as 0.00% */}
-      <td className="py-3 px-3 text-right">
+      <td className="py-1.5 px-2.5 text-right">
         {hasCostBasis && position.unrealized_pl_percent != null ? (
           <>
             <div className={`font-bold text-sm ${plColor}`}>
@@ -685,7 +670,7 @@ const PortfolioRow: React.FC<{
           </>
         ) : (
           <div className="text-[10px] text-text-muted" title="Doplň nákupní cenu v detailu pozice">
-            — <span className="text-warning">bez ceny</span>
+            bez nákupní ceny
           </div>
         )}
       </td>
@@ -795,15 +780,15 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
       const price = parseFloat(editCurrentPrice);
       
       if (isNaN(shares) || shares <= 0) {
-        setSaveError('Shares must be a positive number');
+        setSaveError('Počet kusů musí být kladné číslo.');
         return;
       }
       if (isNaN(avgCost) || avgCost < 0) {
-        setSaveError('Average cost must be a non-negative number');
+        setSaveError('Průměrná pořizovací cena nesmí být záporná.');
         return;
       }
       if (isNaN(price) || price <= 0) {
-        setSaveError('Current price must be a positive number');
+        setSaveError('Aktuální cena musí být kladné číslo.');
         return;
       }
       
@@ -825,14 +810,14 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
       onUpdate();
     } catch (err) {
       console.error('Failed to save position:', err);
-      setSaveError('Failed to save changes. Please try again.');
+      setSaveError('Změny se nepodařilo uložit. Zkus to znovu.');
     } finally {
       setIsSavingPosition(false);
     }
   };
   
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-border rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-surface-base border-b border-border p-4 flex items-center justify-between z-10">
@@ -1010,7 +995,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                     onClick={handleSavePosition}
                     disabled={isSavingPosition}
                     className="p-1.5 bg-positive/20 hover:bg-positive/30 text-positive rounded-lg transition-colors disabled:opacity-50"
-                    title="Save changes"
+                    title="Uložit změny"
                   >
                     {isSavingPosition ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   </button>
@@ -1025,8 +1010,8 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                       setEditCurrency(position.currency || 'USD');
                       setSaveError(null);
                     }}
-                    className="p-1.5 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded-lg transition-colors"
-                    title="Cancel"
+                    className="p-1.5 bg-surface-active hover:bg-surface-active text-text-secondary rounded-lg transition-colors"
+                    title="Zrušit"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1058,7 +1043,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               
               {/* Company Name (editable) */}
               <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Company</span>
+                <span className="text-text-secondary">Firma</span>
                 {isEditingPosition ? (
                   <input
                     type="text"
@@ -1156,7 +1141,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                     </button>
                     <button
                       onClick={() => setIsEditingPrice(false)}
-                      className="p-1 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded transition-colors"
+                      className="p-1 bg-surface-active hover:bg-surface-active text-text-secondary rounded transition-colors"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -1195,7 +1180,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               </div>
               
               <div className="border-t border-border pt-3 flex justify-between">
-                <span className="text-text-secondary">Cost Basis</span>
+                <span className="text-text-secondary">Pořizovací cena</span>
                 <span className="font-mono text-text-secondary">
                   {position.cost_basis != null ? formatCurrency(position.cost_basis, position.currency || 'USD') : '⚠️ chybí nákupní cena'}
                 </span>
@@ -1205,7 +1190,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                 <span className="font-mono text-text-primary">{formatCurrency(position.market_value, position.currency || 'USD')}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Unrealized P/L</span>
+                <span className="text-text-secondary">Nerealizovaný <Term id="pl">P/L</Term></span>
                 <div className="text-right">
                   {position.unrealized_pl != null && position.unrealized_pl_percent != null ? (
                     <>
@@ -1261,7 +1246,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                 <span className={`w-3 h-3 rounded-full ${
                   position.inflection_status === 'ACHIEVED' ? 'bg-positive' :
                   position.inflection_status === 'UPCOMING' ? 'bg-warning animate-pulse' :
-                  'bg-slate-500'
+                  'bg-surface-active'
                 }`} />
                 <span className="font-semibold text-text-primary">
                   {position.inflection_status || 'PENDING'}
@@ -1289,7 +1274,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               <div className="text-xs text-text-muted uppercase mb-2">Upcoming Catalysts</div>
               <div className="flex flex-wrap gap-2">
                 {stock?.catalysts?.split(',').map((c, i) => (
-                  <span key={i} className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded">
+                  <span key={i} className="px-2 py-1 bg-accent/20 text-accent text-xs rounded">
                     {c.trim()}
                   </span>
                 )) || (
@@ -1316,7 +1301,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                 <div className="h-4 bg-gradient-to-r from-positive via-warning to-negative rounded-full relative">
                   {/* Current Price Marker */}
                   <div 
-                    className="absolute top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded shadow-lg shadow-white/50"
+                    className="absolute top-1/2 -translate-y-1/2 w-1 h-8 bg-text-primary rounded"
                     style={{ left: `${Math.max(0, Math.min(100, pricePosition))}%` }}
                   >
                     <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-bold text-text-primary bg-surface-base px-2 py-1 rounded">
@@ -1400,7 +1385,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               {position.is_deteriorated && (
                 <button className="w-full py-2 bg-negative/20 hover:bg-negative/30 text-negative font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
                   <AlertCircle className="w-4 h-4" />
-                  Close Entire Position
+                  Uzavřít celou pozici
                 </button>
               )}
             </div>
@@ -1500,7 +1485,7 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-info/50 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-surface-base border-b border-info/50 p-4 flex items-center justify-between z-10">
@@ -1554,7 +1539,7 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     sourceType === opt.value
                       ? 'bg-info text-text-primary'
-                      : 'bg-surface-hover text-text-secondary hover:bg-slate-600'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
                   }`}
                 >
                   {opt.label}
@@ -1567,7 +1552,7 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
               onChange={(e) => setUpdateText(e.target.value)}
               placeholder="Paste new information about this stock..."
               rows={4}
-              className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-info resize-none mb-3"
+              className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-info resize-none mb-3"
             />
             
             <div className="flex items-center justify-between">
@@ -1581,7 +1566,7 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
                 <button
                   onClick={handleUpdate}
                   disabled={isUpdating || updateText.length < 50}
-                  className="px-4 py-2 bg-info hover:bg-info/80 disabled:bg-slate-600 text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
+                  className="px-4 py-2 bg-info hover:bg-info/80 disabled:bg-surface-active text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
                 >
                   {isUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                   {isUpdating ? 'Processing...' : 'Run Analysis'}
@@ -1627,11 +1612,11 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
             
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-text-secondary">Verdict</span>
+                <span className="text-text-secondary">Verdikt</span>
                 <span className={`font-bold px-2 py-0.5 rounded text-sm ${
                   stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
                   stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
-                  stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-accent' :
+                  stock.action_verdict === 'WATCH_LIST' ? 'bg-accent/20 text-accent' :
                   'bg-surface-hover text-text-secondary'
                 }`}>
                   {stock.action_verdict || 'N/A'}
@@ -1654,11 +1639,11 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
               </div>
               
               <div className="flex justify-between">
-                <span className="text-text-secondary">Price Zone</span>
+                <span className="text-text-secondary">Cenové pásmo</span>
                 <span className={`font-bold px-2 py-0.5 rounded text-sm ${
                   stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
                   stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
-                  stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-accent' :
+                  stock.price_zone === 'ACCUMULATE' ? 'bg-accent/20 text-accent' :
                   stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
                   'bg-surface-hover text-text-secondary'
                 }`}>
@@ -1759,7 +1744,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
           );
           onSuccess();
           setTimeout(() => onClose(), 1500);
-        } catch (uploadErr) {
+        } catch {
           setError('Portfolio created, but CSV upload failed. Try importing again.');
           onSuccess(); // Still refresh to show new portfolio
         }
@@ -1767,7 +1752,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
         setSuccess(`Portfolio "${portfolio.name}" created! Now select a CSV file.`);
         onSuccess();
       }
-    } catch (err) {
+    } catch {
       setError('Failed to create portfolio');
     } finally {
       setLoading(false);
@@ -1803,7 +1788,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
       } else {
         setError(result.message || 'Import failed');
       }
-    } catch (err) {
+    } catch {
       setError('Upload failed. Check file format.');
     } finally {
       setLoading(false);
@@ -1811,7 +1796,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-positive/50 rounded-2xl w-full max-w-lg">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
@@ -1839,7 +1824,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     broker === b.value
                       ? 'bg-positive text-text-primary'
-                      : 'bg-surface-hover text-text-secondary hover:bg-slate-600'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
                   }`}
                 >
                   {b.label}
@@ -1866,7 +1851,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                 </select>
                 <button
                   onClick={() => setShowNewPortfolio(true)}
-                  className="px-3 py-2 bg-surface-hover hover:bg-slate-600 rounded-lg text-text-secondary"
+                  className="px-3 py-2 bg-surface-hover hover:bg-surface-active rounded-lg text-text-secondary"
                 >
                   <Plus className="w-5 h-5" />
                 </button>
@@ -1880,20 +1865,20 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                 value={newPortfolioName}
                 onChange={(e) => setNewPortfolioName(e.target.value)}
                 placeholder="Portfolio name (e.g., Main, Wife, Kids)"
-                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-positive"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-positive"
               />
               <input
                 type="text"
                 value={newPortfolioOwner}
                 onChange={(e) => setNewPortfolioOwner(e.target.value)}
                 placeholder="Owner name (optional)"
-                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-positive"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-positive"
               />
               <div className="flex gap-2">
                 <button
                   onClick={handleCreatePortfolio}
                   disabled={loading || !newPortfolioName.trim()}
-                  className="flex-1 px-4 py-2 bg-positive hover:bg-positive/80 disabled:bg-slate-600 text-text-primary rounded-lg font-medium"
+                  className="flex-1 px-4 py-2 bg-positive hover:bg-positive/80 disabled:bg-surface-active text-text-primary rounded-lg font-medium"
                 >
                   Create Portfolio
                 </button>
@@ -1917,7 +1902,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
               className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
                 file 
                   ? 'border-positive bg-positive/10' 
-                  : 'border-border hover:border-slate-500 bg-surface-raised/50'
+                  : 'border-border hover:border-border-strong bg-surface-raised/50'
               }`}
             >
               <input
@@ -1967,7 +1952,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
           <button
             onClick={handleUpload}
             disabled={!file || !selectedPortfolioId || loading}
-            className="px-6 py-2 bg-positive hover:bg-positive/80 disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-positive hover:bg-positive/80 disabled:bg-surface-active text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2031,7 +2016,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
         onSuccess();
         onClose();
       }, 1000);
-    } catch (err) {
+    } catch {
       setError('Failed to add position');
     } finally {
       setLoading(false);
@@ -2039,7 +2024,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-border rounded-2xl w-full max-w-md">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
@@ -2083,7 +2068,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
                   value={ticker}
                   onChange={(e) => setTicker(e.target.value.toUpperCase())}
                   placeholder="e.g., GKPRF"
-                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
                 />
               </div>
 
@@ -2097,7 +2082,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
                     value={shares}
                     onChange={(e) => setShares(e.target.value)}
                     placeholder="100"
-                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
                   />
                 </div>
                 <div>
@@ -2108,7 +2093,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
                     value={avgCost}
                     onChange={(e) => setAvgCost(e.target.value)}
                     placeholder="1.50"
-                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
                   />
                 </div>
               </div>
@@ -2122,7 +2107,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
                   value={currentPrice}
                   onChange={(e) => setCurrentPrice(e.target.value)}
                   placeholder="Leave empty to use avg. cost"
-                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
                 />
               </div>
             </>
@@ -2151,7 +2136,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
           <button
             onClick={handleSubmit}
             disabled={loading || portfolios.length === 0}
-            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-surface-active text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2199,7 +2184,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
     try {
       await onSubmit(transcript, ticker || undefined, inputType, url || undefined);
       onClose();
-    } catch (err) {
+    } catch {
       setError('Analysis failed. Please try again.');
     } finally {
       setLoading(false);
@@ -2207,7 +2192,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-border rounded-2xl w-full max-w-2xl">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
@@ -2236,7 +2221,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
               onClick={() => setInputType('youtube')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 inputType === 'youtube' 
-                  ? 'bg-red-600 text-text-primary' 
+                  ? 'bg-negative text-text-primary' 
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -2246,7 +2231,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
               onClick={() => setInputType('google-docs')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 inputType === 'google-docs' 
-                  ? 'bg-blue-600 text-text-primary' 
+                  ? 'bg-accent text-text-primary' 
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -2269,7 +2254,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
               value={ticker}
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
               placeholder="e.g. GKPRF"
-              className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+              className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
             />
           </div>
           
@@ -2288,7 +2273,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
                     ? 'https://www.youtube.com/watch?v=...' 
                     : 'https://docs.google.com/document/d/...'
                 }
-                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
               />
               <p className="mt-2 text-xs text-text-muted">
                 {inputType === 'youtube' 
@@ -2307,7 +2292,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
                 onChange={(e) => setTranscript(e.target.value)}
                 placeholder="Paste earnings call transcript, video notes, or research analysis..."
                 rows={10}
-                className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent resize-none"
+                className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent resize-none"
               />
             </div>
           )}
@@ -2323,7 +2308,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-surface-active text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2439,6 +2424,54 @@ function calculateMaxAllocationCap(
 // MAIN DASHBOARD COMPONENT
 // ============================================================================
 
+/**
+ * Bezpečné čtení seznamu z localStorage.
+ *
+ * Evidence plateb a dluhů žije jen v prohlížeči — není záloha, není
+ * server, git ji nezachrání. Dvě věci proto nesmí nastat:
+ *
+ *  1. Poškozený záznam nesmí shodit render. Dřív by výjimka z JSON.parse
+ *     vzala celou aplikaci, ne jen jednu sekci.
+ *  2. Poškozený záznam se nesmí tiše přepsat. Efekt, který stav ukládá
+ *     zpátky, by prázdné pole zapsal do klíče a původní data by zmizela
+ *     bez možnosti obnovy. Originál se proto odloží pod příponu
+ *     `__poskozeno`, odkud se dá zachránit ručně.
+ */
+function readStoredList<T>(key: string): T[] {
+  let raw: string | null = null;
+  try {
+    raw = window.localStorage.getItem(key);
+  } catch {
+    return []; // Zakázaná data webu. Číst není z čeho.
+  }
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    try {
+      window.localStorage.setItem(`${key}__poskozeno`, raw);
+    } catch {
+      /* Odložit se nepovedlo. Aspoň nespadneme. */
+    }
+    console.error(`Záznam ${key} je poškozený; odložen jako ${key}__poskozeno.`);
+    return [];
+  }
+}
+
+/** Prázdný formulář platby. Stejný tvar pro všech pět knih. */
+const PRAZDNA_PLATBA = {
+  name: '',
+  amount: '',
+  date: '',
+  monthlyPayment: '',
+  creditor: '',
+  accountNumber: '',
+  variableSymbol: '',
+  note: '',
+};
+
 export const InvestmentTerminal: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
@@ -2452,7 +2485,7 @@ export const InvestmentTerminal: React.FC = () => {
   const [showAddPositionModal, setShowAddPositionModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'weight' | 'score' | 'pl'>('score');
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'cil'>('portfolio');
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'cil' | 'splaceni'>('portfolio');
   
   // Cash editing state
   const [isEditingCash, setIsEditingCash] = useState(false);
@@ -2490,8 +2523,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_debts');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_debts');
   });
   
   // Šetření Míša state
@@ -2519,8 +2551,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_savings');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_savings');
   });
   
   // Save debts to localStorage whenever they change
@@ -2558,8 +2589,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_shared_payments');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_shared_payments');
   });
   
   // Save shared payments to localStorage whenever they change
@@ -2592,8 +2622,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_tom_payments');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_tom_payments');
   });
   
   // Save Tom payments to localStorage whenever they change
@@ -2626,8 +2655,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_misa_payments');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_misa_payments');
   });
   
   // Save Míša payments to localStorage whenever they change
@@ -2936,6 +2964,56 @@ export const InvestmentTerminal: React.FC = () => {
     return filtered;
   }, [familyData.allPositions, searchQuery, sortBy]);
 
+  /**
+   * Které nepovinné sloupce vůbec nakreslit.
+   *
+   * Skóre bylo prázdné u třinácti řádků z patnácti, optimální dávka
+   * a katalyzátor u čtrnácti, pásmo u dvanácti. Čtyřicet procent tabulky
+   * byly pomlčky — a každá z nich přidávala řádku výšku, kvůli které se
+   * portfolio nevešlo na obrazovku.
+   *
+   * Sloupec se ukáže, jakmile pro něj má data aspoň jedna pozice. Nic se
+   * neskrývá natrvalo: zmizí přesně to, o čem aplikace nic neví.
+   */
+  const columns: PositionColumns = useMemo(() => {
+    /*
+     * Doplňkový sloupec má smysl, až když ho vyplní aspoň pětina řádků.
+     *
+     * Pravidlo „stačí jedna pozice" nechalo stát sloupec Katalyzátor s
+     * jediným záznamem ze čtrnácti a Pásmo se třemi — dva svislé pruhy
+     * pomlček přes celou tabulku. Údaj se neztrácí, je v detailu pozice;
+     * jen nedělá sloupec tam, kde ho nemá čím naplnit.
+     */
+    const alesponPetina = (test: (p: EnrichedPosition) => boolean) => {
+      const kolik = displayedPositions.filter(test).length;
+      return kolik > 0 && kolik >= Math.ceil(displayedPositions.length / 5);
+    };
+
+    return {
+      /* Skóre a dávka jsou vlastní výstupy aplikace. Ty se kreslí, jakmile
+         existuje aspoň jeden — na nich se rozhoduje. */
+      score: displayedPositions.some((p) => p.analysis_usable && p.conviction_score != null),
+      size: displayedPositions.some((p) => (p.optimal_size ?? 0) > 0),
+      catalyst: alesponPetina((p) => Boolean(p.next_catalyst)),
+      band: alesponPetina(
+        (p) => p.stock?.green_line != null || p.stock?.red_line != null,
+      ),
+      freeride: alesponPetina(
+        (p) => p.unrealized_pl_percent != null && p.unrealized_pl_percent > 0,
+      ),
+      analysisNote: displayedPositions.some((p) => p.analysis_usable),
+      action: displayedPositions.some((p) => p.analysis_usable),
+    };
+  }, [displayedPositions]);
+
+  /** Kolik sloupců se opravdu kreslí — pro colSpan prázdného řádku. */
+  const columnCount = 5
+    + (columns.score ? 1 : 0)
+    + (columns.size ? 1 : 0)
+    + (columns.catalyst ? 1 : 0)
+    + (columns.band ? 1 : 0)
+    + (columns.freeride ? 1 : 0);
+
   // Filter and sort watchlist
   const displayedWatchlist = useMemo(() => {
     let filtered = [...watchlistStocks];
@@ -2984,7 +3062,7 @@ export const InvestmentTerminal: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-12 h-12 text-accent animate-spin mx-auto mb-4" />
           <p className="text-text-secondary">Loading portfolio data...</p>
@@ -2993,393 +3071,323 @@ export const InvestmentTerminal: React.FC = () => {
     );
   }
 
+  /* ====================================================================
+     SKOŘÁPKA, KTERÁ NESCROLLUJE
+
+     Stránka měla 1 791 px na obrazovce vysoké 1 000. Zkracovat obsah do
+     nekonečna nejde — dřív nebo později se dlouhý seznam nevejde vždycky.
+     Scrolluje proto to, co scrollovat má: tabulka pozic ve svém rámu a
+     podklady ve svém pruhu. Okno samo stojí.
+
+     Prakticky to znamená `h-screen` a `overflow-hidden` tady nahoře a
+     `min-h-0` na každém článku řetězu dolů — bez něj flexbox nedovolí
+     dítěti být menší než jeho obsah a scrollování propadne až na stránku.
+  ==================================================================== */
   return (
-    <div className="min-h-screen bg-slate-950 text-text-primary">
+    <div className="flex h-screen overflow-hidden bg-surface-base text-text-primary">
+
+      {/* Navigace vlevo. Svislé místo je v aplikaci vzácné, vodorovné ne. */}
+      <SideRail
+        active={activeTab}
+        onSelect={setActiveTab}
+        positionCount={familyData.allPositions.length}
+        watchlistCount={watchlistStocks.length}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {/* HEADER */}
-      <header className="bg-surface-base/80 backdrop-blur-sm border-b border-slate-800 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <Shield className="w-8 h-8 text-accent" />
-              <h1 className="font-display text-[19px] font-extrabold uppercase tracking-[0.10em] [font-stretch:78%]">Akcion</h1>
+      {/* ==================================================================
+          HLAVIČKA — jeden pruh, ne třetina obrazovky
+
+          Předtím tu byly čtyři karty pod řádkem se značkou: 253 px, tedy
+          čtvrtina obrazovky na údaje, které se vejdou na jednu řádku.
+          Podrobnosti nezmizely — postup k cíli je tenká linka pod částkou
+          a celá věta ve vysvětlivce, rozpad rizika se přesunul do těla
+          stránky, kde je na něj místo.
+      ================================================================== */}
+      <header className="shrink-0 border-b border-border-subtle bg-surface-base">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+
+          <div className="flex items-center gap-2.5">
+            <Shield className="h-6 w-6 text-accent" aria-hidden="true" />
+            <h1 className="font-display text-[17px] font-extrabold uppercase tracking-[0.10em] [font-stretch:78%]">
+              Akcion
+            </h1>
+          </div>
+
+          <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+
+          {/* Hodnota portfolia. Postup k cíli je tenká linka pod číslem —
+              na periferní vidění to stačí, věta je ve vysvětlivce. */}
+          <div
+            className="flex flex-col"
+            title={(() => {
+              const months = calculateMonthsToTarget(familyData.totalValue, 500000, 20000, 0.15);
+              if (months <= 0) return 'Cíl 500 tis. Kč je splněn.';
+              const years = Math.floor(months / 12);
+              const rest = months % 12;
+              const casti = [
+                years > 0 ? `${years} ${plural(years, 'rok', 'roky', 'let')}` : '',
+                rest > 0 ? `${rest} ${plural(rest, 'měsíc', 'měsíce', 'měsíců')}` : '',
+              ].filter(Boolean).join(' a ');
+              return `Do cíle 500 tis. Kč zbývá ${casti} při 15 % ročně a vkladu 20 tis. Kč měsíčně.`;
+            })()}
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-[17px] font-medium tabular-nums text-text-primary">
+                {formatCurrency(familyData.totalValue)}
+              </span>
+              {/* Nerealizovaný výsledek. Dřív byl až uprostřed stránky ve
+                  čtveřici karet, které zbytek jen opakovaly hlavičku. Je to
+                  nejdůležitější číslo na obrazovce a patří vedle celku. */}
+              {(() => {
+                const t = portfolios.reduce((a, x) => ({
+                  cost: a.cost + (x.total_cost_basis || 0),
+                  pl: a.pl + (x.total_unrealized_pl || 0),
+                }), { cost: 0, pl: 0 });
+                if (t.cost <= 0) return null;
+                const pct = (t.pl / t.cost) * 100;
+                const down = t.pl < 0;
+                return (
+                  <span
+                    className={`font-mono text-[13px] tabular-nums ${down ? 'text-negative' : 'text-positive'}`}
+                    title={`Pořizovací cena ${formatCurrency(t.cost)}`}
+                  >
+                    {down ? '' : '+'}{formatCurrency(t.pl)} ({percent(pct, { sign: true })})
+                  </span>
+                );
+              })()}
+              <span className="font-mono text-[11px] text-text-muted">
+                ≈ €{familyData.totalValueEUR.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })}
+              </span>
             </div>
-            
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              {/* Světlé / tmavé / podle systému */}
-              <ThemeToggle tone="sheet" className="mr-1" />
-
-              {/* Notification Bell */}
-              <NotificationBell 
-                onNotificationClick={(notification) => {
-                  if (notification.ticker) {
-                    // Open stock detail modal
-                    const position = familyData.allPositions.find(
-                      (p: EnrichedPosition) => p.ticker === notification.ticker
-                    );
-                    if (position) {
-                      setSelectedPosition(position);
-                    }
-                  }
-                }}
+            <div className="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-surface-active">
+              <div
+                className="h-full bg-accent"
+                style={{ width: `${Math.min(100, (familyData.totalValue / 500000) * 100)}%` }}
               />
-              
-              {/* Clear all positions (guarded) */}
-              <ClearPortfolioButton
-                portfolios={portfolios}
-                onCleared={refreshPortfolios}
-              />
-
-              {/* Import Portfolio */}
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="btn-secondary text-sm"
-              >
-                <Upload className="w-4 h-4" />
-                Importovat CSV
-              </button>
-              
-              {/* Add Position Manually */}
-              <button
-                onClick={() => setShowAddPositionModal(true)}
-                className="btn-secondary text-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Přidat pozici
-              </button>
-              
-              {/* New Analysis */}
-              <button
-                onClick={() => setShowAnalysisModal(true)}
-                className="btn-primary text-sm"
-              >
-                <PlusCircle className="w-5 h-5" />
-                New Analysis
-              </button>
             </div>
           </div>
 
-          {/* Stats Row */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Total Value with Target Progress */}
-            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
-              <div className="text-xs text-text-secondary uppercase tracking-wider">Total AUM</div>
-              <div className="text-2xl font-black text-text-primary mt-1">
-                {formatCurrency(familyData.totalValue)}
-              </div>
-              <div className="text-xs text-text-muted mt-0.5">
-                ≈ €{familyData.totalValueEUR.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
-              </div>
-              {/* Target Progress Bar - Goal: 500,000 CZK */}
-              <div className="mt-2">
-                <div className="flex justify-between items-center text-[10px] text-text-muted mb-1">
-                  <span>Target: 500k Kč</span>
-                  <span className="font-mono">{Math.min(100, (familyData.totalValue / 500000 * 100)).toFixed(0)}%</span>
-                </div>
-                <div className="h-1.5 bg-surface-hover rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-accent to-info transition-all duration-500"
-                    style={{ width: `${Math.min(100, familyData.totalValue / 500000 * 100)}%` }}
-                  />
-                </div>
-                {/* Estimated time to target */}
-                {(() => {
-                  const months = calculateMonthsToTarget(familyData.totalValue, 500000, 20000, 0.15);
-                  const years = Math.floor(months / 12);
-                  const remainingMonths = months % 12;
-                  return months > 0 ? (
-                    <div className="text-[10px] text-accent mt-1 flex items-center justify-center gap-1">
-                      <span>
-                        {years > 0 ? `${years}y ` : ''}{remainingMonths}m to target
-                        {' '}(15% return + 20k/mo)
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="text-[10px] text-positive mt-1">Target reached!</div>
+          {/* Hotovost. Klik přepne na úpravu přímo v pruhu — chování
+              zůstalo stejné, jen se vešlo na řádek. */}
+          {isEditingCash ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                value={editCashValue}
+                onChange={(e) => setEditCashValue(e.target.value)}
+                className="w-28 rounded-input border border-accent/50 bg-surface-hover px-2 py-1 font-mono text-[13px] text-text-primary focus:border-accent focus:outline-none"
+                placeholder="0"
+                autoFocus
+              />
+              <select
+                value={editCashCurrency}
+                onChange={(e) => setEditCashCurrency(e.target.value)}
+                className="rounded-input border border-border bg-surface-hover px-1.5 py-1 text-[12px] text-text-primary focus:border-accent focus:outline-none"
+              >
+                {CASH_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button
+                onClick={async () => {
+                  const amount = parseFloat(editCashValue);
+                  if (isNaN(amount) || amount < 0) return;
+                  setIsSavingCash(true);
+                  try {
+                    let amountInCZK = amount;
+                    if (editCashCurrency !== 'CZK') {
+                      const rate = exchangeRates[editCashCurrency] || 1;
+                      amountInCZK = amount * rate;
+                    }
+                    if (portfolios.length > 0) {
+                      await apiClient.updateCashBalance(portfolios[0].portfolio.id, amountInCZK);
+                      await refreshPortfolios();
+                    }
+                    setIsEditingCash(false);
+                  } catch (err) {
+                    console.error('Uložení hotovosti selhalo:', err);
+                  } finally {
+                    setIsSavingCash(false);
+                  }
+                }}
+                disabled={isSavingCash}
+                className="rounded-input border border-positive-border bg-positive-bg p-1.5 text-positive disabled:opacity-40"
+                title="Uložit"
+              >
+                {isSavingCash ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                onClick={() => setIsEditingCash(false)}
+                className="rounded-input border border-border p-1.5 text-text-muted hover:text-text-primary"
+                title="Zrušit"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setEditCashValue(familyData.totalCash.toString());
+                setEditCashCurrency('CZK');
+                setIsEditingCash(true);
+              }}
+              className="group flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-left transition-colors hover:bg-surface-hover"
+              title="Upravit volnou hotovost"
+            >
+              <span className="eyebrow text-text-muted">hotovost</span>
+              <span className="font-mono text-[13px] tabular-nums text-text-primary">
+                {formatCurrency(familyData.totalCash)}
+              </span>
+              <span className="font-mono text-[11px] text-text-muted">
+                {percent(familyData.totalValue > 0 ? (familyData.totalCash / familyData.totalValue) * 100 : 0)}
+              </span>
+              <Edit3 className="h-3 w-3 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
+          )}
+
+          {/* Kolik pozic a kolik z nich aplikace neumí posoudit. */}
+          {(() => {
+            const celkem = familyData.allPositions.length;
+            const bezHodnoceni = familyData.allPositions.filter((p) => !p.analysis_usable).length;
+            const vsechny = bezHodnoceni === celkem && celkem > 0;
+            return (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-button border px-2.5 py-1 ${
+                  bezHodnoceni > 0
+                    ? 'border-warning-border bg-warning-bg text-warning'
+                    : 'border-border text-text-secondary'
+                }`}
+                title={
+                  bezHodnoceni > 0
+                    ? 'Bez konvikčního skóre aplikace nespočítá cílové váhy ani nevydá pokyn.'
+                    : 'Všechny pozice mají použitelné hodnocení.'
+                }
+              >
+                <span className="font-mono text-[13px] tabular-nums">{celkem}</span>
+                <span className="text-[11px]">
+                  {plural(celkem, 'pozice', 'pozice', 'pozic')}
+                  {/* Kolik z nich je bez hodnocení, stojí v denním seznamu
+                      i s důsledkem. Tady by to byla tatáž věta potřetí. */}
+                  {bezHodnoceni > 0 && !vsechny && ` · ${bezHodnoceni} bez hodnocení`}
+                </span>
+              </span>
+            );
+          })()}
+
+          <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle tone="sheet" />
+
+            <NotificationBell
+              onNotificationClick={(notification) => {
+                if (notification.ticker) {
+                  const position = familyData.allPositions.find(
+                    (p: EnrichedPosition) => p.ticker === notification.ticker
                   );
-                })()}
-              </div>
-            </div>
-
-            {/* Cash (Munice) - Editable. Neutral chrome: cash is a fact, not a gain. */}
-            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
-              <div className="flex items-center justify-center gap-2">
-                <div className="text-xs text-text-secondary uppercase tracking-wider">Available Cash</div>
-                {!isEditingCash && (
-                  <button
-                    onClick={() => {
-                      setEditCashValue(familyData.totalCash.toString());
-                      setEditCashCurrency('CZK');
-                      setIsEditingCash(true);
-                    }}
-                    className="p-1 text-text-muted hover:text-positive transition-colors"
-                    title="Edit cash balance"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              {isEditingCash ? (
-                <div className="mt-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={editCashValue}
-                      onChange={(e) => setEditCashValue(e.target.value)}
-                      className="flex-1 px-2 py-1 bg-surface-hover border border-positive/50 rounded text-text-primary font-mono text-lg focus:outline-none focus:border-positive"
-                      placeholder="0"
-                      autoFocus
-                    />
-                    <select
-                      value={editCashCurrency}
-                      onChange={(e) => setEditCashCurrency(e.target.value)}
-                      className="px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-sm focus:outline-none focus:border-positive"
-                    >
-                      {CASH_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={async () => {
-                        const amount = parseFloat(editCashValue);
-                        if (isNaN(amount) || amount < 0) return;
-                        setIsSavingCash(true);
-                        try {
-                          // Convert to CZK if different currency
-                          let amountInCZK = amount;
-                          if (editCashCurrency !== 'CZK') {
-                            const rate = exchangeRates[editCashCurrency] || 1;
-                            amountInCZK = amount * rate;
-                          }
-                          // Update cash for first portfolio
-                          if (portfolios.length > 0) {
-                            const portfolioId = portfolios[0].portfolio.id;
-                            console.log('Updating cash for portfolio', portfolioId, 'amount:', amountInCZK);
-                            await apiClient.updateCashBalance(portfolioId, amountInCZK);
-                            await refreshPortfolios();
-                          } else {
-                            console.error('No portfolios found!');
-                          }
-                          setIsEditingCash(false);
-                        } catch (err) {
-                          console.error('Failed to update cash:', err);
-                        } finally {
-                          setIsSavingCash(false);
-                        }
-                      }}
-                      disabled={isSavingCash}
-                      className="flex-1 py-1 bg-positive/20 hover:bg-positive/80/30 text-positive text-sm font-bold rounded transition-colors flex items-center justify-center gap-1"
-                    >
-                      {isSavingCash ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setIsEditingCash(false)}
-                      className="px-3 py-1 bg-slate-600 hover:bg-slate-500 text-text-secondary text-sm rounded transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="text-2xl font-black text-text-primary mt-1">
-                    {formatCurrency(familyData.totalCash)}
-                  </div>
-                  <div className="text-xs text-text-muted mt-0.5">
-                    ≈ €{(familyData.totalCash / (exchangeRates.EUR || 25)).toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
-                  </div>
-                  <div className="text-xs text-text-muted mt-1">
-                    {familyData.totalValue > 0 ? ((familyData.totalCash / familyData.totalValue) * 100).toFixed(1) : 0}% of portfolio
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Position Count */}
-            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
-              <div className="text-xs text-text-secondary uppercase tracking-wider">Positions</div>
-              <div className="text-2xl font-black text-text-primary mt-1">
-                {familyData.allPositions.length}
-              </div>
-              <div className="text-xs text-text-muted mt-1">
-                {familyData.allPositions.filter(p => p.is_deteriorated).length} require attention
-              </div>
-            </div>
-
-            {/* Risk Meter */}
-            <RiskMeter 
-              rocketCount={familyData.rocketCount}
-              anchorCount={familyData.anchorCount}
-              waitTimeCount={familyData.waitTimeCount}
-              unanalyzedCount={familyData.unanalyzedCount}
-              riskScore={familyData.riskScore}
+                  if (position) {
+                    setSelectedPosition(position);
+                  }
+                }
+              }}
             />
+
+            <ClearPortfolioButton portfolios={portfolios} onCleared={refreshPortfolios} />
+
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="btn-secondary px-3 py-1.5 text-[13px]"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import
+            </button>
+
+            <button
+              onClick={() => setShowAddPositionModal(true)}
+              className="btn-secondary px-3 py-1.5 text-[13px]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Pozice
+            </button>
+
+            <button
+              onClick={() => setShowAnalysisModal(true)}
+              className="btn-primary px-3 py-1.5 text-[13px]"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Nová analýza
+            </button>
           </div>
         </div>
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        {/* Navigace. Tři záložky místo čtyř: Platby byly prázdné
-            a Freedom se sloučil do Cíle. */}
-        <nav className="flex items-center gap-1 mb-5" aria-label="Hlavní navigace">
-          {([
-            { id: 'portfolio', label: 'Portfolio', count: familyData.allPositions.length },
-            { id: 'watchlist', label: 'Sledované', count: watchlistStocks.length },
-            { id: 'cil', label: 'Cíl', count: undefined },
-          ] as const).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={`flex items-center gap-2 rounded-button border px-3.5 py-2 font-mono text-[11px] uppercase tracking-[0.11em] transition-colors ${
-                activeTab === tab.id
-                  ? 'border-border bg-surface-active text-text-primary'
-                  : 'border-transparent text-text-muted hover:bg-surface-hover hover:text-text-primary'
-              }`}
-            >
-              {tab.label}
-              {tab.count !== undefined && (
-                <span className="text-[10px] text-text-muted">{tab.count}</span>
-              )}
-            </button>
-          ))}
-        </nav>
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3">
 
-        {/* Toolbar */}
-        {activeTab !== 'cil' && (
-          <div className="flex items-center justify-between mb-4">
+        {/* Panel nástrojů — jen pro sledované; u pozic sedí uvnitř sloupce. */}
+        {activeTab === 'watchlist' && (
+          <div className="flex items-center justify-between mb-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <input
                 type="text"
-                placeholder={activeTab === 'portfolio' ? "Search positions..." : "Search watchlist..."}
+                placeholder="Hledat mezi sledovanými…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent w-64"
+                className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent w-64"
               />
             </div>
             
-            {activeTab === 'portfolio' && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-muted">Sort by:</span>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
-                  className="px-3 py-2 bg-surface-raised border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent"
-                >
-                  <option value="score">Score</option>
-                  <option value="weight">Weight</option>
-                  <option value="pl">P/L %</option>
-                </select>
-              </div>
-            )}
           </div>
         )}
 
-        {/* Daily Action list — Path 1: "Co mám dnes udělat?" */}
+        {/* ==============================================================
+            DESKA — verdikt vlevo, pozice vpravo.
+
+            Dřív šlo všechno pod sebe: verdikt, čtyři karty přes celou
+            šířku, alokační plán a teprve pak tabulka. Pozice, tedy to
+            jediné, co člověk opravdu vlastní, začínaly na 1 919 px —
+            po dvou obrazovkách scrollování.
+
+            Verdikt je úzký sloupec, protože je to pár vět. Vedle něj
+            je místo na celou tabulku.
+        ============================================================== */}
         {activeTab === 'portfolio' && (
-          <DailyActionWidget
-            onExecuteAction={(action) => {
-              const pos = displayedPositions.find((p) => p.ticker === action.ticker);
-              if (pos) {
-                setSelectedPosition(pos);
-                return true;
-              }
-              return false;
-            }}
-          />
-        )}
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="grid min-h-0 flex-1 gap-3 min-[1480px]:grid-cols-[352px_minmax(0,1fr)]">
 
-        {/* Semafor podle 40letého grafu, hotovost/hedge v kusech, a away mode.
-            Sedí hned pod denním seznamem: první dvě karty vysvětlují, proč ten
-            seznam říká, co říká, a třetí je to, co se stane, když se na appku
-            týden nepodíváš. */}
-        {activeTab === 'portfolio' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <MarketGaugeCard />
-            <CashHedgeCard />
-            <AwayModeCard className="lg:col-span-2" />
-          </div>
-        )}
+            {/* Levý sloupec: co dnes dělat a na čem portfolio stojí. */}
+            <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-0.5">
+              <DailyActionWidget
+                onExecuteAction={(action) => {
+                  const pos = displayedPositions.find((p) => p.ticker === action.ticker);
+                  if (pos) {
+                    setSelectedPosition(pos);
+                    return true;
+                  }
+                  return false;
+                }}
+              />
+              <RiskMeter
+                rocketCount={familyData.rocketCount}
+                anchorCount={familyData.anchorCount}
+                waitTimeCount={familyData.waitTimeCount}
+                unanalyzedCount={familyData.unanalyzedCount}
+                riskScore={familyData.riskScore}
+              />
+            </div>
 
-        {/* Portfolio Summary Stats */}
-        {activeTab === 'portfolio' && portfolios.length > 0 && (
-          <div className="grid grid-cols-4 gap-4 mb-4">
-            {(() => {
-              // Calculate totals across all portfolios
-              const totals = portfolios.reduce((acc, p) => ({
-                costBasis: acc.costBasis + (p.total_cost_basis || 0),
-                marketValue: acc.marketValue + (p.total_market_value || 0),
-                unrealizedPL: acc.unrealizedPL + (p.total_unrealized_pl || 0),
-                cash: acc.cash + (p.cash_balance || 0),
-              }), { costBasis: 0, marketValue: 0, unrealizedPL: 0, cash: 0 });
-              
-              const totalValue = totals.marketValue + totals.cash;
+            {/* Pravý sloupec: hledání, alokace a pozice. */}
+            <div className="flex min-h-0 min-w-0 flex-col gap-3">
 
-              // Three of the fifteen positions have no purchase price, so they
-              // add market value while adding no cost. Dividing the value of
-              // ALL of them by the cost of SOME of them reported −36 % on a
-              // portfolio that is nearer −42 %; the loss looked smaller than
-              // it is, purely because of a gap in the data.
-              //
-              // The absolute figure only ever summed positions whose P/L is
-              // known, so the percentage is derived from it and the two now
-              // agree by construction.
-              const plPercent = totals.costBasis > 0
-                ? (totals.unrealizedPL / totals.costBasis) * 100
-                : 0;
-
-              const allPositions = portfolios.flatMap(p => p.positions ?? []);
-              const pricedCount = allPositions.filter(p => p.avg_cost != null).length;
-              const missingCost = allPositions.length - pricedCount;
-              
-              return (
-                <>
-                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Total Value</div>
-                    <div className="text-2xl font-bold text-text-primary">
-                      {totalValue.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
-                    </div>
-                  </div>
-                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Cost Basis</div>
-                    <div className="text-2xl font-bold text-text-secondary">
-                      {totals.costBasis.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
-                    </div>
-                    {/* Otherwise this sits next to Total Value inviting a
-                        subtraction that covers a different set of positions. */}
-                    {missingCost > 0 && (
-                      <div className="text-[10px] text-warning mt-1">
-                        jen {pricedCount} z {allPositions.length} pozic — {missingCost} bez nákupní ceny
-                      </div>
-                    )}
-                  </div>
-                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Unrealized P/L</div>
-                    <div className={`text-2xl font-bold ${totals.unrealizedPL >= 0 ? 'text-positive' : 'text-negative'}`}>
-                      {totals.unrealizedPL >= 0 ? '+' : ''}{totals.unrealizedPL.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
-                      <span className="text-sm ml-2">
-                        ({plPercent >= 0 ? '+' : ''}{plPercent.toFixed(2)}%)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="bg-surface-raised/50 rounded-lg p-4 border border-border">
-                    <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Cash Balance</div>
-                    <div className="text-2xl font-bold text-accent">
-                      {totals.cash.toLocaleString('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })}
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
+              {/* Ovládací pruh: alokační plán vlevo, hledání a řazení
+                  vpravo. Hledání mělo dřív vlastní řádek nad plánem —
+                  čtyřicet pixelů výšky na dva prvky, které spolu s ním
+                  nevyplnily ani polovinu šířky. Tabulka o ten řádek
+                  povyrostla. */}
+              <div className="flex items-stretch gap-2">
 
         {/* Gomes Allocation Plan - Monthly Summary */}
         {activeTab === 'portfolio' && (
-          <div className="mb-4 p-4 bg-surface-raised rounded-xl border border-positive/20">
+          <div className="min-w-0 flex-1 p-2.5 bg-surface-raised rounded-card border border-positive/20">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-positive/10 rounded-lg">
@@ -3429,7 +3437,7 @@ export const InvestmentTerminal: React.FC = () => {
                       </button>
                       <button
                         onClick={() => setIsEditingContribution(false)}
-                        className="p-1 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded transition-colors"
+                        className="p-1 bg-surface-active hover:bg-surface-active text-text-secondary rounded transition-colors"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -3449,9 +3457,9 @@ export const InvestmentTerminal: React.FC = () => {
                       >
                         <Edit3 className="w-3 h-3 text-text-muted hover:text-positive" />
                       </button>
-                      <span className="text-slate-600">|</span>
+                      <span className="text-text-muted">|</span>
                       <span>Alokováno: {formatCurrency(familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
-                      <span className="text-slate-600">|</span>
+                      <span className="text-text-muted">|</span>
                       <span>Zbývá: {formatCurrency(familyData.monthlyContribution - familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
                     </p>
                   )}
@@ -3487,31 +3495,62 @@ export const InvestmentTerminal: React.FC = () => {
           </div>
         )}
 
+                <div className="flex shrink-0 items-center gap-2 rounded-card border border-border bg-surface-raised px-2.5">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+                    <input
+                      type="text"
+                      placeholder="Hledat pozici…"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-44 rounded-button border border-border bg-surface-base py-1 pl-8 pr-2 text-[12.5px] text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
+                    />
+                  </div>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
+                    title="Podle čeho se pozice řadí"
+                    className="rounded-button border border-border bg-surface-base px-2 py-1 text-[12.5px] text-text-primary focus:border-accent focus:outline-none"
+                  >
+                    <option value="score">řadit podle skóre</option>
+                    <option value="weight">řadit podle váhy</option>
+                    <option value="pl">řadit podle zisku a ztráty</option>
+                  </select>
+                </div>
+              </div>
+
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
-        <div className="bg-surface-base/50 rounded-xl border border-slate-800 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-border-subtle bg-surface-base/50">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <table className="w-full table-fixed">
-            <thead>
-              <tr className="border-b border-border bg-surface-raised/50">
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">Symbol</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">Action</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">
-                  <div>Váha</div>
-                  <div className="text-[9px] text-text-muted font-normal">Aktuální / Cíl</div>
-                </th>
-                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[70px]">Score</th>
-                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">
-                  <div>Price</div>
-                  <div className="text-[9px] text-text-muted font-normal">Current</div>
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">
-                  <div>Optimal Size</div>
-                  <div className="text-[9px] text-text-muted font-normal">Tento měsíc</div>
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Catalyst</th>
-                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]" title="Kde leží cena v pásmu mezi zelenou a červenou linkou">Pásmo</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Stav pozice</th>
-                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">P/L</th>
+            <thead className="sticky top-0 z-10 bg-surface-raised">
+              <tr className="border-b border-border">
+                <Th width="w-[150px]">Symbol</Th>
+                <Th
+                  width="w-[108px]"
+                  hint={columns.action ? undefined : 'Pokyn aplikace vydá, jen když má analýzu. U ostatních pozic zůstane prázdno — proč, stojí v denním seznamu vlevo.'}
+                >
+                  Pokyn
+                </Th>
+                <Th width="w-[96px]" sub={columns.action ? 'teď / cíl' : undefined}>Váha</Th>
+                {columns.score && (
+                  <Th width="w-[62px]" align="center"><Term id="konvikcniSkore">Skóre</Term></Th>
+                )}
+                <Th width="w-[96px]" align="right">Cena</Th>
+                {columns.size && <Th width="w-[128px]" sub="tento měsíc">Dávka</Th>}
+                {columns.catalyst && <Th width="w-[118px]">Katalyzátor</Th>}
+                {columns.band && (
+                  <Th width="w-[88px]" align="center" hint="Kde leží cena v pásmu mezi zelenou a červenou linkou">
+                    Pásmo
+                  </Th>
+                )}
+                {columns.freeride && (
+                  <Th width="w-[106px]" hint="Kolik chybí do zdvojnásobení, po kterém se podle kánonu vybírá vklad">
+                    Do free ride
+                  </Th>
+                )}
+                <Th width="w-[108px]" align="right"><Term id="pl">P/L</Term></Th>
               </tr>
             </thead>
             <tbody>
@@ -3519,33 +3558,46 @@ export const InvestmentTerminal: React.FC = () => {
                 <PortfolioRow
                   key={`${pos.portfolio_id}-${pos.ticker}`}
                   position={pos}
+                  columns={columns}
                   onClick={() => setSelectedPosition(pos)}
                 />
               ))}
               {displayedPositions.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-text-muted">
-                    {searchQuery ? 'No positions found' : 'No positions in portfolio. Import your DEGIRO CSV to get started.'}
+                  <td colSpan={columnCount} className="text-center py-12 text-text-muted">
+                    {searchQuery
+                      ? 'Hledání neodpovídá žádná pozice.'
+                      : 'V portfoliu zatím nejsou žádné pozice. Začni importem CSV z DEGIRO.'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        </div>
+        )}
+
+            </div>
+          </div>
+
+          {/* Podklady jako odrážky. Zavřené zabírají 38 px; otevřená je
+              vždycky jen jedna a scrolluje sama v sobě. */}
+          <ContextPanel />
+          </div>
         )}
 
         {/* Watchlist Table */}
         {activeTab === 'watchlist' && (
-          <div className="bg-surface-raised rounded-xl border border-border overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-card border border-border bg-surface-raised">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-surface-overlay">
                   <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Symbol</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Company</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Score</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Verdict</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Price Zone</th>
-                  <th className="text-right py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Action</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Firma</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider"><Term id="konvikcniSkore">Skóre</Term></th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Verdikt</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Cenové pásmo</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Detail</th>
                 </tr>
               </thead>
               <tbody>
@@ -3558,7 +3610,7 @@ export const InvestmentTerminal: React.FC = () => {
                   
                   const zoneColor = stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
                                     stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
-                                    stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-accent' :
+                                    stock.price_zone === 'ACCUMULATE' ? 'bg-accent/20 text-accent' :
                                     stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
                                     stock.price_zone === 'SELL_ZONE' ? 'bg-warning/20 text-warning' :
                                     stock.price_zone === 'OVERVALUED' ? 'bg-negative/20 text-negative' :
@@ -3587,10 +3639,10 @@ export const InvestmentTerminal: React.FC = () => {
                         <span className={`px-2 py-1 rounded text-xs font-bold ${
                           stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
                           stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
-                          stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-accent' :
+                          stock.action_verdict === 'WATCH_LIST' ? 'bg-accent/20 text-accent' :
                           stock.action_verdict === 'TRIM' ? 'bg-warning/20 text-warning' :
                           stock.action_verdict === 'SELL' ? 'bg-negative/20 text-negative' :
-                          stock.action_verdict === 'AVOID' ? 'bg-red-800/30 text-negative' :
+                          stock.action_verdict === 'AVOID' ? 'bg-negative/30 text-negative' :
                           'bg-surface-hover text-text-secondary'
                         }`}>
                           {stock.action_verdict || 'N/A'}
@@ -3603,7 +3655,7 @@ export const InvestmentTerminal: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button className="px-3 py-1 bg-accent hover:bg-accent/80 text-text-primary text-xs font-bold rounded transition-colors">
-                          View Details
+                          Otevřít
                         </button>
                       </td>
                     </tr>
@@ -3614,7 +3666,7 @@ export const InvestmentTerminal: React.FC = () => {
                     <td colSpan={6} className="text-center py-12 text-text-muted">
                       {searchQuery 
                         ? 'No stocks found in watchlist' 
-                        : 'No analyzed stocks yet. Click "New Analysis" to add stocks to your watchlist.'}
+                        : 'Zatím žádná analýza. Novou přidáš tlačítkem „Nová analýza“ v hlavičce.'}
                     </td>
                   </tr>
                 )}
@@ -3651,9 +3703,101 @@ export const InvestmentTerminal: React.FC = () => {
             Nahradilo dřívější Freedom a Platby: Freedom byla z poloviny
             gamifikace, Platby pětkrát prázdný stav se zelenou fajfkou. */}
         {activeTab === 'cil' && (
-          <GoalPage
-            portfolioValue={familyData.totalValue}
-            monthlyContribution={familyData.monthlyContribution}
+          <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+            <GoalPage
+              portfolioValue={familyData.totalValue}
+              monthlyContribution={familyData.monthlyContribution}
+            />
+          </div>
+        )}
+
+        {/* ==============================================================
+            PLATBY
+
+            Pět knih, které stály pod sebou přes tři obrazovky, jsou teď
+            odrážky s vlastní měsíční částkou a jedna tabulka pod nimi.
+            Data, formuláře i dialogy zůstávají tady — PaymentsPage jen
+            kreslí, takže se přes ni nedá o nic přijít.
+        ============================================================== */}
+        {activeTab === 'splaceni' && (
+          <PaymentsPage
+            debts={debts}
+            sharedPayments={sharedPayments}
+            misaPayments={misaPayments}
+            savings={savings}
+            tomPayments={tomPayments}
+            formatCurrency={formatCurrency}
+            onAdd={(ledger) => {
+              /* Rozepsaná úprava se před přidáním zahodí. Bez tohohle
+                 kroku zůstalo `editing…Id` viset po opuštěné úpravě a
+                 „Přidat" tiše přepsalo cizí záznam. */
+              switch (ledger) {
+                case 'debts':
+                  setEditingDebtId(null);
+                  setDebtForm(PRAZDNA_PLATBA);
+                  setShowAddDebtModal(true);
+                  break;
+                case 'shared':
+                  setEditingSharedPaymentsId(null);
+                  setSharedPaymentsForm(PRAZDNA_PLATBA);
+                  setShowAddSharedPaymentsModal(true);
+                  break;
+                case 'misa':
+                  setEditingMisaPaymentsId(null);
+                  setMisaPaymentsForm(PRAZDNA_PLATBA);
+                  setShowAddMisaPaymentsModal(true);
+                  break;
+                case 'savings':
+                  setEditingSavingsId(null);
+                  setSavingsForm(PRAZDNA_PLATBA);
+                  setShowAddSavingsModal(true);
+                  break;
+                case 'tom':
+                  setEditingTomPaymentsId(null);
+                  setTomPaymentsForm(PRAZDNA_PLATBA);
+                  setShowAddTomPaymentsModal(true);
+                  break;
+              }
+            }}
+            onEdit={(ledger, item) => {
+              const form = {
+                name: item.name,
+                amount: item.amount,
+                date: item.date,
+                monthlyPayment: item.monthlyPayment,
+                creditor: item.creditor,
+                accountNumber: item.accountNumber,
+                variableSymbol: item.variableSymbol,
+                note: item.note,
+              };
+              switch (ledger) {
+                case 'debts':
+                  setEditingDebtId(item.id);
+                  setDebtForm(form);
+                  setShowAddDebtModal(true);
+                  break;
+                case 'shared':
+                  setEditingSharedPaymentsId(item.id);
+                  setSharedPaymentsForm(form);
+                  setShowAddSharedPaymentsModal(true);
+                  break;
+                case 'misa':
+                  setEditingMisaPaymentsId(item.id);
+                  setMisaPaymentsForm(form);
+                  setShowAddMisaPaymentsModal(true);
+                  break;
+                case 'savings':
+                  setEditingSavingsId(item.id);
+                  setSavingsForm(form);
+                  setShowAddSavingsModal(true);
+                  break;
+                case 'tom':
+                  setEditingTomPaymentsId(item.id);
+                  setTomPaymentsForm(form);
+                  setShowAddTomPaymentsModal(true);
+                  break;
+              }
+            }}
           />
         )}
       </main>
@@ -3728,7 +3872,7 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Debt Modal */}
       {showAddDebtModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
@@ -3978,13 +4122,13 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Shared Payments Modal */}
       {showAddSharedPaymentsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                  {editingSharedPaymentsId ? <Edit3 className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-blue-500" />}
+                <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+                  {editingSharedPaymentsId ? <Edit3 className="w-5 h-5 text-accent" /> : <Plus className="w-5 h-5 text-accent" />}
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-text-primary">
@@ -4028,7 +4172,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={sharedPaymentsForm.name}
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, name: e.target.value })}
                   placeholder="Např. Netflix, Elektřina, Internet"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                   required
                 />
               </div>
@@ -4044,7 +4188,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={sharedPaymentsForm.monthlyPayment}
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, monthlyPayment: e.target.value })}
                   placeholder="Např. 500"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                   required
                 />
               </div>
@@ -4059,7 +4203,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={sharedPaymentsForm.accountNumber}
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, accountNumber: e.target.value })}
                   placeholder="Např. 123456789/0800"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
 
@@ -4073,7 +4217,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={sharedPaymentsForm.variableSymbol}
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, variableSymbol: e.target.value })}
                   placeholder="Např. 1234567890"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
 
@@ -4087,7 +4231,7 @@ export const InvestmentTerminal: React.FC = () => {
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, note: e.target.value })}
                   placeholder="Doplňující informace..."
                   rows={3}
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors resize-none"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors resize-none"
                 />
               </div>
             </div>
@@ -4183,7 +4327,7 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Savings Modal */}
       {showAddSavingsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
@@ -4374,13 +4518,13 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Tom Payments Modal */}
       {showAddTomPaymentsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
-                  {editingTomPaymentsId ? <Edit3 className="w-5 h-5 text-orange-500" /> : <Plus className="w-5 h-5 text-orange-500" />}
+                <div className="w-10 h-10 rounded-lg bg-warning/20 flex items-center justify-center">
+                  {editingTomPaymentsId ? <Edit3 className="w-5 h-5 text-warning" /> : <Plus className="w-5 h-5 text-warning" />}
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-text-primary">
@@ -4424,7 +4568,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={tomPaymentsForm.name}
                   onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, name: e.target.value })}
                   placeholder="Např. Nájem, Auto, Telefon"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-warning transition-colors"
                   required
                 />
               </div>
@@ -4440,7 +4584,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={tomPaymentsForm.monthlyPayment}
                   onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, monthlyPayment: e.target.value })}
                   placeholder="Např. 1500"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-warning transition-colors"
                   required
                 />
               </div>
@@ -4455,7 +4599,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={tomPaymentsForm.accountNumber}
                   onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, accountNumber: e.target.value })}
                   placeholder="Např. 123456789/0800"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-warning transition-colors"
                 />
               </div>
 
@@ -4469,7 +4613,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={tomPaymentsForm.variableSymbol}
                   onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, variableSymbol: e.target.value })}
                   placeholder="Např. 1234567890"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-warning transition-colors"
                 />
               </div>
             </div>
@@ -4565,13 +4709,13 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Míša Payments Modal */}
       {showAddMisaPaymentsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                  {editingMisaPaymentsId ? <Edit3 className="w-5 h-5 text-purple-500" /> : <Plus className="w-5 h-5 text-purple-500" />}
+                <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+                  {editingMisaPaymentsId ? <Edit3 className="w-5 h-5 text-accent" /> : <Plus className="w-5 h-5 text-accent" />}
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-text-primary">
@@ -4615,7 +4759,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={misaPaymentsForm.name}
                   onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, name: e.target.value })}
                   placeholder="Např. Pojištění, Kredity, Předplatné"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                   required
                 />
               </div>
@@ -4631,7 +4775,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={misaPaymentsForm.monthlyPayment}
                   onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, monthlyPayment: e.target.value })}
                   placeholder="Např. 800"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                   required
                 />
               </div>
@@ -4646,7 +4790,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={misaPaymentsForm.accountNumber}
                   onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, accountNumber: e.target.value })}
                   placeholder="Např. 123456789/0800"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
 
@@ -4660,7 +4804,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={misaPaymentsForm.variableSymbol}
                   onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, variableSymbol: e.target.value })}
                   placeholder="Např. 1234567890"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
             </div>
@@ -4760,6 +4904,7 @@ export const InvestmentTerminal: React.FC = () => {
           onSubmit={handleNewAnalysis}
         />
       )}
+      </div>
     </div>
   );
 };

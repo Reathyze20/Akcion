@@ -40,8 +40,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
       </div>
       
       {items.length === 0 ? (
-        <div className="bg-surface-raised/30 backdrop-blur border border-white/5 rounded-2xl p-12 text-center">
-          <AlertCircle className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+        <div className="bg-surface-raised/30 backdrop-blur border border-border-strong/5 rounded-2xl p-12 text-center">
+          <AlertCircle className="w-12 h-12 text-text-muted mx-auto mb-4" />
           <p className="text-text-secondary">{emptyMessage}</p>
         </div>
       ) : (
@@ -76,15 +76,15 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ stocks, onStockClick
           <div className="text-positive text-sm font-semibold mb-1">SILNÉ NÁKUPY</div>
           <div className="text-3xl font-bold text-text-primary font-mono">{topPicks.length}</div>
         </div>
-        <div className="bg-warning/10 border border-yellow-500/30 rounded-xl p-4">
+        <div className="bg-warning/10 border border-warning/30 rounded-xl p-4">
           <div className="text-warning text-sm font-semibold mb-1">SLEDOVANÉ</div>
           <div className="text-3xl font-bold text-text-primary font-mono">{watchList.length}</div>
         </div>
-        <div className="bg-accent/10 border border-indigo-500/30 rounded-xl p-4">
+        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4">
           <div className="text-accent text-sm font-semibold mb-1">CELKEM AKCIÍ</div>
           <div className="text-3xl font-bold text-text-primary font-mono">{stocks.length}</div>
         </div>
-        <div className="bg-accent/10 border border-purple-500/30 rounded-xl p-4">
+        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4">
           <div className="text-accent text-sm font-semibold mb-1">PRůM. SKÓRE</div>
           <div className="text-3xl font-bold text-text-primary font-mono">
             {stocks.length > 0 

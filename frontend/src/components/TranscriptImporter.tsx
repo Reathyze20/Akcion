@@ -62,16 +62,16 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
   };
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
+    <div className="bg-surface-base rounded-lg border border-border overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-gray-700 bg-gray-800/50 flex items-center justify-between">
+      <div className="p-4 border-b border-border bg-surface-raised/50 flex items-center justify-between">
         <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
           Importovat přepis
         </h3>
         {onClose && (
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-text-primary transition-colors"
+            className="text-text-secondary hover:text-text-primary transition-colors"
           >
             ✕
           </button>
@@ -83,13 +83,13 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
         {/* Source & Date Row */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-text-primary mb-1">
               Zdroj
             </label>
             <select
               value={formData.source_name}
               onChange={e => setFormData(prev => ({ ...prev, source_name: e.target.value }))}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-text-primary focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-surface-raised border border-border-strong rounded-lg text-text-primary focus:ring-2 focus:ring-accent focus:border-transparent"
             >
               <option value="Mark Gomes">Mark Gomes</option>
               <option value="Breakout Investors">Breakout Investors</option>
@@ -98,14 +98,14 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-text-primary mb-1">
               Datum videa
             </label>
             <input
               type="date"
               value={formData.video_date}
               onChange={e => setFormData(prev => ({ ...prev, video_date: e.target.value }))}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-text-primary focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-surface-raised border border-border-strong rounded-lg text-text-primary focus:ring-2 focus:ring-accent focus:border-transparent"
               required
             />
           </div>
@@ -113,7 +113,7 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
         
         {/* Video URL */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-text-primary mb-1">
             URL videa (volitelné)
           </label>
           <input
@@ -121,13 +121,13 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
             value={formData.video_url}
             onChange={e => setFormData(prev => ({ ...prev, video_url: e.target.value }))}
             placeholder="https://youtube.com/watch?v=..."
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-text-primary placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-surface-raised border border-border-strong rounded-lg text-text-primary placeholder-text-muted focus:ring-2 focus:ring-accent focus:border-transparent"
           />
         </div>
         
         {/* Quality */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-text-primary mb-1">
             Kvalita přepisu
           </label>
           <div className="flex gap-4">
@@ -138,7 +138,7 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
                   name="quality"
                   checked={formData.transcript_quality === quality}
                   onChange={() => setFormData(prev => ({ ...prev, transcript_quality: quality }))}
-                  className="text-accent focus:ring-blue-500"
+                  className="text-accent focus:ring-accent"
                 />
                 <span className={`text-sm capitalize ${
                   quality === 'high' ? 'text-positive' :
@@ -154,7 +154,7 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
         
         {/* Transcript Text */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-text-primary mb-1">
             Text přepisu
           </label>
           <textarea
@@ -162,11 +162,11 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
             onChange={e => setFormData(prev => ({ ...prev, raw_text: e.target.value }))}
             placeholder="Vložte sem celý přepis..."
             rows={10}
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-text-primary placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="w-full px-3 py-2 bg-surface-raised border border-border-strong rounded-lg text-text-primary placeholder-text-muted focus:ring-2 focus:ring-accent focus:border-transparent resize-none"
             required
             minLength={100}
           />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
+          <div className="flex justify-between text-xs text-text-muted mt-1">
             <span>{formData.raw_text.length} znaků</span>
             <span className={formData.raw_text.length >= 100 ? 'text-positive' : 'text-negative'}>
               Min: 100 znaků
@@ -197,13 +197,13 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
           disabled={loading || formData.raw_text.length < 100}
           className={`w-full py-3 rounded-lg font-medium transition-colors ${
             loading || formData.raw_text.length < 100
-              ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700 text-text-primary'
+              ? 'bg-surface-hover text-text-secondary cursor-not-allowed'
+              : 'bg-accent hover:bg-accent text-text-primary'
           }`}
         >
           {loading ? (
             <span className="flex items-center justify-center gap-2">
-              <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+              <div className="animate-spin h-4 w-4 border-2 border-border-strong border-t-transparent rounded-full" />
               Importování...
             </span>
           ) : (
@@ -213,9 +213,9 @@ const TranscriptImporter: React.FC<TranscriptImporterProps> = ({
       </form>
       
       {/* Tips */}
-      <div className="p-4 bg-gray-800/30 border-t border-gray-700">
-        <h4 className="text-sm font-medium text-gray-300 mb-2">Tipy</h4>
-        <ul className="text-xs text-gray-400 space-y-1">
+      <div className="p-4 bg-surface-raised/30 border-t border-border">
+        <h4 className="text-sm font-medium text-text-primary mb-2">Tipy</h4>
+        <ul className="text-xs text-text-secondary space-y-1">
           <li>• Používejte historická data pro vytvoření časové osy doporučení</li>
           <li>• Tickery jsou automaticky detekovány z textu</li>
           <li>• Kvalitnější přepisy poskytují lepší AI analýzu</li>

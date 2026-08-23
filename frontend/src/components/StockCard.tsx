@@ -33,7 +33,7 @@ const getPriceZoneColor = (zone: string | null | undefined): string => {
     case 'BUY_ZONE':
       return 'text-positive';
     case 'ACCUMULATE':
-      return 'text-lime-400';
+      return 'text-positive';
     case 'FAIR_VALUE':
       return 'text-warning';
     case 'SELL_ZONE':
@@ -72,13 +72,13 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
   const getMatchSignalStyle = (signal?: MatchSignal) => {
     switch (signal) {
       case 'OPPORTUNITY':
-        return 'animate-pulse shadow-lg shadow-green-500/30 ring-2 ring-green-500/50';
+        return 'ring-2 ring-positive/60';
       case 'DANGER_EXIT':
-        return 'animate-pulse shadow-lg shadow-red-500/30 ring-2 ring-red-500/50';
+        return 'ring-2 ring-negative/60';
       case 'ACCUMULATE':
-        return 'shadow-lg shadow-emerald-500/20 ring-1 ring-emerald-500/30';
+        return 'ring-1 ring-positive/40';
       case 'WAIT_MARKET_BAD':
-        return 'opacity-60 ring-1 ring-yellow-500/30';
+        return 'opacity-60 ring-1 ring-warning/30';
       default:
         return '';
     }
@@ -91,17 +91,17 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
       case 'BUY_NOW':
         return { bg: 'bg-positive/20', text: 'text-positive', border: 'border-positive/50', label: 'KOUPIT' };
       case 'ACCUMULATE':
-        return { bg: 'bg-positive/20', text: 'text-positive', border: 'border-emerald-500/50', label: 'AKUMULOVAT' };
+        return { bg: 'bg-positive/20', text: 'text-positive', border: 'border-positive/50', label: 'AKUMULOVAT' };
       case 'WATCH_LIST':
-        return { bg: 'bg-warning/20', text: 'text-warning', border: 'border-yellow-500/50', label: 'SLEDOVAT' };
+        return { bg: 'bg-warning/20', text: 'text-warning', border: 'border-warning/50', label: 'SLEDOVAT' };
       case 'TRIM':
-        return { bg: 'bg-warning/20', text: 'text-warning', border: 'border-orange-500/50', label: 'REDUKOVAT' };
+        return { bg: 'bg-warning/20', text: 'text-warning', border: 'border-warning/50', label: 'REDUKOVAT' };
       case 'SELL':
         return { bg: 'bg-negative/20', text: 'text-negative', border: 'border-negative/50', label: 'PRODAT' };
       case 'AVOID':
-        return { bg: 'bg-gray-500/20', text: 'text-gray-400', border: 'border-gray-500/50', label: 'VYHNOUT SE' };
+        return { bg: 'bg-surface-active/20', text: 'text-text-secondary', border: 'border-border-strong/50', label: 'VYHNOUT SE' };
       default:
-        return { bg: 'bg-slate-500/20', text: 'text-text-secondary', border: 'border-slate-500/50', label: 'ANALYZOVAT' };
+        return { bg: 'bg-surface-active/20', text: 'text-text-secondary', border: 'border-border-strong/50', label: 'ANALYZOVAT' };
     }
   };
 
@@ -109,7 +109,7 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
     const s = sentiment?.toUpperCase();
     if (s === 'BULLISH') return { icon: TrendingUp, color: 'text-positive' };
     if (s === 'BEARISH') return { icon: TrendingDown, color: 'text-negative' };
-    return { icon: Minus, color: 'text-gray-500' };
+    return { icon: Minus, color: 'text-text-muted' };
   };
 
   // Moat rating as stars
@@ -120,7 +120,7 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
         {[...Array(5)].map((_, i) => (
           <Star
             key={i}
-            className={`w-3 h-3 ${i < rating ? 'text-warning fill-amber-400' : 'text-gray-600'}`}
+            className={`w-3 h-3 ${i < rating ? 'text-warning fill-warning' : 'text-text-muted'}`}
           />
         ))}
       </div>
@@ -143,7 +143,7 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
       {/* Holdings Badge (if owned) */}
       {enriched?.user_holding && (
         <div className="absolute top-0 left-0 px-3 py-1 bg-accent/20 text-accent 
-                        text-xs font-bold border-r-2 border-b-2 border-indigo-500/50 
+                        text-xs font-bold border-r-2 border-b-2 border-accent/50 
                         rounded-br-lg flex items-center gap-1">
           <Briefcase size={12} />
           V PORTFOLIU: {enriched.holding_quantity?.toFixed(0)} akcií
@@ -189,7 +189,7 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
                 <div className={`text-4xl font-black font-mono ${
                   stock.conviction_score >= 8 ? 'text-positive' : 
                   stock.conviction_score >= 6 ? 'text-warning' : 
-                  'text-gray-400'
+                  'text-text-secondary'
                 }`}>
                   {stock.conviction_score}
                 </div>
@@ -224,10 +224,10 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
                 <span className="text-positive font-mono">${stock.green_line.toFixed(2)}</span>
                 <span className="text-negative font-mono">${stock.red_line.toFixed(2)}</span>
               </div>
-              <div className="h-2 rounded-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 relative overflow-hidden">
+              <div className="h-2 rounded-full bg-gradient-to-r from-positive via-warning to-negative relative overflow-hidden">
                 {stock.price_position_pct !== null && stock.price_position_pct !== undefined && (
                   <div 
-                    className="absolute top-0 w-1 h-full bg-white shadow-lg shadow-white/50 rounded"
+                    className="absolute top-0 w-1 h-full bg-text-primary rounded"
                     style={{ 
                       left: `${Math.max(0, Math.min(100, stock.price_position_pct))}%`,
                       transform: 'translateX(-50%)'
@@ -248,7 +248,7 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
       {/* Trading Levels Grid */}
       <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
         {stock.entry_zone && (
-          <div className="bg-surface-base/50 rounded-lg p-2 border border-blue-500/30">
+          <div className="bg-surface-base/50 rounded-lg p-2 border border-accent/30">
             <div className="text-accent font-semibold mb-0.5">VSTUP</div>
             <div className="text-text-primary text-xs font-mono">{stock.entry_zone}</div>
           </div>
@@ -336,10 +336,10 @@ export const StockCard: React.FC<StockCardProps> = ({ stock, onClick }) => {
         <div className="mb-3">
           <div className={`px-3 py-2 rounded-lg text-center font-bold text-sm ${
             enriched.match_signal === 'OPPORTUNITY' ? 'bg-positive/20 text-positive border border-positive/50' :
-            enriched.match_signal === 'ACCUMULATE' ? 'bg-positive/20 text-positive border border-emerald-500/50' :
+            enriched.match_signal === 'ACCUMULATE' ? 'bg-positive/20 text-positive border border-positive/50' :
             enriched.match_signal === 'DANGER_EXIT' ? 'bg-negative/20 text-negative border border-negative/50 animate-pulse' :
-            enriched.match_signal === 'WAIT_MARKET_BAD' ? 'bg-warning/20 text-warning border border-yellow-500/50' :
-            'bg-slate-500/20 text-text-secondary border border-slate-500/50'
+            enriched.match_signal === 'WAIT_MARKET_BAD' ? 'bg-warning/20 text-warning border border-warning/50' :
+            'bg-surface-active/20 text-text-secondary border border-border-strong/50'
           }`}>
             {enriched.match_signal === 'OPPORTUNITY' && 'PŘÍLEŽITOST - Nevlastním'}
             {enriched.match_signal === 'ACCUMULATE' && 'Přidat další akcie'}

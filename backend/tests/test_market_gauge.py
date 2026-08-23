@@ -153,7 +153,9 @@ class TestRefusals:
     """A gauge that cannot be computed must say so, never default to GREEN."""
 
     def test_too_little_history_is_refused(self, series):
-        with pytest.raises(GaugeError, match="40letý graf"):
+        # Zpráva nesmí slibovat „40letý graf", když se odmítá právě proto,
+        # že tak dlouhá řada k dispozici není.
+        with pytest.raises(GaugeError, match="dlouhodobý graf"):
             fit(series[-120:])
 
     def test_an_empty_series_is_refused(self):
@@ -193,8 +195,11 @@ class TestSuggestionNotVerdict:
         assert "sedí" in agreement_cs(fit(series), "YELLOW")
 
     def test_disagreement_is_reported_and_left_to_the_user(self, series):
+        # Oba stupně musí být ve větě vidět — nastavený i navržený. Česky:
+        # hodnota z databáze („GREEN") do věty pro čtenáře nepatří.
         text = agreement_cs(fit(series), "GREEN")
-        assert "GREEN" in text and "YELLOW" in text
+        assert "zelená" in text and "žlutá" in text
+        assert "GREEN" not in text and "YELLOW" not in text
         assert "automaticky" in text
 
     def test_an_unset_semafor_is_not_treated_as_agreement(self, series):

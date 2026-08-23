@@ -62,7 +62,7 @@ export const ClearPortfolioButton: React.FC<ClearPortfolioButtonProps> = ({
       </button>
 
       {open && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-surface-base border border-negative/40 rounded-2xl w-full max-w-md p-6">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">

@@ -20,6 +20,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Ban, Info, Quote, Wallet } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { alertName } from '../lib/format';
 import type { CashHedgeLeg, CashHedgePlan } from '../api/client';
 
 interface CashHedgeCardProps {
@@ -140,7 +141,7 @@ export const CashHedgeCard: React.FC<CashHedgeCardProps> = ({ alert, className =
           <div className="flex items-center gap-2">
             <Wallet size={16} className="text-text-muted" />
             <h3 className="text-text-primary text-sm font-semibold">
-              Hotovost a hedge při {plan.alert}
+              Hotovost a hedge při stupni {alertName(plan.alert)}
             </h3>
           </div>
           <p className="text-text-muted text-xs mt-1">

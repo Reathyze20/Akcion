@@ -41,7 +41,7 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
       case 'KOUPIT': return 'text-positive bg-positive/20';
       case 'PRODAT': return 'text-negative bg-negative/20';
       case 'PŘIDAT': return 'text-positive bg-positive/20';
-      default: return 'text-text-secondary bg-slate-500/20';
+      default: return 'text-text-secondary bg-surface-active/20';
     }
   };
 
@@ -52,7 +52,7 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
   };
 
   return (
-    <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-purple-500/30 p-5">
+    <div className="bg-gradient-to-br from-surface-raised to-surface-base rounded-xl border border-accent/30 p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -80,7 +80,7 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
 
       {/* Error */}
       {error && (
-        <div className="mb-4 p-3 bg-negative/20 border border-negative/50 rounded-lg flex items-center gap-2 text-red-300 text-sm">
+        <div className="mb-4 p-3 bg-negative/20 border border-negative/50 rounded-lg flex items-center gap-2 text-negative text-sm">
           <AlertTriangle className="w-4 h-4" />
           {error}
         </div>
@@ -120,7 +120,7 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
                 <div 
                   key={`${gap.ticker}-${index}`}
                   className="flex items-center justify-between p-3 bg-surface-hover/30 rounded-lg 
-                             border border-amber-500/30 hover:border-amber-500/50 transition-colors"
+                             border border-warning/30 hover:border-warning/50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-lg
@@ -143,7 +143,7 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
               ))}
 
               {/* Summary */}
-              <div className="mt-4 p-3 bg-accent/10 rounded-lg border border-purple-500/30 text-sm text-text-secondary">
+              <div className="mt-4 p-3 bg-accent/10 rounded-lg border border-accent/30 text-sm text-text-secondary">
                 {audit.summary}
               </div>
             </div>

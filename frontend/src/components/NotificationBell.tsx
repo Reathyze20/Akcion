@@ -73,7 +73,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     switch (severity) {
       case 'CRITICAL': return 'text-negative bg-negative/10';
       case 'WARNING': return 'text-warning bg-warning/10';
-      default: return 'text-accent bg-blue-500/10';
+      default: return 'text-accent bg-accent/10';
     }
   };
 
@@ -155,7 +155,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                 <p className="text-xs mt-1">You're all caught up!</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-700/50">
+              <div className="divide-y divide-border/50">
                 {notifications.map((notification) => (
                   <button
                     key={notification.id}
@@ -174,7 +174,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           {notification.ticker && (
-                            <span className="px-1.5 py-0.5 text-xs font-mono font-bold bg-slate-600/50 rounded text-text-primary">
+                            <span className="px-1.5 py-0.5 text-xs font-mono font-bold bg-surface-active/50 rounded text-text-primary">
                               {notification.ticker}
                             </span>
                           )}
@@ -197,7 +197,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
                       {/* Unread indicator */}
                       {!notification.is_read && (
-                        <div className="flex-shrink-0 w-2 h-2 mt-2 bg-blue-400 rounded-full" />
+                        <div className="flex-shrink-0 w-2 h-2 mt-2 bg-accent rounded-full" />
                       )}
                     </div>
                   </button>

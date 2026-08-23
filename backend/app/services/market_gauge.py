@@ -176,7 +176,7 @@ def fit(points: list[tuple[date, float]]) -> Reading:
     if len(points) < MIN_YEARS * MONTHS_PER_YEAR:
         raise GaugeError(
             f"Mám jen {len(points) / MONTHS_PER_YEAR:.1f} roku historie "
-            f"{INDEX_TICKER}, na 40letý graf je potřeba aspoň {MIN_YEARS:.0f}. "
+            f"{INDEX_TICKER}, na dlouhodobý graf je potřeba aspoň {MIN_YEARS:.0f} let. "
             f"Semafor z tohohle neodvozuju."
         )
 
@@ -242,6 +242,20 @@ def classify(z: float) -> ChannelPosition:
     return ChannelPosition.AT_LOWER_LINE
 
 
+# Stupně semaforu jsou v kódu anglicky, protože tak je pojmenovává kánon
+# i databáze. Do české věty ale nepatří — čtenář nemá číst hodnotu z pole.
+ALERT_CS: Final[dict[str, str]] = {
+    "GREEN": "zelená",
+    "YELLOW": "žlutá",
+    "ORANGE": "oranžová",
+    "RED": "červená",
+}
+
+
+def alert_cs(alert: str) -> str:
+    return ALERT_CS.get(alert.upper(), alert)
+
+
 def agreement_cs(reading: Reading, current_alert: str | None) -> str:
     """
     Whether the gauge and the semafor currently on the field agree.
@@ -251,18 +265,26 @@ def agreement_cs(reading: Reading, current_alert: str | None) -> str:
     argues with has been sitting unexamined, and that is exactly how a stale
     semafor authorises purchases.
     """
+    # Délka řady se hlásí skutečná, ne zaokrouhlená na „40 let". Graf je
+    # kalibrovaný na tom, co se opravdu stáhlo, a tvrdit jinak by znamenalo
+    # nadsadit rozsah, na kterém ta čísla stojí.
+    span = f"{reading.years:.0f}letý".replace(".", ",")
+
     if not current_alert:
         return (
-            f"Semafor v aplikaci není nastavený. Graf by odpovídal "
-            f"{reading.suggested_alert}."
+            f"Semafor v aplikaci není nastavený. Graf by odpovídal stupni "
+            f"{alert_cs(reading.suggested_alert)}."
         )
     current = current_alert.upper()
     if current == reading.suggested_alert:
-        return f"Semafor {current} sedí s tím, co ukazuje 40letý graf."
+        return (
+            f"Semafor {alert_cs(current)} sedí s tím, co ukazuje "
+            f"{span} graf."
+        )
     return (
-        f"Semafor je nastavený na {current}, ale 40letý graf odpovídá "
-        f"{reading.suggested_alert}. Rozhodni sám — přepínat ho automaticky "
-        f"nebudu."
+        f"Semafor je nastavený na {alert_cs(current)}, ale {span} graf "
+        f"odpovídá stupni {alert_cs(reading.suggested_alert)}. Rozhodni sám — "
+        f"přepínat ho automaticky nebudu."
     )
 
 

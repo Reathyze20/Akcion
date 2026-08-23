@@ -72,18 +72,18 @@ interface GomesAlertPanelProps {
 const ALERT_CONFIG = {
   CRITICAL: {
     icon: Skull,
-    bgClass: "bg-red-50 border-red-200",
-    textClass: "text-red-800",
-    iconClass: "text-red-600",
-    badgeClass: "bg-red-600",
+    bgClass: "bg-negative border-negative",
+    textClass: "text-negative",
+    iconClass: "text-negative",
+    badgeClass: "bg-negative",
     label: "KRITICKÉ",
   },
   WARNING: {
     icon: AlertTriangle,
-    bgClass: "bg-yellow-50 border-yellow-200",
-    textClass: "text-yellow-800",
-    iconClass: "text-yellow-600",
-    badgeClass: "bg-yellow-500",
+    bgClass: "bg-warning border-warning",
+    textClass: "text-warning",
+    iconClass: "text-warning",
+    badgeClass: "bg-warning",
     label: "VAROVÁNÍ",
   },
   OPPORTUNITY: {
@@ -96,10 +96,10 @@ const ALERT_CONFIG = {
   },
   INFO: {
     icon: Info,
-    bgClass: "bg-gray-50 border-gray-200",
-    textClass: "text-gray-800",
-    iconClass: "text-gray-600",
-    badgeClass: "bg-gray-500",
+    bgClass: "bg-surface-active border-border-strong",
+    textClass: "text-text-muted",
+    iconClass: "text-text-muted",
+    badgeClass: "bg-surface-active",
     label: "INFO",
   },
 };
@@ -201,7 +201,7 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
   const getScoreDeltaDisplay = (delta: number): React.ReactNode => {
     if (delta < 0) {
       return (
-        <span className="flex items-center text-red-600 font-bold">
+        <span className="flex items-center text-negative font-bold">
           <TrendingDown className="w-4 h-4 mr-1" />
           {delta}
         </span>
@@ -213,7 +213,7 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
         </span>
       );
     }
-    return <span className="text-gray-500">0</span>;
+    return <span className="text-text-muted">0</span>;
   };
 
   // Render nothing if no critical alerts
@@ -224,9 +224,9 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
   // Loading skeleton
   if (loading && alerts.length === 0) {
     return (
-      <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg animate-pulse">
-        <div className="h-6 bg-gray-200 rounded w-1/3 mb-2"></div>
-        <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+      <div className="mb-4 p-4 bg-surface-active border border-border-strong rounded-lg animate-pulse">
+        <div className="h-6 bg-surface-active rounded w-1/3 mb-2"></div>
+        <div className="h-4 bg-surface-active rounded w-2/3"></div>
       </div>
     );
   }
@@ -238,25 +238,25 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
         <div
           className={`
             flex items-center justify-between p-3 rounded-lg cursor-pointer
-            ${alertCount.critical > 0 ? "bg-red-100 border border-red-300" : "bg-yellow-100 border border-yellow-300"}
+            ${alertCount.critical > 0 ? "bg-negative border border-negative" : "bg-warning border border-warning"}
           `}
           onClick={() => setExpanded(!expanded)}
         >
           <div className="flex items-center gap-3">
-            <Bell className={`w-5 h-5 ${alertCount.critical > 0 ? "text-red-600" : "text-yellow-600"}`} />
-            <span className={`font-semibold ${alertCount.critical > 0 ? "text-red-800" : "text-yellow-800"}`}>
+            <Bell className={`w-5 h-5 ${alertCount.critical > 0 ? "text-negative" : "text-warning"}`} />
+            <span className={`font-semibold ${alertCount.critical > 0 ? "text-negative" : "text-warning"}`}>
               {alertCount.total} nepřečtených alertů
             </span>
 
             {/* Severity badges */}
             <div className="flex gap-2">
               {alertCount.critical > 0 && (
-                <span className="px-2 py-0.5 text-xs font-bold bg-red-600 text-text-primary rounded-full">
+                <span className="px-2 py-0.5 text-xs font-bold bg-negative text-text-primary rounded-full">
                   {alertCount.critical} kritických
                 </span>
               )}
               {alertCount.warning > 0 && (
-                <span className="px-2 py-0.5 text-xs font-bold bg-yellow-500 text-white rounded-full">{alertCount.warning} varování</span>
+                <span className="px-2 py-0.5 text-xs font-bold bg-warning-bg text-warning border border-warning-border rounded-full">{alertCount.warning} varování</span>
               )}
               {alertCount.opportunity > 0 && (
                 <span className="px-2 py-0.5 text-xs font-bold bg-positive text-text-primary rounded-full">
@@ -266,7 +266,7 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
             </div>
           </div>
 
-          <span className={`text-sm ${alertCount.critical > 0 ? "text-red-600" : "text-yellow-600"}`}>{expanded ? "Skrýt ▲" : "Zobrazit ▼"}</span>
+          <span className={`text-sm ${alertCount.critical > 0 ? "text-negative" : "text-warning"}`}>{expanded ? "Skrýt ▲" : "Zobrazit ▼"}</span>
         </div>
       )}
 
@@ -282,10 +282,10 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
                 {/* Dismiss button */}
                 <button
                   onClick={() => handleDismiss(alert.id)}
-                  className="absolute top-2 right-2 p-1 rounded hover:bg-black/10 transition-colors"
+                  className="absolute top-2 right-2 p-1 rounded hover:bg-surface-base/10 transition-colors"
                   title="Zavřít"
                 >
-                  <X className="w-4 h-4 text-gray-500" />
+                  <X className="w-4 h-4 text-text-muted" />
                 </button>
 
                 {/* Alert content */}
@@ -299,31 +299,31 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`px-2 py-0.5 text-xs font-bold text-text-primary rounded ${config.badgeClass}`}>{config.label}</span>
                       <span className="font-bold text-lg">{alert.ticker}</span>
-                      <span className="text-sm text-gray-500">{new Date(alert.created_at).toLocaleString("cs-CZ")}</span>
+                      <span className="text-sm text-text-muted">{new Date(alert.created_at).toLocaleString("cs-CZ")}</span>
                     </div>
 
                     {/* Title */}
                     <h4 className={`font-semibold ${config.textClass}`}>{alert.title}</h4>
 
                     {/* Message */}
-                    <p className="text-sm text-gray-700 mt-1">{alert.message}</p>
+                    <p className="text-sm text-text-muted mt-1">{alert.message}</p>
 
                     {/* Score change */}
                     <div className="flex items-center gap-4 mt-2 text-sm">
                       <div>
-                        <span className="text-gray-500">Score:</span>{" "}
+                        <span className="text-text-muted">Score:</span>{" "}
                         <span className="font-semibold">
                           {alert.previous_score ?? "?"} → {alert.current_score}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Změna:</span> {getScoreDeltaDisplay(alert.score_delta)}
+                        <span className="text-text-muted">Změna:</span> {getScoreDeltaDisplay(alert.score_delta)}
                       </div>
                     </div>
 
                     {/* Recommendation */}
                     {alert.recommendation && (
-                      <div className={`mt-2 p-2 rounded ${alert.severity === "CRITICAL" ? "bg-red-100" : "bg-gray-100"}`}>
+                      <div className={`mt-2 p-2 rounded ${alert.severity === "CRITICAL" ? "bg-negative" : "bg-surface-active"}`}>
                         <span className="font-semibold text-sm">Doporučení: </span>
                         <span className="text-sm">{alert.recommendation}</span>
                       </div>
@@ -334,7 +334,7 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
                       {alert.severity === "CRITICAL" && (
                         <button
                           onClick={() => handleTakeAction(alert)}
-                          className="px-3 py-1.5 bg-red-600 text-text-primary text-sm font-semibold rounded hover:bg-red-700 transition-colors flex items-center gap-1"
+                          className="px-3 py-1.5 bg-negative text-text-primary text-sm font-semibold rounded hover:bg-negative transition-colors flex items-center gap-1"
                         >
                           <XCircle className="w-4 h-4" />
                           Prodat pozici
@@ -343,7 +343,7 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
                       {alert.severity === "OPPORTUNITY" && (
                         <button
                           onClick={() => handleTakeAction(alert)}
-                          className="px-3 py-1.5 bg-positive text-text-primary text-sm font-semibold rounded hover:bg-green-600 transition-colors flex items-center gap-1"
+                          className="px-3 py-1.5 bg-positive text-text-primary text-sm font-semibold rounded hover:bg-positive transition-colors flex items-center gap-1"
                         >
                           <CheckCircle className="w-4 h-4" />
                           Přidat pozici
@@ -351,7 +351,7 @@ export const GomesAlertPanel: React.FC<GomesAlertPanelProps> = ({
                       )}
                       <button
                         onClick={() => handleDismiss(alert.id)}
-                        className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300 transition-colors"
+                        className="px-3 py-1.5 bg-surface-active text-text-muted text-sm rounded hover:bg-surface-active transition-colors"
                       >
                         Zamítnout
                       </button>
@@ -404,14 +404,14 @@ export const GomesAlertBadge: React.FC<AlertBadgeProps> = ({ onClick }) => {
   if (count.total === 0) return null;
 
   return (
-    <button onClick={onClick} className="relative p-2 rounded-full hover:bg-gray-100 transition-colors" title={`${count.total} nepřečtených alertů`}>
-      <Bell className={`w-5 h-5 ${count.critical > 0 ? "text-red-600" : "text-gray-600"}`} />
+    <button onClick={onClick} className="relative p-2 rounded-full hover:bg-surface-active transition-colors" title={`${count.total} nepřečtených alertů`}>
+      <Bell className={`w-5 h-5 ${count.critical > 0 ? "text-negative" : "text-text-muted"}`} />
 
       {/* Badge */}
       <span
         className={`
         absolute -top-1 -right-1 px-1.5 py-0.5 text-xs font-bold text-text-primary rounded-full
-        ${count.critical > 0 ? "bg-red-600 animate-pulse" : "bg-yellow-500"}
+        ${count.critical > 0 ? "bg-negative" : "bg-warning"}
       `}
       >
         {count.total}

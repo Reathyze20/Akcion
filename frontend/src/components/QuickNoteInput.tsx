@@ -157,7 +157,7 @@ export const QuickNoteInput: React.FC<QuickNoteInputProps> = ({
           onChange={(e) => setNote(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Paste chat discussion, news, or any information about this stock..."
-          className="w-full bg-surface-base/50 border border-border rounded-lg px-4 py-3 text-sm text-text-primary placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 resize-none min-h-[80px]"
+          className="w-full bg-surface-base/50 border border-border rounded-lg px-4 py-3 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent resize-none min-h-[80px]"
           disabled={loading}
         />
 
@@ -203,7 +203,7 @@ export const QuickNoteInput: React.FC<QuickNoteInputProps> = ({
             <button
               onClick={handleSubmit}
               disabled={loading || note.length < 10}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:bg-surface-hover disabled:text-text-muted text-text-primary rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-accent hover:bg-accent disabled:bg-surface-hover disabled:text-text-muted text-text-primary rounded-lg transition-colors"
             >
               {loading ? (
                 <>
@@ -228,7 +228,7 @@ export const QuickNoteInput: React.FC<QuickNoteInputProps> = ({
 
       {/* Result/Error Display */}
       {(result || error) && (
-        <div className={`px-4 py-3 border-t ${error ? 'bg-negative/10 border-negative/30' : 'bg-positive/10 border-emerald-500/30'}`}>
+        <div className={`px-4 py-3 border-t ${error ? 'bg-negative/10 border-negative/30' : 'bg-positive/10 border-positive/30'}`}>
           {error ? (
             <div className="flex items-center gap-2 text-negative">
               <AlertTriangle className="w-4 h-4" />
@@ -258,7 +258,7 @@ export const QuickNoteInput: React.FC<QuickNoteInputProps> = ({
               {result.conflicts.length > 0 && (
                 <div className="flex items-start gap-2 mt-2 p-2 bg-warning/10 rounded-lg">
                   <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-amber-300">
+                  <div className="text-sm text-warning">
                     <span className="font-medium">Conflicts detected:</span>
                     <ul className="mt-1 list-disc list-inside text-text-secondary">
                       {result.conflicts.map((conflict, i) => (

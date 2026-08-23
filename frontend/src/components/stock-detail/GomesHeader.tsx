@@ -63,7 +63,7 @@ const getVerdictStyle = (verdict: string | null): { color: string; icon: React.R
     case 'SELL':
       return { color: 'text-negative', icon: <TrendingDown className="w-5 h-5" /> };
     case 'AVOID':
-      return { color: 'text-gray-400', icon: <Minus className="w-4 h-4" /> };
+      return { color: 'text-text-secondary', icon: <Minus className="w-4 h-4" /> };
     default:
       return { color: 'text-text-muted', icon: <Minus className="w-4 h-4" /> };
   }
@@ -150,7 +150,7 @@ export const GomesHeader: React.FC<GomesHeaderProps> = ({
           {/* Close Button */}
           <button
             onClick={onClose}
-            className="p-2 text-text-muted hover:text-text-primary hover:bg-white/10 
+            className="p-2 text-text-muted hover:text-text-primary hover:bg-surface-overlay/10 
                        rounded-lg transition-colors"
             aria-label="Zavřít"
           >

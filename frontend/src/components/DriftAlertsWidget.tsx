@@ -60,16 +60,16 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
         badge: 'bg-negative/20 text-negative'
       };
       case 'WARNING': return {
-        border: 'border-amber-500/50',
+        border: 'border-warning/50',
         bg: 'bg-warning/10',
         icon: 'text-warning',
         badge: 'bg-warning/20 text-warning'
       };
       default: return {
-        border: 'border-blue-500/50',
-        bg: 'bg-blue-500/10',
+        border: 'border-accent/50',
+        bg: 'bg-accent/10',
         icon: 'text-accent',
-        badge: 'bg-blue-500/20 text-accent'
+        badge: 'bg-accent/20 text-accent'
       };
     }
   };
@@ -108,7 +108,7 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
   }
 
   return (
-    <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-amber-500/30 p-5">
+    <div className="bg-gradient-to-br from-surface-raised to-surface-base rounded-xl border border-warning/30 p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -118,7 +118,7 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
             </div>
             {unacknowledgedCount > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-negative rounded-full 
-                               text-xs font-bold text-text-primary flex items-center justify-center animate-pulse">
+                               text-xs font-bold text-text-primary flex items-center justify-center">
                 {unacknowledgedCount}
               </span>
             )}
@@ -207,7 +207,7 @@ export const DriftAlertsWidget: React.FC<DriftAlertsWidgetProps> = ({
         </div>
       ) : (
         <div className="text-center py-8">
-          <Bell className="w-12 h-12 mx-auto mb-3 text-slate-600" />
+          <Bell className="w-12 h-12 mx-auto mb-3 text-text-muted" />
           <p className="text-text-secondary">Žádné aktivní alerty</p>
           <p className="text-xs text-text-muted mt-1">Vše je v pořádku</p>
         </div>

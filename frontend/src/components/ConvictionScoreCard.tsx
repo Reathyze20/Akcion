@@ -17,16 +17,16 @@ interface ConvictionScoreCardProps {
 const getRatingStyle = (rating: ConvictionRating) => {
   switch (rating) {
     case 'STRONG_BUY':
-      return { bg: 'bg-green-900/30', border: 'border-positive', text: 'text-positive', icon: '' };
+      return { bg: 'bg-positive/30', border: 'border-positive', text: 'text-positive', icon: '' };
     case 'BUY':
-      return { bg: 'bg-green-900/20', border: 'border-green-600', text: 'text-positive', icon: '' };
+      return { bg: 'bg-positive/20', border: 'border-positive', text: 'text-positive', icon: '' };
     case 'HOLD':
-      return { bg: 'bg-yellow-900/20', border: 'border-yellow-600', text: 'text-warning', icon: '' };
+      return { bg: 'bg-warning/20', border: 'border-warning', text: 'text-warning', icon: '' };
     case 'HIGH_RISK':
-      return { bg: 'bg-red-900/30', border: 'border-negative', text: 'text-negative', icon: '' };
+      return { bg: 'bg-negative/30', border: 'border-negative', text: 'text-negative', icon: '' };
     case 'AVOID':
     default:
-      return { bg: 'bg-gray-900/30', border: 'border-gray-600', text: 'text-gray-400', icon: '' };
+      return { bg: 'bg-surface-base/30', border: 'border-border-strong', text: 'text-text-secondary', icon: '' };
   }
 };
 
@@ -34,13 +34,13 @@ const getRatingStyle = (rating: ConvictionRating) => {
 const getLifecycleStyle = (phase?: LifecyclePhase) => {
   switch (phase) {
     case 'GREAT_FIND':
-      return { bg: 'bg-purple-900/30', text: 'text-accent', icon: '' };
+      return { bg: 'bg-accent/30', text: 'text-accent', icon: '' };
     case 'GOLD_MINE':
-      return { bg: 'bg-amber-900/30', text: 'text-warning', icon: '' };
+      return { bg: 'bg-warning/30', text: 'text-warning', icon: '' };
     case 'WAIT_TIME':
-      return { bg: 'bg-orange-900/30', text: 'text-warning', icon: '' };
+      return { bg: 'bg-warning/30', text: 'text-warning', icon: '' };
     default:
-      return { bg: 'bg-gray-900/30', text: 'text-gray-400', icon: '' };
+      return { bg: 'bg-surface-base/30', text: 'text-text-secondary', icon: '' };
   }
 };
 
@@ -48,13 +48,13 @@ const getLifecycleStyle = (phase?: LifecyclePhase) => {
 const getMarketAlertStyle = (alert?: MarketAlert | null) => {
   switch (alert) {
     case 'GREEN':
-      return { bg: 'bg-green-900/30', text: 'text-positive', icon: '' };
+      return { bg: 'bg-positive/30', text: 'text-positive', icon: '' };
     case 'YELLOW':
-      return { bg: 'bg-yellow-900/30', text: 'text-warning', icon: '' };
+      return { bg: 'bg-warning/30', text: 'text-warning', icon: '' };
     case 'ORANGE':
-      return { bg: 'bg-orange-900/30', text: 'text-warning', icon: '' };
+      return { bg: 'bg-warning/30', text: 'text-warning', icon: '' };
     case 'RED':
-      return { bg: 'bg-red-900/30', text: 'text-negative', icon: '' };
+      return { bg: 'bg-negative/30', text: 'text-negative', icon: '' };
     default:
       return null;
   }
@@ -77,13 +77,13 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
             </span>
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${ratingStyle.text} bg-black/30`}>
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${ratingStyle.text} bg-surface-base/30`}>
               {ratingStyle.icon} {score.rating.replace('_', ' ')}
             </span>
             <span className={`px-2 py-1 rounded text-xs ${
-              score.confidence === 'HIGH' ? 'bg-green-900/50 text-green-300' :
-              score.confidence === 'MEDIUM' ? 'bg-yellow-900/50 text-yellow-300' :
-              'bg-gray-900/50 text-gray-300'
+              score.confidence === 'HIGH' ? 'bg-positive/50 text-positive' :
+              score.confidence === 'MEDIUM' ? 'bg-warning/50 text-warning' :
+              'bg-surface-base/50 text-text-primary'
             }`}>
               {score.confidence}
             </span>
@@ -92,8 +92,8 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
 
         {/* Lifecycle Phase */}
         {score.lifecycle_phase && score.lifecycle_phase !== 'UNKNOWN' && (
-          <div className={`${lifecycleStyle.bg} px-4 py-2 rounded-lg border border-white/10`}>
-            <div className="text-xs text-gray-400 mb-1">Životní cyklus</div>
+          <div className={`${lifecycleStyle.bg} px-4 py-2 rounded-lg border border-border-strong/10`}>
+            <div className="text-xs text-text-secondary mb-1">Životní cyklus</div>
             <div className={`${lifecycleStyle.text} font-semibold flex items-center gap-1`}>
               <span>{lifecycleStyle.icon}</span>
               <span>{score.lifecycle_phase.replace('_', ' ')}</span>
@@ -104,11 +104,11 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
 
       {/* Market Alert */}
       {marketAlertStyle && (
-        <div className={`${marketAlertStyle.bg} border border-white/10 rounded-lg p-3`}>
+        <div className={`${marketAlertStyle.bg} border border-border-strong/10 rounded-lg p-3`}>
           <div className="flex items-center gap-2">
             <span className="text-xl">{marketAlertStyle.icon}</span>
             <div>
-              <div className="text-xs text-gray-400">Stav trhu</div>
+              <div className="text-xs text-text-secondary">Stav trhu</div>
               <div className={`${marketAlertStyle.text} font-semibold">`}>
                 {score.market_alert}
               </div>
@@ -131,13 +131,13 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
 
       {/* Green/Red Lines */}
       {(score.green_line || score.red_line || score.is_undervalued) && (
-        <div className="bg-black/30 rounded-lg p-4 space-y-2">
-          <div className="text-xs text-gray-400 font-semibold mb-2">CENOVÉ CÍLE</div>
+        <div className="bg-surface-base/30 rounded-lg p-4 space-y-2">
+          <div className="text-xs text-text-secondary font-semibold mb-2">CENOVÉ CÍLE</div>
           <div className="grid grid-cols-2 gap-4">
             {(score.green_line || score.is_undervalued) && (
               <div>
                 <div className="text-xs text-positive mb-1">Zelená linie (NÁKUP)</div>
-                <div className="text-lg font-bold text-green-300">
+                <div className="text-lg font-bold text-positive">
                   {score.green_line ? `$${score.green_line.toFixed(2)}` : 'Podhodnoceno'}
                 </div>
               </div>
@@ -145,7 +145,7 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
             {score.red_line && (
               <div>
                 <div className="text-xs text-negative mb-1">Červená linie (PRODEJ)</div>
-                <div className="text-lg font-bold text-red-300">
+                <div className="text-lg font-bold text-negative">
                   ${score.red_line.toFixed(2)}
                 </div>
               </div>
@@ -158,14 +158,14 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
       {score.firing_on_10_cylinders !== undefined && score.firing_on_10_cylinders !== null && (
         <div className={`rounded-lg p-3 border ${
           score.firing_on_10_cylinders 
-            ? 'bg-green-900/20 border-positive/30' 
-            : 'bg-orange-900/20 border-orange-500/30'
+            ? 'bg-positive/20 border-positive/30' 
+            : 'bg-warning/20 border-warning/30'
         }`}>
           <div className="flex items-center gap-2">
             <span className="text-xl">{score.firing_on_10_cylinders ? '' : ''}</span>
             <div>
-              <div className="text-xs text-gray-400">Kvalita exekuce</div>
-              <div className={score.firing_on_10_cylinders ? 'text-green-300' : 'text-orange-300'}>
+              <div className="text-xs text-text-secondary">Kvalita exekuce</div>
+              <div className={score.firing_on_10_cylinders ? 'text-positive' : 'text-warning'}>
                 {score.firing_on_10_cylinders ? 'Všechny motory jedou' : 'NEJEDE na plný plyn'}
               </div>
             </div>
@@ -174,9 +174,9 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
       )}
 
       {/* Reasoning */}
-      <div className="bg-black/30 rounded-lg p-4">
-        <div className="text-xs text-gray-400 font-semibold mb-2">ANALÝZA</div>
-        <div className="text-sm text-gray-200 whitespace-pre-line">
+      <div className="bg-surface-base/30 rounded-lg p-4">
+        <div className="text-xs text-text-secondary font-semibold mb-2">ANALÝZA</div>
+        <div className="text-sm text-text-primary whitespace-pre-line">
           {score.reasoning}
         </div>
       </div>
@@ -185,15 +185,15 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
       {(score.bull_case || score.bear_case) && (
         <div className="grid md:grid-cols-2 gap-4">
           {score.bull_case && (
-            <div className="bg-green-900/10 border border-positive/20 rounded-lg p-3">
+            <div className="bg-positive/10 border border-positive/20 rounded-lg p-3">
               <div className="text-xs text-positive font-semibold mb-2">BÝČÍ SCÉNÁŘ</div>
-              <div className="text-sm text-gray-300">{score.bull_case}</div>
+              <div className="text-sm text-text-primary">{score.bull_case}</div>
             </div>
           )}
           {score.bear_case && (
-            <div className="bg-red-900/10 border border-negative/20 rounded-lg p-3">
+            <div className="bg-negative/10 border border-negative/20 rounded-lg p-3">
               <div className="text-xs text-negative font-semibold mb-2">MEDVĚDÍ SCÉNÁŘ</div>
-              <div className="text-sm text-gray-300">{score.bear_case}</div>
+              <div className="text-sm text-text-primary">{score.bear_case}</div>
             </div>
           )}
         </div>
@@ -201,11 +201,11 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
 
       {/* Catalysts */}
       {score.catalysts && score.catalysts.length > 0 && (
-        <div className="bg-black/30 rounded-lg p-4">
+        <div className="bg-surface-base/30 rounded-lg p-4">
           <div className="text-xs text-positive font-semibold mb-2">KATALYZÁTORY</div>
           <ul className="space-y-1">
             {score.catalysts.map((catalyst, idx) => (
-              <li key={idx} className="text-sm text-gray-300 flex items-start gap-2">
+              <li key={idx} className="text-sm text-text-primary flex items-start gap-2">
                 <span className="text-positive">•</span>
                 <span>{catalyst}</span>
               </li>
@@ -216,11 +216,11 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
 
       {/* Risk Factors */}
       {score.risk_factors.length > 0 && (
-        <div className="bg-red-900/10 border border-negative/20 rounded-lg p-4">
+        <div className="bg-negative/10 border border-negative/20 rounded-lg p-4">
           <div className="text-xs text-negative font-semibold mb-2">RIZIKOVÉ FAKTORY</div>
           <ul className="space-y-1">
             {score.risk_factors.map((risk, idx) => (
-              <li key={idx} className="text-sm text-gray-300 flex items-start gap-2">
+              <li key={idx} className="text-sm text-text-primary flex items-start gap-2">
                 <span className="text-negative">•</span>
                 <span>{risk}</span>
               </li>
@@ -230,7 +230,7 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
       )}
 
       {/* Data Sources */}
-      <div className="flex items-center gap-4 text-xs text-gray-400 border-t border-white/10 pt-3">
+      <div className="flex items-center gap-4 text-xs text-text-secondary border-t border-border-strong/10 pt-3">
         <span>Data: {score.has_transcript && 'Přepis'} {score.has_swot && 'SWOT'} {score.has_ml_prediction && 'ML'}</span>
         {score.earnings_date && (
           <span>Výsledky: {new Date(score.earnings_date).toLocaleDateString()}</span>
@@ -244,7 +244,7 @@ const ConvictionScoreCard: React.FC<ConvictionScoreCardProps> = ({ score, onAnal
       {onAnalyze && (
         <button
           onClick={() => onAnalyze(score.ticker)}
-          className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-text-primary rounded-lg font-semibold transition-colors"
+          className="w-full py-2 bg-accent hover:bg-accent text-text-primary rounded-lg font-semibold transition-colors"
         >
           Obnovit analýzu
         </button>
@@ -261,17 +261,17 @@ const ScoreItem: React.FC<{ label: string; value: number; max: number; negative?
   negative
 }) => {
   const percentage = max > 0 ? (value / max) * 100 : 0;
-  const color = negative ? 'bg-negative' : value === max ? 'bg-positive' : value > 0 ? 'bg-warning' : 'bg-gray-600';
+  const color = negative ? 'bg-negative' : value === max ? 'bg-positive' : value > 0 ? 'bg-warning' : 'bg-surface-active';
 
   return (
-    <div className="bg-black/30 rounded p-2">
+    <div className="bg-surface-base/30 rounded p-2">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs text-gray-400">{label}</span>
+        <span className="text-xs text-text-secondary">{label}</span>
         <span className={`text-sm font-bold ${negative ? 'text-negative' : 'text-text-primary'}`}>
           {value}/{max}
         </span>
       </div>
-      <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+      <div className="h-1.5 bg-surface-hover rounded-full overflow-hidden">
         <div
           className={`h-full ${color} transition-all duration-300`}
           style={{ width: negative ? '100%' : `${percentage}%` }}

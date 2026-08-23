@@ -63,6 +63,14 @@ export function axisTick(value: number): string {
   return value.toLocaleString(CS, { maximumFractionDigits: 0 });
 }
 
+/** Desetinné číslo s českou čárkou. Pro údaje, které nejsou procenta ani měna. */
+export function decimal(value: number, digits = 1): string {
+  return value.toLocaleString(CS, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
 /** Procento s jedním desetinným místem a znaménkem, když na něm záleží. */
 export function percent(value: number, opts: { sign?: boolean; digits?: number } = {}): string {
   const { sign = false, digits = 1 } = opts;
@@ -128,4 +136,35 @@ export function day(iso: string | null | undefined): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString(CS, { day: 'numeric', month: 'numeric', year: 'numeric' });
+}
+
+/**
+ * Stupeň semaforu česky.
+ *
+ * Backend posílá GREEN / YELLOW / ORANGE / RED. V rozhraní to nemá co
+ * dělat — je to hodnota z databáze, ne slovo pro čtenáře. Jedno místo,
+ * aby se „YELLOW" neobjevilo uprostřed české věty na jedné kartě
+ * a „žlutá" na vedlejší.
+ */
+const ALERT_CS: Record<string, string> = {
+  GREEN: 'zelená',
+  YELLOW: 'žlutá',
+  ORANGE: 'oranžová',
+  RED: 'červená',
+};
+
+export function alertName(alert: string | null | undefined): string {
+  if (!alert) return 'nenastaveno';
+  return ALERT_CS[alert.toUpperCase()] ?? alert;
+}
+
+/** Třída plochy pro barevný bod stupně semaforu. */
+export function alertDot(alert: string | null | undefined): string {
+  switch ((alert ?? '').toUpperCase()) {
+    case 'GREEN': return 'bg-signal-green';
+    case 'YELLOW': return 'bg-signal-amber';
+    case 'ORANGE': return 'bg-signal-orange';
+    case 'RED': return 'bg-signal-red';
+    default: return 'bg-text-muted';
+  }
 }

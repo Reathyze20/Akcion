@@ -92,7 +92,7 @@ export const ProjectionChart: React.FC<ProjectionChartProps> = ({
   points,
   target,
   goalYear,
-  height = 300,
+  height,
 }) => {
   const data = useMemo<ChartRow[]>(
     () => points.map((p) => ({
@@ -110,7 +110,16 @@ export const ProjectionChart: React.FC<ProjectionChartProps> = ({
   const showTarget = target <= peak * 1.15;
 
   return (
-    <div style={{ height }} className="w-full">
+    /*
+     * Bez zadané výšky graf vyplní, co mu rodič nechá.
+     *
+     * Pevných 250 px vycházelo z jedné konkrétní obrazovky. Na monitoru
+     * s panelem záložek a lištou oblíbených je viewport o sto padesát
+     * pixelů nižší a stránka začne rolovat — přesně to, čemu se aplikace
+     * vyhýbá. Graf je jediný prvek na stránce, který se dá zmenšit, aniž
+     * by se ztratil údaj: má vlastní osu, ne pevný obsah.
+     */
+    <div style={height ? { height } : undefined} className={height ? 'w-full' : 'h-full w-full'}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 12, right: 16, bottom: 4, left: 4 }}>
           <CartesianGrid stroke={GRID} strokeDasharray="2 4" vertical={false} />

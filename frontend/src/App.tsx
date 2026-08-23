@@ -12,7 +12,7 @@ import { ToastContainer } from './components/Toast';
 export default function App() {
   return (
     <ToastProvider>
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-surface-base">
         <InvestmentTerminal />
         <ToastContainer />
       </div>

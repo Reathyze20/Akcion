@@ -53,13 +53,22 @@ export interface YearPoint {
 }
 
 /**
- * O kolik se pesimistická a optimistická dráha liší od očekávané.
+ * O kolik procentních bodů se pesimistická a optimistická dráha liší
+ * od očekávaného výnosu.
  *
  * Není to statistický interval spolehlivosti a netváří se tak. Je to
- * přiznání, že očekávaný výnos je odhad: horní dráha počítá s výnosem
- * o třetinu vyšším, spodní s výnosem o třetinu nižším.
+ * přiznání, že očekávaný výnos je odhad.
+ *
+ * Procentní body, ne podíl. Dva důvody:
+ *
+ *  - Dá se to vyslovit. „Pás ukazuje 12 až 18 % ročně" je věta, které
+ *    člověk rozumí. „Rozpětí je třetina očekávaného výnosu" není.
+ *  - Relativní rozpětí se přes dvacet let složeného úročení rozevře
+ *    tak, že horní okraj vytáhne osu grafu čtyřnásobně nad cíl
+ *    a očekávaná dráha se zmáčkne ke dnu. Pás, kvůli kterému není
+ *    vidět to hlavní, informaci neubírá — bere ji.
  */
-export const RETURN_SPREAD = 1 / 3;
+export const RETURN_SPREAD_PP = 0.03;
 
 /** Dlouhodobý inflační cíl ČNB. Používá se k přepočtu na dnešní kupní sílu. */
 export const DEFAULT_INFLATION = 0.02;
@@ -132,8 +141,10 @@ export function monthsToTarget(
 export function project(input: ProjectionInput): YearPoint[] {
   const { presentValue, monthlyContribution, annualReturn, years } = input;
 
-  const low = annualReturn * (1 - RETURN_SPREAD);
-  const high = annualReturn * (1 + RETURN_SPREAD);
+  // Spodní dráha se nepropadne pod nulu: záporný výnos je jiný scénář
+  // než „vyšlo to hůř", a do pásu kolem kladného očekávání nepatří.
+  const low = Math.max(0, annualReturn - RETURN_SPREAD_PP);
+  const high = annualReturn + RETURN_SPREAD_PP;
 
   const points: YearPoint[] = [];
 

@@ -79,7 +79,11 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
   ).join(' ');
 
   // Color based on trend
-  const strokeColor = trend === 'UP' ? '#4ade80' : trend === 'DOWN' ? '#f87171' : '#94a3b8';
+  const strokeColor = trend === 'UP'
+    ? 'rgb(var(--positive))'
+    : trend === 'DOWN'
+      ? 'rgb(var(--negative))'
+      : 'rgb(var(--text-muted))';
   const TrendIcon = trend === 'UP' ? TrendingUp : trend === 'DOWN' ? TrendingDown : Minus;
 
   return (
@@ -149,9 +153,9 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
         <div className="relative group">
           <AlertTriangle className="w-4 h-4 text-warning animate-pulse" />
           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 
-                          bg-amber-900/90 text-amber-200 text-[10px] rounded whitespace-nowrap
+                          bg-warning/90 text-warning text-[10px] rounded whitespace-nowrap
                           opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none
-                          border border-amber-500/50">
+                          border border-warning/50">
             Skóre kleslo o víc než 1 bod!
           </div>
         </div>
