@@ -172,10 +172,38 @@ protože RED je dvakrát za život a jednou z těch dvou tenhle ukazatel nevidí
 Dnes: `z=+1,46`, 91. percentil, `EXPENSIVE` → návrh **YELLOW**, což **sedí** s tím, co máš ručně
 nastavené.
 
-### `[ ]` B13. BOXX / RWM jako reálné instrumenty
+### `[x]` B13. BOXX / RWM jako reálné instrumenty
 
-Cash je dnes abstraktní `cash_pct`, hedge taky. Kánon §2 je má jako konkrétní tickery, do kterých se
-opravdu jde (gap #6). Nejmenší dopad z P2 — dokud nejsi v Yellow/Orange, nespustí se.
+Cash byl abstraktní `cash_pct`, hedge taky. Kánon §2 je má jako konkrétní tickery (gap #6).
+
+**Hotovo (23. 8.):** `app/services/cash_hedge.py` + `GET /api/cash-hedge`. Semafor se převádí na
+kusy: cíl v Kč, živá cena, počet akcií.
+
+**Ale to podstatné vypadlo až při modelování.** Ověřeno proti živým datům 23. 8.:
+
+| ticker | co to je | domicil | burza |
+|---|---|---|---|
+| BOXX | Alpha Architect 1-3 Month Box ETF | **US** | Cboe US |
+| RWM | ProShares Short Russell2000 | **US** | NYSE Arca |
+
+Oba jsou americké fondy bez KID podle PRIIPs. **Evropský retailový broker (Degiro, Trading 212) je
+retailovému klientovi zpravidla neprodá.** Plán, který ti při ORANGE říká „dej 93 317 Kč do RWM",
+je plán na tlačítko, které tam není.
+
+Kánon na to má vlastní větu — *„Mimo USA: RWM nemusí být dostupné → buď extra vybíravý, drž víc
+cashe místo hedge"* — a to je přesně to, co teď appka vrátí místo nesplnitelného cíle.
+
+Formulace je **„pravděpodobně neprodá, ověř si to"**, ne „nedostupné". Kód nikdy neviděl tvůj účet;
+tvrdit fakt o produktové nabídce, kterou nečetl, by byla přesně ta vymyšlená jistota, kterou odsud
+pořád odstraňujeme.
+
+`XSPS.L` (Xtrackers S&P 500 Inverse Daily Swap UCITS) se vrací jako **důkaz, že evropská inverzní
+ETF existují — ne jako náhrada**: shortuje S&P 500, ne Russell 2000, a resetuje se denně, takže
+v rozkolísaném bočním trhu ztrácí, i když index skončí tam, kde začal.
+
+**Čí je které číslo:** kánon dává procento jen pro GREEN (0 % hedge) a YELLOW (20–30 % v RWM).
+ORANGE má větu („I have ALL of my cash in RWM"), RED popis. Odpověď proto nese `interpreted: true`
+tam, kde jsou čísla 25/35/40 a 5/45/50 čtení aplikace, ne Gomesova slova.
 
 ---
 

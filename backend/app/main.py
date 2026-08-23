@@ -42,6 +42,7 @@ from .routes import yahoo_finance  # Yahoo Finance Smart Cache
 from .routes import sec  # SEC EDGAR — 10-K, 10-Q, Form 4
 from .routes import away  # Away mode — jedna zpráva místo šumu
 from .routes import market_gauge  # Semafor z 40letého grafu S&P
+from .routes import cash_hedge  # BOXX/RWM jako reálné instrumenty
 from .routes import dev_utils  # Development utilities (DISABLE IN PRODUCTION!)
 
 # Import alert scheduler
@@ -141,6 +142,7 @@ app.include_router(yahoo_finance.router)  # Yahoo Finance Smart Cache
 app.include_router(sec.router)  # SEC EDGAR — výsledky, výhledy, insideři
 app.include_router(away.router)  # Away mode — jedna zpráva místo šumu
 app.include_router(market_gauge.router)  # Asistovaný odhad semaforu
+app.include_router(cash_hedge.router)  # Cash a hedge v kusech, ne v procentech
 
 if settings.debug:
     app.include_router(dev_utils.router)  # Raw SQL execution — DEBUG only, never in production
