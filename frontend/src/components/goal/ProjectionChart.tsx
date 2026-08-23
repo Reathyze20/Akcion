@@ -92,7 +92,7 @@ export const ProjectionChart: React.FC<ProjectionChartProps> = ({
   points,
   target,
   goalYear,
-  height = 300,
+  height = 250,
 }) => {
   const data = useMemo<ChartRow[]>(
     () => points.map((p) => ({

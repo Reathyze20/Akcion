@@ -158,11 +158,15 @@ export const GoalPage: React.FC<GoalPageProps> = ({
   const reachable = summary.months !== null;
 
   return (
-    <div className="flex flex-col gap-4">
+    /* Rozestupy jsou o stupeň těsnější, než by byly na samostatné
+       stránce: Cíl je jedna z obrazovek aplikace, která nescrolluje,
+       a devadesát pixelů vzduchu mezi bloky stálo přesně to, kvůli
+       čemu se muselo rolovat k „Co z toho plyne". */
+    <div className="flex flex-col gap-2.5">
 
       {/* ---- panel: kde jsme, kam míříme ------------------------------- */}
 
-      <section className="panel rounded-card px-5 py-5">
+      <section className="panel rounded-card px-5 py-3">
         <div className="flex items-center gap-2">
           <Target size={15} className="text-frame-muted" aria-hidden="true" />
           <h2 className="eyebrow text-frame-muted">Cíl</h2>
@@ -204,7 +208,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
 
       {/* ---- list: graf + kalkulačka ----------------------------------- */}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_340px]">
 
         <section className="sheet">
           <div className="sheet-head">
@@ -214,7 +218,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
             </span>
           </div>
 
-          <div className="px-2 pt-4">
+          <div className="px-2 pt-2">
             <ProjectionChart
               points={points}
               target={state.target}
@@ -223,7 +227,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
           </div>
 
           {/* Legenda vysvětluje, které vrstvě se dá věřit. */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-sheet-rule px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-sheet-rule px-4 py-2">
             <span className="flex items-center gap-2 text-[11.5px] text-sheet-muted">
               <span className="h-0.5 w-5 bg-signal-green" aria-hidden="true" />
               očekávaná dráha
@@ -244,7 +248,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
             </span>
           </div>
 
-          <div className="border-t border-sheet-rule px-4 py-3">
+          <div className="border-t border-sheet-rule px-4 py-2">
             <MilestoneLadder current={state.presentValue} target={state.target} />
           </div>
         </section>
@@ -283,7 +287,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
 
         <dl className="grid grid-cols-1 divide-y divide-sheet-rule sm:grid-cols-3 sm:divide-x sm:divide-y-0">
 
-          <div className="px-4 py-4">
+          <div className="px-4 py-3">
             <dt className="text-[12.5px] text-sheet-muted">
               Kolik vložíš a kolik přidá trh
             </dt>
@@ -308,7 +312,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
             </dd>
           </div>
 
-          <div className="px-4 py-4">
+          <div className="px-4 py-3">
             <dt className="text-[12.5px] text-sheet-muted">
               Co za to bude ke koupi
             </dt>
@@ -333,7 +337,7 @@ export const GoalPage: React.FC<GoalPageProps> = ({
             </dd>
           </div>
 
-          <div className="px-4 py-4">
+          <div className="px-4 py-3">
             <dt className="text-[12.5px] text-sheet-muted">
               Co udělá jeden dnešní vklad
             </dt>

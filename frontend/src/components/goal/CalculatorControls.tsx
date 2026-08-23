@@ -52,7 +52,7 @@ const Field: React.FC<FieldProps> = ({
   const shown = render ? render(value) : amount(value);
 
   return (
-    <div className="border-b border-sheet-rule px-4 py-3.5 last:border-b-0">
+    <div className="border-b border-sheet-rule px-4 py-2 last:border-b-0">
       <div className="flex items-baseline justify-between gap-3">
         <label htmlFor={id} className="text-[13px] font-medium text-sheet-text">
           {label}
@@ -84,10 +84,10 @@ const Field: React.FC<FieldProps> = ({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2.5 h-1 w-full cursor-pointer appearance-none rounded bg-sheet-rule accent-[rgb(var(--accent))]"
+        className="mt-2 h-1 w-full cursor-pointer appearance-none rounded bg-sheet-rule accent-[rgb(var(--accent))]"
       />
 
-      <div className="mt-1 flex items-baseline justify-between">
+      <div className="mt-0.5 flex items-baseline justify-between">
         <span className="font-mono text-[10.5px] text-sheet-faint">{shown}</span>
         {hint && <span className="text-[11px] text-sheet-muted">{hint}</span>}
       </div>
