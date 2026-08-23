@@ -164,7 +164,7 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
   const isHold = data.status === 'HOLD_HOLD_HOLD';
 
   return (
-    <div className="mb-4 bg-surface-raised rounded-xl border border-border overflow-hidden">
+    <div className="bg-surface-raised rounded-card border border-border overflow-hidden">
       {/* Header row: alert pill + cash pill + refresh */}
       <div className="flex items-center justify-between px-5 pt-4">
         <div className="flex items-center gap-2 flex-wrap">

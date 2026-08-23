@@ -2371,6 +2371,42 @@ function calculateMaxAllocationCap(
 // MAIN DASHBOARD COMPONENT
 // ============================================================================
 
+/**
+ * Bezpečné čtení seznamu z localStorage.
+ *
+ * Evidence plateb a dluhů žije jen v prohlížeči — není záloha, není
+ * server, git ji nezachrání. Dvě věci proto nesmí nastat:
+ *
+ *  1. Poškozený záznam nesmí shodit render. Dřív by výjimka z JSON.parse
+ *     vzala celou aplikaci, ne jen jednu sekci.
+ *  2. Poškozený záznam se nesmí tiše přepsat. Efekt, který stav ukládá
+ *     zpátky, by prázdné pole zapsal do klíče a původní data by zmizela
+ *     bez možnosti obnovy. Originál se proto odloží pod příponu
+ *     `__poskozeno`, odkud se dá zachránit ručně.
+ */
+function readStoredList<T>(key: string): T[] {
+  let raw: string | null = null;
+  try {
+    raw = window.localStorage.getItem(key);
+  } catch {
+    return []; // Zakázaná data webu. Číst není z čeho.
+  }
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    try {
+      window.localStorage.setItem(`${key}__poskozeno`, raw);
+    } catch {
+      /* Odložit se nepovedlo. Aspoň nespadneme. */
+    }
+    console.error(`Záznam ${key} je poškozený; odložen jako ${key}__poskozeno.`);
+    return [];
+  }
+}
+
 export const InvestmentTerminal: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
@@ -2422,8 +2458,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_debts');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_debts');
   });
   
   // Šetření Míša state
@@ -2451,8 +2486,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_savings');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_savings');
   });
   
   // Save debts to localStorage whenever they change
@@ -2490,8 +2524,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_shared_payments');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_shared_payments');
   });
   
   // Save shared payments to localStorage whenever they change
@@ -2524,8 +2557,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_tom_payments');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_tom_payments');
   });
   
   // Save Tom payments to localStorage whenever they change
@@ -2558,8 +2590,7 @@ export const InvestmentTerminal: React.FC = () => {
     note: string;
   }>>(() => {
     // Load from localStorage on init
-    const saved = localStorage.getItem('akcion_misa_payments');
-    return saved ? JSON.parse(saved) : [];
+    return readStoredList('akcion_misa_payments');
   });
   
   // Save Míša payments to localStorage whenever they change
@@ -3162,74 +3193,91 @@ export const InvestmentTerminal: React.FC = () => {
       {/* MAIN CONTENT */}
       <main className="flex-1 px-5 py-4">
 
-        {/* Toolbar */}
-        {activeTab !== 'cil' && (
-          <div className="flex items-center justify-between mb-4">
+        {/* Panel nástrojů — jen pro sledované; u pozic sedí uvnitř sloupce. */}
+        {activeTab === 'watchlist' && (
+          <div className="flex items-center justify-between mb-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <input
                 type="text"
-                placeholder={activeTab === 'portfolio' ? "Hledat pozici…" : "Hledat mezi sledovanými…"}
+                placeholder="Hledat mezi sledovanými…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent w-64"
               />
             </div>
             
-            {activeTab === 'portfolio' && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-muted">Řadit podle:</span>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
-                  className="px-3 py-2 bg-surface-raised border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent"
-                >
-                  <option value="score">skóre</option>
-                  <option value="weight">váhy</option>
-                  <option value="pl">zisku a ztráty</option>
-                </select>
+          </div>
+        )}
+
+        {/* ==============================================================
+            DESKA — verdikt vlevo, pozice vpravo.
+
+            Dřív šlo všechno pod sebe: verdikt, čtyři karty přes celou
+            šířku, alokační plán a teprve pak tabulka. Pozice, tedy to
+            jediné, co člověk opravdu vlastní, začínaly na 1 919 px —
+            po dvou obrazovkách scrollování.
+
+            Verdikt je úzký sloupec, protože je to pár vět. Vedle něj
+            je místo na celou tabulku.
+        ============================================================== */}
+        {activeTab === 'portfolio' && (
+          <div className="grid gap-3 min-[1480px]:grid-cols-[352px_minmax(0,1fr)]">
+
+            {/* Levý sloupec: co dnes dělat a na čem portfolio stojí. */}
+            <div className="flex min-w-0 flex-col gap-3">
+              <DailyActionWidget
+                onExecuteAction={(action) => {
+                  const pos = displayedPositions.find((p) => p.ticker === action.ticker);
+                  if (pos) {
+                    setSelectedPosition(pos);
+                    return true;
+                  }
+                  return false;
+                }}
+              />
+              <RiskMeter
+                rocketCount={familyData.rocketCount}
+                anchorCount={familyData.anchorCount}
+                waitTimeCount={familyData.waitTimeCount}
+                unanalyzedCount={familyData.unanalyzedCount}
+                riskScore={familyData.riskScore}
+              />
+            </div>
+
+            {/* Pravý sloupec: hledání, alokace a pozice. */}
+            <div className="flex min-w-0 flex-col gap-3">
+
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                  <input
+                    type="text"
+                    placeholder="Hledat pozici…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-56 rounded-button border border-border bg-surface-raised py-1.5 pl-9 pr-3 text-[13px] text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-text-muted">Řadit podle:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
+                    className="rounded-button border border-border bg-surface-raised px-2 py-1.5 text-[13px] text-text-primary focus:border-accent focus:outline-none"
+                  >
+                    <option value="score">skóre</option>
+                    <option value="weight">váhy</option>
+                    <option value="pl">zisku a ztráty</option>
+                  </select>
+                </div>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Daily Action list — Path 1: "Co mám dnes udělat?" */}
-        {activeTab === 'portfolio' && (
-          <DailyActionWidget
-            onExecuteAction={(action) => {
-              const pos = displayedPositions.find((p) => p.ticker === action.ticker);
-              if (pos) {
-                setSelectedPosition(pos);
-                return true;
-              }
-              return false;
-            }}
-          />
-        )}
-
-        {/* Semafor podle 40letého grafu, hotovost/hedge v kusech, a away mode.
-            Sedí hned pod denním seznamem: první dvě karty vysvětlují, proč ten
-            seznam říká, co říká, a třetí je to, co se stane, když se na appku
-            týden nepodíváš. */}
-        {activeTab === 'portfolio' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <RiskMeter
-              rocketCount={familyData.rocketCount}
-              anchorCount={familyData.anchorCount}
-              waitTimeCount={familyData.waitTimeCount}
-              unanalyzedCount={familyData.unanalyzedCount}
-              riskScore={familyData.riskScore}
-            />
-            <MarketGaugeCard />
-            <CashHedgeCard />
-            <AwayModeCard className="lg:col-span-2" />
-          </div>
-        )}
 
 
         {/* Gomes Allocation Plan - Monthly Summary */}
         {activeTab === 'portfolio' && (
-          <div className="mb-4 p-4 bg-surface-raised rounded-xl border border-positive/20">
+          <div className="p-3 bg-surface-raised rounded-card border border-positive/20">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-positive/10 rounded-lg">
@@ -3386,6 +3434,21 @@ export const InvestmentTerminal: React.FC = () => {
         </div>
         )}
 
+            </div>
+          </div>
+        )}
+
+        {/* Spodní pás: proč seznam říká, co říká, a co se stane, když se
+            na aplikaci týden nepodíváš. Tři buňky vedle sebe místo tří
+            karet přes celou šířku. */}
+        {activeTab === 'portfolio' && (
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            <MarketGaugeCard />
+            <CashHedgeCard />
+            <AwayModeCard />
+          </div>
+        )}
+
         {/* Watchlist Table */}
         {activeTab === 'watchlist' && (
           <div className="bg-surface-raised rounded-xl border border-border overflow-hidden">
@@ -3513,7 +3576,7 @@ export const InvestmentTerminal: React.FC = () => {
         {activeTab === 'splaceni' && (
           <div className="space-y-6">
             {/* Společné splácení */}
-            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+            <div className="bg-surface-raised rounded-card p-4 border border-border">
               <div className="mb-6">
                 <h2 className="text-2xl font-bold text-text-primary">Společné splácení</h2>
               </div>
@@ -3611,7 +3674,7 @@ export const InvestmentTerminal: React.FC = () => {
                             <div className="text-text-secondary text-sm">{debt.name}</div>
                           </td>
                           <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(debt.amount))}</div>
+                            <div className="text-text-secondary text-sm">{debt.amount ? formatCurrency(parseFloat(debt.amount)) : '—'}</div>
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="text-text-secondary text-sm">
@@ -3699,7 +3762,7 @@ export const InvestmentTerminal: React.FC = () => {
             </div>
 
             {/* Společné platby */}
-            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+            <div className="bg-surface-raised rounded-card p-4 border border-border">
               <div className="mb-6">
                 <h2 className="text-2xl font-bold text-text-primary">Společné platby</h2>
               </div>
@@ -3819,7 +3882,7 @@ export const InvestmentTerminal: React.FC = () => {
             {/* Grid wrapper pro Šetření Míša a Platby Míša vedle sebe */}
             <div className="grid grid-cols-2 gap-6">
               {/* Platby Míša */}
-              <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="bg-surface-raised rounded-card p-4 border border-border">
                 <div className="mb-6">
                   <h2 className="text-2xl font-bold text-text-primary">Platby Míša</h2>
                 </div>
@@ -3927,7 +3990,7 @@ export const InvestmentTerminal: React.FC = () => {
             </div>
 
             {/* Šetření Míša */}
-            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+            <div className="bg-surface-raised rounded-card p-4 border border-border">
               <div className="mb-6">
                 <h2 className="text-2xl font-bold text-text-primary">Šetření Míša</h2>
               </div>
@@ -4036,7 +4099,7 @@ export const InvestmentTerminal: React.FC = () => {
             </div> {/* End grid wrapper pro Šetření Míša a Platby Míša */}
 
             {/* Platby Tom */}
-            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+            <div className="bg-surface-raised rounded-card p-4 border border-border">
               <div className="mb-6">
                 <h2 className="text-2xl font-bold text-text-primary">Platby Tom</h2>
               </div>
