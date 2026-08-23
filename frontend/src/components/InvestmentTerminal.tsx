@@ -2927,233 +2927,203 @@ export const InvestmentTerminal: React.FC = () => {
   return (
     <div className="min-h-screen bg-surface-base text-text-primary">
       {/* HEADER */}
-      <header className="bg-surface-base/80 backdrop-blur-sm border-b border-border-subtle sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <Shield className="w-8 h-8 text-accent" />
-              <h1 className="font-display text-[19px] font-extrabold uppercase tracking-[0.10em] [font-stretch:78%]">Akcion</h1>
+      {/* ==================================================================
+          HLAVIČKA — jeden pruh, ne třetina obrazovky
+
+          Předtím tu byly čtyři karty pod řádkem se značkou: 253 px, tedy
+          čtvrtina obrazovky na údaje, které se vejdou na jednu řádku.
+          Podrobnosti nezmizely — postup k cíli je tenká linka pod částkou
+          a celá věta ve vysvětlivce, rozpad rizika se přesunul do těla
+          stránky, kde je na něj místo.
+      ================================================================== */}
+      <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface-base/90 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+
+          <div className="flex items-center gap-2.5">
+            <Shield className="h-6 w-6 text-accent" aria-hidden="true" />
+            <h1 className="font-display text-[17px] font-extrabold uppercase tracking-[0.10em] [font-stretch:78%]">
+              Akcion
+            </h1>
+          </div>
+
+          <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+
+          {/* Hodnota portfolia. Postup k cíli je tenká linka pod číslem —
+              na periferní vidění to stačí, věta je ve vysvětlivce. */}
+          <div
+            className="flex flex-col"
+            title={(() => {
+              const months = calculateMonthsToTarget(familyData.totalValue, 500000, 20000, 0.15);
+              if (months <= 0) return 'Cíl 500 tis. Kč je splněn.';
+              const years = Math.floor(months / 12);
+              const rest = months % 12;
+              const casti = [
+                years > 0 ? `${years} ${plural(years, 'rok', 'roky', 'let')}` : '',
+                rest > 0 ? `${rest} ${plural(rest, 'měsíc', 'měsíce', 'měsíců')}` : '',
+              ].filter(Boolean).join(' a ');
+              return `Do cíle 500 tis. Kč zbývá ${casti} při 15 % ročně a vkladu 20 tis. Kč měsíčně.`;
+            })()}
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-[17px] font-medium tabular-nums text-text-primary">
+                {formatCurrency(familyData.totalValue)}
+              </span>
+              <span className="font-mono text-[11px] text-text-muted">
+                ≈ €{familyData.totalValueEUR.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })}
+              </span>
             </div>
-            
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              {/* Světlé / tmavé / podle systému */}
-              <ThemeToggle tone="sheet" className="mr-1" />
-
-              {/* Notification Bell */}
-              <NotificationBell 
-                onNotificationClick={(notification) => {
-                  if (notification.ticker) {
-                    // Open stock detail modal
-                    const position = familyData.allPositions.find(
-                      (p: EnrichedPosition) => p.ticker === notification.ticker
-                    );
-                    if (position) {
-                      setSelectedPosition(position);
-                    }
-                  }
-                }}
+            <div className="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-surface-active">
+              <div
+                className="h-full bg-accent"
+                style={{ width: `${Math.min(100, (familyData.totalValue / 500000) * 100)}%` }}
               />
-              
-              {/* Clear all positions (guarded) */}
-              <ClearPortfolioButton
-                portfolios={portfolios}
-                onCleared={refreshPortfolios}
-              />
-
-              {/* Import Portfolio */}
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="btn-secondary text-sm"
-              >
-                <Upload className="w-4 h-4" />
-                Importovat CSV
-              </button>
-              
-              {/* Add Position Manually */}
-              <button
-                onClick={() => setShowAddPositionModal(true)}
-                className="btn-secondary text-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Přidat pozici
-              </button>
-              
-              {/* New Analysis */}
-              <button
-                onClick={() => setShowAnalysisModal(true)}
-                className="btn-primary text-sm"
-              >
-                <PlusCircle className="w-5 h-5" />
-                Nová analýza
-              </button>
             </div>
           </div>
 
-          {/* Stats Row */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Total Value with Target Progress */}
-            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
-              <div className="text-xs text-text-secondary uppercase tracking-wider">Hodnota portfolia</div>
-              <div className="text-2xl font-black text-text-primary mt-1">
-                {formatCurrency(familyData.totalValue)}
-              </div>
-              <div className="text-xs text-text-muted mt-0.5">
-                ≈ €{familyData.totalValueEUR.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
-              </div>
-              {/* Target Progress Bar - Goal: 500,000 CZK */}
-              <div className="mt-2">
-                <div className="flex justify-between items-center text-[10px] text-text-muted mb-1">
-                  <span>Cíl: 500 tis. Kč</span>
-                  <span className="font-mono">{Math.min(100, (familyData.totalValue / 500000 * 100)).toFixed(0)}%</span>
-                </div>
-                <div className="h-1.5 bg-surface-hover rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-accent to-info transition-all duration-500"
-                    style={{ width: `${Math.min(100, familyData.totalValue / 500000 * 100)}%` }}
-                  />
-                </div>
-                {/* Estimated time to target */}
-                {(() => {
-                  const months = calculateMonthsToTarget(familyData.totalValue, 500000, 20000, 0.15);
-                  const years = Math.floor(months / 12);
-                  const remainingMonths = months % 12;
-                  return months > 0 ? (
-                    <div className="text-[10px] text-accent mt-1 flex items-center justify-center gap-1">
-                      <span>
-                        {years > 0 ? `${years} ${plural(years, 'rok', 'roky', 'let')} ` : ''}
-                        {remainingMonths > 0
-                          ? `${remainingMonths} ${plural(remainingMonths, 'měsíc', 'měsíce', 'měsíců')} `
-                          : ''}
-                        do cíle{' '}(při 15 % ročně a vkladu 20 tis. Kč měsíčně)
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="text-[10px] text-positive mt-1">Cíl splněn.</div>
+          {/* Hotovost. Klik přepne na úpravu přímo v pruhu — chování
+              zůstalo stejné, jen se vešlo na řádek. */}
+          {isEditingCash ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                value={editCashValue}
+                onChange={(e) => setEditCashValue(e.target.value)}
+                className="w-28 rounded-input border border-accent/50 bg-surface-hover px-2 py-1 font-mono text-[13px] text-text-primary focus:border-accent focus:outline-none"
+                placeholder="0"
+                autoFocus
+              />
+              <select
+                value={editCashCurrency}
+                onChange={(e) => setEditCashCurrency(e.target.value)}
+                className="rounded-input border border-border bg-surface-hover px-1.5 py-1 text-[12px] text-text-primary focus:border-accent focus:outline-none"
+              >
+                {CASH_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button
+                onClick={async () => {
+                  const amount = parseFloat(editCashValue);
+                  if (isNaN(amount) || amount < 0) return;
+                  setIsSavingCash(true);
+                  try {
+                    let amountInCZK = amount;
+                    if (editCashCurrency !== 'CZK') {
+                      const rate = exchangeRates[editCashCurrency] || 1;
+                      amountInCZK = amount * rate;
+                    }
+                    if (portfolios.length > 0) {
+                      await apiClient.updateCashBalance(portfolios[0].portfolio.id, amountInCZK);
+                      await refreshPortfolios();
+                    }
+                    setIsEditingCash(false);
+                  } catch (err) {
+                    console.error('Uložení hotovosti selhalo:', err);
+                  } finally {
+                    setIsSavingCash(false);
+                  }
+                }}
+                disabled={isSavingCash}
+                className="rounded-input border border-positive-border bg-positive-bg p-1.5 text-positive disabled:opacity-40"
+                title="Uložit"
+              >
+                {isSavingCash ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                onClick={() => setIsEditingCash(false)}
+                className="rounded-input border border-border p-1.5 text-text-muted hover:text-text-primary"
+                title="Zrušit"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setEditCashValue(familyData.totalCash.toString());
+                setEditCashCurrency('CZK');
+                setIsEditingCash(true);
+              }}
+              className="group flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-left transition-colors hover:bg-surface-hover"
+              title="Upravit volnou hotovost"
+            >
+              <span className="eyebrow text-text-muted">hotovost</span>
+              <span className="font-mono text-[13px] tabular-nums text-text-primary">
+                {formatCurrency(familyData.totalCash)}
+              </span>
+              <span className="font-mono text-[11px] text-text-muted">
+                {percent(familyData.totalValue > 0 ? (familyData.totalCash / familyData.totalValue) * 100 : 0)}
+              </span>
+              <Edit3 className="h-3 w-3 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
+          )}
+
+          {/* Kolik pozic a kolik z nich aplikace neumí posoudit. */}
+          {(() => {
+            const celkem = familyData.allPositions.length;
+            const bezHodnoceni = familyData.allPositions.filter((p) => !p.analysis_usable).length;
+            const vsechny = bezHodnoceni === celkem && celkem > 0;
+            return (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-button border px-2.5 py-1 ${
+                  bezHodnoceni > 0
+                    ? 'border-warning-border bg-warning-bg text-warning'
+                    : 'border-border text-text-secondary'
+                }`}
+                title={
+                  bezHodnoceni > 0
+                    ? 'Bez konvikčního skóre aplikace nespočítá cílové váhy ani nevydá pokyn.'
+                    : 'Všechny pozice mají použitelné hodnocení.'
+                }
+              >
+                <span className="font-mono text-[13px] tabular-nums">{celkem}</span>
+                <span className="text-[11px]">
+                  {plural(celkem, 'pozice', 'pozice', 'pozic')}
+                  {bezHodnoceni > 0 && (vsechny ? ' · žádná hodnocená' : ` · ${bezHodnoceni} bez hodnocení`)}
+                </span>
+              </span>
+            );
+          })()}
+
+          <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle tone="sheet" />
+
+            <NotificationBell
+              onNotificationClick={(notification) => {
+                if (notification.ticker) {
+                  const position = familyData.allPositions.find(
+                    (p: EnrichedPosition) => p.ticker === notification.ticker
                   );
-                })()}
-              </div>
-            </div>
-
-            {/* Cash (Munice) - Editable. Neutral chrome: cash is a fact, not a gain. */}
-            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
-              <div className="flex items-center justify-center gap-2">
-                <div className="text-xs text-text-secondary uppercase tracking-wider">Volná hotovost</div>
-                {!isEditingCash && (
-                  <button
-                    onClick={() => {
-                      setEditCashValue(familyData.totalCash.toString());
-                      setEditCashCurrency('CZK');
-                      setIsEditingCash(true);
-                    }}
-                    className="p-1 text-text-muted hover:text-positive transition-colors"
-                    title="Edit cash balance"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              {isEditingCash ? (
-                <div className="mt-1">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={editCashValue}
-                      onChange={(e) => setEditCashValue(e.target.value)}
-                      className="flex-1 px-2 py-1 bg-surface-hover border border-positive/50 rounded text-text-primary font-mono text-lg focus:outline-none focus:border-positive"
-                      placeholder="0"
-                      autoFocus
-                    />
-                    <select
-                      value={editCashCurrency}
-                      onChange={(e) => setEditCashCurrency(e.target.value)}
-                      className="px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-sm focus:outline-none focus:border-positive"
-                    >
-                      {CASH_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={async () => {
-                        const amount = parseFloat(editCashValue);
-                        if (isNaN(amount) || amount < 0) return;
-                        setIsSavingCash(true);
-                        try {
-                          // Convert to CZK if different currency
-                          let amountInCZK = amount;
-                          if (editCashCurrency !== 'CZK') {
-                            const rate = exchangeRates[editCashCurrency] || 1;
-                            amountInCZK = amount * rate;
-                          }
-                          // Update cash for first portfolio
-                          if (portfolios.length > 0) {
-                            const portfolioId = portfolios[0].portfolio.id;
-                            console.log('Updating cash for portfolio', portfolioId, 'amount:', amountInCZK);
-                            await apiClient.updateCashBalance(portfolioId, amountInCZK);
-                            await refreshPortfolios();
-                          } else {
-                            console.error('No portfolios found!');
-                          }
-                          setIsEditingCash(false);
-                        } catch (err) {
-                          console.error('Failed to update cash:', err);
-                        } finally {
-                          setIsSavingCash(false);
-                        }
-                      }}
-                      disabled={isSavingCash}
-                      className="flex-1 py-1 bg-positive/20 hover:bg-positive/80/30 text-positive text-sm font-bold rounded transition-colors flex items-center justify-center gap-1"
-                    >
-                      {isSavingCash ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setIsEditingCash(false)}
-                      className="px-3 py-1 bg-surface-active hover:bg-surface-active text-text-secondary text-sm rounded transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="text-2xl font-black text-text-primary mt-1">
-                    {formatCurrency(familyData.totalCash)}
-                  </div>
-                  <div className="text-xs text-text-muted mt-0.5">
-                    ≈ €{(familyData.totalCash / (exchangeRates.EUR || 25)).toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
-                  </div>
-                  <div className="text-xs text-text-muted mt-1">
-                    {percent(familyData.totalValue > 0 ? (familyData.totalCash / familyData.totalValue) * 100 : 0)} portfolia
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Position Count */}
-            <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
-              <div className="text-xs text-text-secondary uppercase tracking-wider">Počet pozic</div>
-              <div className="text-2xl font-black text-text-primary mt-1">
-                {familyData.allPositions.length}
-              </div>
-              <div className="text-xs text-text-muted mt-1">
-                {(() => {
-                  const unrated = familyData.allPositions.filter((p) => !p.analysis_usable).length;
-                  return unrated === 0
-                    ? 'všechny s použitelným hodnocením'
-                    : `${unrated} z ${familyData.allPositions.length} bez použitelného hodnocení`;
-                })()}
-              </div>
-            </div>
-
-            {/* Risk Meter */}
-            <RiskMeter 
-              rocketCount={familyData.rocketCount}
-              anchorCount={familyData.anchorCount}
-              waitTimeCount={familyData.waitTimeCount}
-              unanalyzedCount={familyData.unanalyzedCount}
-              riskScore={familyData.riskScore}
+                  if (position) {
+                    setSelectedPosition(position);
+                  }
+                }
+              }}
             />
+
+            <ClearPortfolioButton portfolios={portfolios} onCleared={refreshPortfolios} />
+
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="btn-secondary px-3 py-1.5 text-[13px]"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import
+            </button>
+
+            <button
+              onClick={() => setShowAddPositionModal(true)}
+              className="btn-secondary px-3 py-1.5 text-[13px]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Pozice
+            </button>
+
+            <button
+              onClick={() => setShowAnalysisModal(true)}
+              className="btn-primary px-3 py-1.5 text-[13px]"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Nová analýza
+            </button>
           </div>
         </div>
       </header>
@@ -3238,6 +3208,13 @@ export const InvestmentTerminal: React.FC = () => {
             týden nepodíváš. */}
         {activeTab === 'portfolio' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <RiskMeter
+              rocketCount={familyData.rocketCount}
+              anchorCount={familyData.anchorCount}
+              waitTimeCount={familyData.waitTimeCount}
+              unanalyzedCount={familyData.unanalyzedCount}
+              riskScore={familyData.riskScore}
+            />
             <MarketGaugeCard />
             <CashHedgeCard />
             <AwayModeCard className="lg:col-span-2" />
