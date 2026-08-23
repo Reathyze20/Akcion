@@ -22,13 +22,13 @@ const getRatingBadge = (rating: ConvictionRating) => {
     case 'STRONG_BUY':
       return { bg: 'bg-positive', text: 'text-text-primary', icon: '', label: 'SILNÝ NÁKUP' };
     case 'BUY':
-      return { bg: 'bg-green-600', text: 'text-text-primary', icon: '', label: 'NÁKUP' };
+      return { bg: 'bg-positive', text: 'text-text-primary', icon: '', label: 'NÁKUP' };
     case 'HOLD':
-      return { bg: 'bg-yellow-600', text: 'text-text-primary', icon: '', label: 'DRŽET' };
+      return { bg: 'bg-warning', text: 'text-text-primary', icon: '', label: 'DRŽET' };
     case 'HIGH_RISK':
       return { bg: 'bg-negative', text: 'text-text-primary', icon: '', label: 'VYSOKÉ RIZIKO' };
     default:
-      return { bg: 'bg-gray-600', text: 'text-text-primary', icon: '', label: 'VYHNOUT SE' };
+      return { bg: 'bg-surface-active', text: 'text-text-primary', icon: '', label: 'VYHNOUT SE' };
   }
 };
 
@@ -70,14 +70,14 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
 
   if (loading && !rankings.length) {
     return (
-      <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
+      <div className="bg-surface-base rounded-lg p-6 border border-border">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-text-primary">Nejlepší týpky</h3>
-          <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
+          <div className="animate-spin h-5 w-5 border-2 border-accent border-t-transparent rounded-full" />
         </div>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 bg-gray-800 rounded animate-pulse" />
+            <div key={i} className="h-16 bg-surface-raised rounded animate-pulse" />
           ))}
         </div>
       </div>
@@ -86,12 +86,12 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
 
   if (error) {
     return (
-      <div className="bg-gray-900 rounded-lg p-6 border border-negative/30">
+      <div className="bg-surface-base rounded-lg p-6 border border-negative/30">
         <h3 className="text-lg font-bold text-text-primary mb-2">Nejlepší týpky</h3>
         <div className="text-negative text-sm">{error}</div>
         <button
           onClick={fetchTopPicks}
-          className="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-text-primary rounded text-sm transition-colors"
+          className="mt-3 px-4 py-2 bg-negative hover:bg-negative text-text-primary rounded text-sm transition-colors"
         >
           Zkusit znovu
         </button>
@@ -101,14 +101,14 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
 
   if (rankings.length === 0) {
     return (
-      <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
+      <div className="bg-surface-base rounded-lg p-6 border border-border">
         <h3 className="text-lg font-bold text-text-primary mb-2">Nejlepší týpky</h3>
-        <p className="text-gray-400 text-sm">
+        <p className="text-text-secondary text-sm">
           Žádné týpky odpovídající kritériím ({minRating} nebo lepší)
         </p>
         <button
           onClick={fetchTopPicks}
-          className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-text-primary rounded text-sm transition-colors"
+          className="mt-3 px-4 py-2 bg-accent hover:bg-accent text-text-primary rounded text-sm transition-colors"
         >
           Obnovit
         </button>
@@ -117,18 +117,18 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
   }
 
   return (
-    <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
+    <div className="bg-surface-base rounded-lg p-6 border border-border">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
             Nejlepší týpky
-            <span className="text-sm font-normal text-gray-400">
+            <span className="text-sm font-normal text-text-secondary">
               ({rankings.length})
             </span>
           </h3>
           {lastUpdate && (
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-text-muted mt-1">
               Aktualizováno: {lastUpdate.toLocaleTimeString()}
             </div>
           )}
@@ -136,11 +136,11 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
         <button
           onClick={fetchTopPicks}
           disabled={loading}
-          className="p-2 hover:bg-gray-800 rounded transition-colors disabled:opacity-50"
+          className="p-2 hover:bg-surface-raised rounded transition-colors disabled:opacity-50"
           title="Refresh"
         >
           <svg
-            className={`w-5 h-5 text-gray-400 ${loading ? 'animate-spin' : ''}`}
+            className={`w-5 h-5 text-text-secondary ${loading ? 'animate-spin' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -167,8 +167,8 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
               key={item.ticker}
               onClick={() => onTickerClick?.(item.ticker)}
               className={`
-                bg-gray-800 rounded-lg p-3 border border-gray-700
-                ${onTickerClick ? 'cursor-pointer hover:border-blue-500 hover:bg-gray-750' : ''}
+                bg-surface-raised rounded-lg p-3 border border-border
+                ${onTickerClick ? 'cursor-pointer hover:border-accent hover:bg-surface-hover' : ''}
                 transition-all duration-200
               `}
             >
@@ -182,7 +182,7 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
                     <div className="font-bold text-text-primary text-lg">
                       {item.ticker}
                     </div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-xs text-text-secondary">
                       {item.confidence} confidence
                     </div>
                   </div>
@@ -201,7 +201,7 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
 
               {/* Reasoning (truncated) */}
               {item.reasoning && (
-                <div className="mt-2 text-xs text-gray-400 line-clamp-2">
+                <div className="mt-2 text-xs text-text-secondary line-clamp-2">
                   {item.reasoning.split('\n')[0]}
                 </div>
               )}
@@ -212,7 +212,7 @@ const TopPicksWidget: React.FC<TopPicksWidgetProps> = ({
 
       {/* Footer */}
       {autoRefresh && (
-        <div className="mt-4 text-xs text-gray-500 text-center">
+        <div className="mt-4 text-xs text-text-muted text-center">
           Auto-refreshes every {refreshInterval} minutes
         </div>
       )}

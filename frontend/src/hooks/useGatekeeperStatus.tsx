@@ -72,7 +72,7 @@ export function evaluateShieldState(analysis: GatekeeperAnalysis): ShieldConfig 
       state: "LOCKED_BEAR",
       blur: true,
       showOverlay: true,
-      overlayColor: "bg-slate-900/95",
+      overlayColor: "bg-surface-base/95",
       icon: <TrendingDown className="w-16 h-16 text-negative" />,
       title: "WEINSTEIN STAGE 4",
       message: `Price ${percentBelow}% below falling 30 WMA. DON'T CATCH A FALLING KNIFE. Wait for Stage 1 base formation.`,

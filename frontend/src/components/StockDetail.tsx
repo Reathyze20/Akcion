@@ -185,7 +185,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({
   // If no stock data available, show error state
   if (!stock) {
     return (
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-surface-base/70 flex items-center justify-center z-50 p-4">
         <div className="bg-primary-surface border border-border rounded-lg p-8 text-center">
           <p className="text-negative mb-4">Chybí data akcie</p>
           <button onClick={onClose} className="btn btn-secondary">Zavřít</button>
@@ -234,8 +234,8 @@ export const StockDetail: React.FC<StockDetailProps> = ({
     : position?.unrealized_pl_percent ?? null;
 
   return (
-    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0d1117] border border-slate-700 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+    <div className="fixed inset-0 bg-surface-base/90 flex items-center justify-center z-50 p-4">
+      <div className="bg-surface-base border border-border rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
         
         {/* ============================================ */}
         {/* LAYER 1: THE VERDICT HEADER                 */}
@@ -253,7 +253,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({
         {/* ============================================ */}
         {/* LAYER 2: TABS - Navigation at top           */}
         {/* ============================================ */}
-        <div className="bg-[#161b22] border-b border-slate-700">
+        <div className="bg-surface-raised border-b border-border">
           <div className="flex">
             {tabs.map((tab) => (
               <button
@@ -263,8 +263,8 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                   flex items-center gap-2 px-5 py-3 text-sm font-medium
                   transition-all border-b-2 -mb-px
                   ${activeTab === tab.id 
-                    ? 'text-emerald-400 border-emerald-400 bg-emerald-400/10' 
-                    : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'}
+                    ? 'text-positive border-positive bg-positive/10' 
+                    : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-surface-raised/50'}
                 `}
               >
                 {tab.icon}
@@ -275,7 +275,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({
         </div>
         
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0d1117]">
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-surface-base">
           <div className="p-5 space-y-5">
             
             {/* ============================================ */}
@@ -314,28 +314,28 @@ export const StockDetail: React.FC<StockDetailProps> = ({
 
                 {/* Price Targets */}
                 {(stock.price_target || stock.price_target_short || stock.price_target_long) && (
-                  <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
-                    <h4 className="text-sm font-semibold text-emerald-400 mb-3">Cenové cíle</h4>
+                  <div className="bg-surface-raised rounded-lg p-4 border border-border">
+                    <h4 className="text-sm font-semibold text-positive mb-3">Cenové cíle</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       {stock.price_target && (
-                        <div className="bg-[#0d1117] rounded-lg p-3 border border-slate-600">
-                          <p className="text-xs text-slate-500 mb-1">Obecný cíl</p>
-                          <p className="text-lg font-bold text-emerald-400">{stock.price_target}</p>
+                        <div className="bg-surface-base rounded-lg p-3 border border-border-strong">
+                          <p className="text-xs text-text-muted mb-1">Obecný cíl</p>
+                          <p className="text-lg font-bold text-positive">{stock.price_target}</p>
                           {stock.time_horizon && (
-                            <p className="text-xs text-slate-400 mt-1">{stock.time_horizon}</p>
+                            <p className="text-xs text-text-secondary mt-1">{stock.time_horizon}</p>
                           )}
                         </div>
                       )}
                       {stock.price_target_short && (
-                        <div className="bg-[#0d1117] rounded-lg p-3 border border-green-800">
-                          <p className="text-xs text-slate-500 mb-1">Krátkodobý</p>
-                          <p className="text-lg font-bold text-green-400">{stock.price_target_short}</p>
+                        <div className="bg-surface-base rounded-lg p-3 border border-positive">
+                          <p className="text-xs text-text-muted mb-1">Krátkodobý</p>
+                          <p className="text-lg font-bold text-positive">{stock.price_target_short}</p>
                         </div>
                       )}
                       {stock.price_target_long && (
-                        <div className="bg-[#0d1117] rounded-lg p-3 border border-blue-800">
-                          <p className="text-xs text-slate-500 mb-1">Dlouhodobý</p>
-                          <p className="text-lg font-bold text-blue-400">{stock.price_target_long}</p>
+                        <div className="bg-surface-base rounded-lg p-3 border border-accent">
+                          <p className="text-xs text-text-muted mb-1">Dlouhodobý</p>
+                          <p className="text-lg font-bold text-accent">{stock.price_target_long}</p>
                         </div>
                       )}
                     </div>
@@ -343,8 +343,8 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                 )}
                 
                 {/* Key Metrics */}
-                <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
-                  <h4 className="text-sm font-semibold text-emerald-400 mb-3">Klíčové metriky</h4>
+                <div className="bg-surface-raised rounded-lg p-4 border border-border">
+                  <h4 className="text-sm font-semibold text-positive mb-3">Klíčové metriky</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <MetricCard 
                       label="Moat Rating" 
@@ -415,32 +415,32 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                 {/* Entry/Exit Zones */}
                 <div className="grid grid-cols-2 gap-4">
                   {stock.entry_zone && (
-                    <div className="bg-green-900/30 border border-green-700 rounded-lg p-4">
-                      <p className="text-xs text-green-400 font-medium mb-1">Vstupní zóna</p>
-                      <p className="text-lg font-bold text-green-400">{stock.entry_zone}</p>
+                    <div className="bg-positive/30 border border-positive rounded-lg p-4">
+                      <p className="text-xs text-positive font-medium mb-1">Vstupní zóna</p>
+                      <p className="text-lg font-bold text-positive">{stock.entry_zone}</p>
                     </div>
                   )}
                   {stock.stop_loss_risk && (
-                    <div className="bg-red-900/30 border border-red-700 rounded-lg p-4">
-                      <p className="text-xs text-red-400 font-medium mb-1">Stop Loss / Riziko</p>
-                      <p className="text-sm font-medium text-red-400">{stock.stop_loss_risk}</p>
+                    <div className="bg-negative/30 border border-negative rounded-lg p-4">
+                      <p className="text-xs text-negative font-medium mb-1">Stop Loss / Riziko</p>
+                      <p className="text-sm font-medium text-negative">{stock.stop_loss_risk}</p>
                     </div>
                   )}
                 </div>
                 
                 {/* Trade Rationale */}
                 {stock.trade_rationale && (
-                  <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
-                    <h4 className="text-sm font-semibold text-emerald-400 mb-2">Trade Rationale</h4>
-                    <p className="text-sm text-slate-300">{stock.trade_rationale}</p>
+                  <div className="bg-surface-raised rounded-lg p-4 border border-border">
+                    <h4 className="text-sm font-semibold text-positive mb-2">Trade Rationale</h4>
+                    <p className="text-sm text-text-primary">{stock.trade_rationale}</p>
                   </div>
                 )}
                 
                 {/* Chart Setup */}
                 {stock.chart_setup && (
-                  <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
-                    <h4 className="text-sm font-semibold text-emerald-400 mb-2">Chart Setup</h4>
-                    <p className="text-sm text-slate-300">{stock.chart_setup}</p>
+                  <div className="bg-surface-raised rounded-lg p-4 border border-border">
+                    <h4 className="text-sm font-semibold text-positive mb-2">Chart Setup</h4>
+                    <p className="text-sm text-text-primary">{stock.chart_setup}</p>
                   </div>
                 )}
                 
@@ -470,17 +470,17 @@ export const StockDetail: React.FC<StockDetailProps> = ({
             {activeTab === 'analysis' && (
               <div className="space-y-4">
                 {stock.raw_notes && (
-                  <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
-                    <h4 className="text-sm font-semibold text-slate-400 mb-2">Plná analýza</h4>
-                    <pre className="text-sm text-slate-300 whitespace-pre-wrap font-mono 
-                                    bg-[#0d1117] p-4 rounded-lg max-h-96 overflow-y-auto custom-scrollbar">
+                  <div className="bg-surface-raised rounded-lg p-4 border border-border">
+                    <h4 className="text-sm font-semibold text-text-secondary mb-2">Plná analýza</h4>
+                    <pre className="text-sm text-text-primary whitespace-pre-wrap font-mono 
+                                    bg-surface-base p-4 rounded-lg max-h-96 overflow-y-auto custom-scrollbar">
                       {stock.raw_notes}
                     </pre>
                   </div>
                 )}
                 
                 {!stock.raw_notes && (
-                  <p className="text-slate-500 text-center py-8">
+                  <p className="text-text-muted text-center py-8">
                     Žádná detailní analýza není k dispozici.
                   </p>
                 )}
@@ -489,7 +489,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({
             
             {/* Metadata Tab */}
             {activeTab === 'metadata' && (
-              <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
+              <div className="bg-surface-raised rounded-lg p-4 border border-border">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <MetricCard label="ID" value={`#${stock.id}`} />
                   <MetricCard label="Řečník" value={stock.speaker} />
@@ -512,13 +512,13 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                 {/* Position Summary — editable: this is the only place in the
                     app to fill in shares/purchase price (e.g. after a Degiro
                     import, which never carries a buy price). */}
-                <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
+                <div className="bg-surface-raised rounded-lg p-4 border border-border">
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-semibold text-emerald-400">Pozice</h4>
+                    <h4 className="text-sm font-semibold text-positive">Pozice</h4>
                     {!isEditingPosition && (
                       <button
                         onClick={startEditingPosition}
-                        className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+                        className="flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                         Upravit
@@ -530,17 +530,17 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs text-slate-500 mb-1">Počet akcií</label>
+                          <label className="block text-xs text-text-muted mb-1">Počet akcií</label>
                           <input
                             type="number"
                             step="any"
                             value={editShares}
                             onChange={(e) => setEditShares(e.target.value)}
-                            className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700 rounded-lg text-slate-100 text-sm focus:outline-none focus:border-emerald-500"
+                            className="w-full px-3 py-2 bg-surface-base border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-positive"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-500 mb-1">
+                          <label className="block text-xs text-text-muted mb-1">
                             Nákupní cena / akcii ({position.currency || 'USD'})
                           </label>
                           <input
@@ -550,18 +550,18 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                             onChange={(e) => setEditAvgCost(e.target.value)}
                             placeholder="např. 27.75"
                             autoFocus
-                            className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700 rounded-lg text-slate-100 text-sm placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+                            className="w-full px-3 py-2 bg-surface-base border border-border rounded-lg text-text-primary text-sm placeholder-text-muted focus:outline-none focus:border-positive"
                           />
                         </div>
                       </div>
                       {savePositionError && (
-                        <p className="text-xs text-red-400">{savePositionError}</p>
+                        <p className="text-xs text-negative">{savePositionError}</p>
                       )}
                       <div className="flex gap-2">
                         <button
                           onClick={handleSavePosition}
                           disabled={isSavingPosition}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-positive hover:bg-positive-muted disabled:opacity-50 text-text-inverse text-xs font-semibold rounded-lg transition-colors"
                         >
                           <Check className="w-3.5 h-3.5" />
                           {isSavingPosition ? 'Ukládám…' : 'Uložit'}
@@ -569,7 +569,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                         <button
                           onClick={() => setIsEditingPosition(false)}
                           disabled={isSavingPosition}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-hover hover:bg-surface-active text-text-primary text-xs font-medium rounded-lg transition-colors"
                         >
                           <X className="w-3.5 h-3.5" />
                           Zrušit
@@ -601,34 +601,34 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                 {/* P/L Section — unknown cost basis is a prompt, never a number */}
                 <div className="grid grid-cols-2 gap-4">
                   {displayUnrealizedPl != null && displayUnrealizedPlPercent != null ? (
-                    <div className={`p-4 rounded-lg border ${displayUnrealizedPl >= 0 ? 'bg-green-900/20 border-green-700' : 'bg-red-900/20 border-red-700'}`}>
-                      <p className="text-xs text-slate-500 mb-1">Nerealizovaný P/L</p>
-                      <p className={`text-xl font-bold ${displayUnrealizedPl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className={`p-4 rounded-lg border ${displayUnrealizedPl >= 0 ? 'bg-positive/20 border-positive' : 'bg-negative/20 border-negative'}`}>
+                      <p className="text-xs text-text-muted mb-1">Nerealizovaný P/L</p>
+                      <p className={`text-xl font-bold ${displayUnrealizedPl >= 0 ? 'text-positive' : 'text-negative'}`}>
                         {formatCurrency(displayUnrealizedPl, position.currency)}
                       </p>
-                      <p className={`text-sm ${displayUnrealizedPlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      <p className={`text-sm ${displayUnrealizedPlPercent >= 0 ? 'text-positive' : 'text-negative'}`}>
                         {displayUnrealizedPlPercent >= 0 ? '+' : ''}{displayUnrealizedPlPercent.toFixed(2)}%
                       </p>
                     </div>
                   ) : (
                     <button
                       onClick={startEditingPosition}
-                      className="text-left p-4 rounded-lg border border-amber-700 bg-amber-900/20 hover:bg-amber-900/30 transition-colors"
+                      className="text-left p-4 rounded-lg border border-warning bg-warning/20 hover:bg-warning/30 transition-colors"
                     >
-                      <p className="text-xs text-slate-500 mb-1">Nerealizovaný P/L</p>
-                      <p className="text-sm font-bold text-amber-400">
+                      <p className="text-xs text-text-muted mb-1">Nerealizovaný P/L</p>
+                      <p className="text-sm font-bold text-warning">
                         ⚠️ Chybí nákupní cena — klikni pro doplnění, P/L do té doby nelze spočítat
                       </p>
                     </button>
                   )}
                   
                   {/* Allocation */}
-                  <div className="p-4 rounded-lg border border-slate-700 bg-[#161b22]">
-                    <p className="text-xs text-slate-500 mb-1">Alokace v portfoliu</p>
-                    <p className="text-xl font-bold text-slate-200">
+                  <div className="p-4 rounded-lg border border-border bg-surface-raised">
+                    <p className="text-xs text-text-muted mb-1">Alokace v portfoliu</p>
+                    <p className="text-xl font-bold text-text-primary">
                       {position.weight_in_portfolio?.toFixed(1) ?? 0}%
                     </p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-text-secondary">
                       Max: {position.target_weight_pct?.toFixed(0) ?? stock.max_allocation_cap ?? 10}%
                     </p>
                   </div>
@@ -636,23 +636,23 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                 
                 {/* Gap Analysis */}
                 {position.gap_czk !== undefined && (
-                  <div className={`p-4 rounded-lg border ${position.gap_czk > 0 ? 'bg-green-900/20 border-green-700' : position.gap_czk < 0 ? 'bg-yellow-900/20 border-yellow-700' : 'border-slate-700 bg-[#161b22]'}`}>
-                    <p className="text-xs text-slate-500 mb-1">Gomes Gap Analýza</p>
+                  <div className={`p-4 rounded-lg border ${position.gap_czk > 0 ? 'bg-positive/20 border-positive' : position.gap_czk < 0 ? 'bg-warning/20 border-warning' : 'border-border bg-surface-raised'}`}>
+                    <p className="text-xs text-text-muted mb-1">Gomes Gap Analýza</p>
                     <div className="flex items-center justify-between">
-                      <p className={`text-lg font-bold ${position.gap_czk > 0 ? 'text-green-400' : position.gap_czk < 0 ? 'text-yellow-400' : 'text-slate-200'}`}>
+                      <p className={`text-lg font-bold ${position.gap_czk > 0 ? 'text-positive' : position.gap_czk < 0 ? 'text-warning' : 'text-text-primary'}`}>
                         {position.gap_czk > 0 ? '+' : ''}{formatCurrency(position.gap_czk)}
                       </p>
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        position.action_signal === 'BUY' ? 'bg-green-900/50 text-green-400' :
-                        position.action_signal === 'SELL' ? 'bg-red-900/50 text-red-400' :
-                        position.action_signal === 'SNIPER' ? 'bg-emerald-900/50 text-emerald-400' :
-                        'bg-slate-800 text-slate-400'
+                        position.action_signal === 'BUY' ? 'bg-positive/50 text-positive' :
+                        position.action_signal === 'SELL' ? 'bg-negative/50 text-negative' :
+                        position.action_signal === 'SNIPER' ? 'bg-positive/50 text-positive' :
+                        'bg-surface-raised text-text-secondary'
                       }`}>
                         {position.action_signal ?? 'HOLD'}
                       </span>
                     </div>
                     {position.optimal_size !== undefined && position.optimal_size > 0 && (
-                      <p className="text-sm text-slate-400 mt-2">
+                      <p className="text-sm text-text-secondary mt-2">
                         Optimální nákup tento měsíc: {formatCurrency(position.optimal_size)}
                       </p>
                     )}
@@ -664,10 +664,10 @@ export const StockDetail: React.FC<StockDetailProps> = ({
         </div>
         
         {/* Footer */}
-        <div className="bg-[#161b22] border-t border-slate-700 p-4 flex justify-end">
+        <div className="bg-surface-raised border-t border-border p-4 flex justify-end">
           <button 
             onClick={onClose} 
-            className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg font-medium transition-colors"
+            className="px-6 py-2 bg-surface-hover hover:bg-surface-active text-text-primary rounded-lg font-medium transition-colors"
           >
             Zavřít
           </button>
@@ -686,12 +686,12 @@ interface MetricCardProps {
 
 const MetricCard: React.FC<MetricCardProps> = ({ label, value, variant = 'default' }) => {
   const colorClass = 
-    variant === 'positive' ? 'text-green-400' :
-    variant === 'negative' ? 'text-red-400' : 'text-slate-200';
+    variant === 'positive' ? 'text-positive' :
+    variant === 'negative' ? 'text-negative' : 'text-text-primary';
   
   return (
-    <div className="bg-[#0d1117] rounded-lg p-3 border border-slate-700">
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
+    <div className="bg-surface-base rounded-lg p-3 border border-border">
+      <p className="text-xs text-text-muted mb-1">{label}</p>
       <p className={`text-sm font-medium ${colorClass}`}>
         {value ?? 'N/A'}
       </p>

@@ -373,7 +373,7 @@ export default function PortfolioPage() {
               <select
                 value={selectedOwner || ''}
                 onChange={(e) => setSelectedOwner(e.target.value || null)}
-                className="px-4 py-2 bg-surface-raised border border-white/10 rounded-lg text-text-primary focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                className="px-4 py-2 bg-surface-raised border border-border-strong/10 rounded-lg text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
               >
                 <option value="">All</option>
                 {owners.map((owner) => (
@@ -412,7 +412,7 @@ export default function PortfolioPage() {
               <button
                 onClick={handleDeleteAllPositions}
                 disabled={loading || !portfolioSummary?.positions?.length}
-                className="btn bg-red-600 hover:bg-red-700 text-text-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn bg-negative hover:bg-negative text-text-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Trash2 size={20} />
                 Smazat vše
@@ -430,7 +430,7 @@ export default function PortfolioPage() {
             onClick={() => setSelectedPortfolio(portfolio.id)}
             className={`px-6 py-3 rounded-lg font-semibold transition-all ${
               selectedPortfolio === portfolio.id
-                ? 'bg-indigo-600 text-text-primary ring-2 ring-indigo-400'
+                ? 'bg-accent text-text-primary ring-2 ring-accent'
                 : 'bg-surface-raised text-text-secondary hover:bg-surface-hover'
             }`}
           >
@@ -451,7 +451,7 @@ export default function PortfolioPage() {
               {formatCurrencySummary(portfolioSummary.total_market_value)}
             </div>
           </div>
-          <div className="card p-6 cursor-pointer hover:bg-gray-50" onClick={() => {
+          <div className="card p-6 cursor-pointer hover:bg-surface-active" onClick={() => {
               setEditCashBalance((portfolioSummary.cash_balance || 0).toString());
               setShowCashModal(true);
             }}>
@@ -498,7 +498,7 @@ export default function PortfolioPage() {
       ) : portfolioSummary && portfolioSummary.positions.length > 0 ? (
         <div className="card overflow-hidden">
           <table className="w-full">
-            <thead className="bg-bg-tertiary border-b border-gray-700">
+            <thead className="bg-bg-tertiary border-b border-border">
               <tr>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-text-primary">Společnost</th>
                 <th className="px-6 py-4 text-right text-sm font-semibold text-text-primary">Akcie</th>
@@ -510,7 +510,7 @@ export default function PortfolioPage() {
                 <th className="px-6 py-4 text-right text-sm font-semibold text-text-primary">Akce</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700">
+            <tbody className="divide-y divide-border">
               {portfolioSummary.positions.map((position) => {
                 const currency = (position as any).currency || 'USD';
                 const companyName = (position as any).company_name;
@@ -553,7 +553,7 @@ export default function PortfolioPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => handleEditPosition(position)}
-                          className="text-accent hover:text-indigo-300 transition-colors"
+                          className="text-accent hover:text-accent transition-colors"
                           title="Edit position"
                         >
                           <Edit2 size={18} />
@@ -589,8 +589,8 @@ export default function PortfolioPage() {
 
       {/* Create Portfolio Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
+        <div className="fixed inset-0 bg-surface-base/50 flex items-center justify-center z-50">
+          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-border-strong/10">
             <h2 className="text-2xl font-bold text-text-primary mb-6">Vytvořit portfolio</h2>
             <div className="space-y-4">
               <div>
@@ -602,7 +602,7 @@ export default function PortfolioPage() {
                   value={newPortfolioOwner}
                   onChange={(e) => setNewPortfolioOwner(e.target.value)}
                   placeholder="e.g., Já, Přítelkyně"
-                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-border-strong/10 rounded-lg text-text-primary placeholder-text-secondary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
               </div>
               <div>
@@ -614,7 +614,7 @@ export default function PortfolioPage() {
                   value={newPortfolioName}
                   onChange={(e) => setNewPortfolioName(e.target.value)}
                   placeholder="e.g., Growth Portfolio, Dividend Portfolio"
-                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-border-strong/10 rounded-lg text-text-primary placeholder-text-secondary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
               </div>
               <div>
@@ -624,7 +624,7 @@ export default function PortfolioPage() {
                 <select
                   value={newPortfolioBroker}
                   onChange={(e) => setNewPortfolioBroker(e.target.value as BrokerType)}
-                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-border-strong/10 rounded-lg text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
                 >
                   <option value="T212">Trading 212</option>
                   <option value="DEGIRO">Degiro</option>
@@ -646,7 +646,7 @@ export default function PortfolioPage() {
               <button
                 onClick={handleCreatePortfolio}
                 disabled={!newPortfolioName.trim() || !newPortfolioOwner.trim()}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-text-primary rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-accent text-text-primary rounded-lg font-semibold hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Vytvořit
               </button>
@@ -657,8 +657,8 @@ export default function PortfolioPage() {
 
       {/* CSV Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
+        <div className="fixed inset-0 bg-surface-base/50 flex items-center justify-center z-50">
+          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-border-strong/10">
             <h2 className="text-2xl font-bold text-text-primary mb-6">Nahrát CSV</h2>
             <div className="space-y-4">
               <div>
@@ -668,7 +668,7 @@ export default function PortfolioPage() {
                 <select
                   value={uploadBroker}
                   onChange={(e) => setUploadBroker(e.target.value as BrokerType)}
-                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-border-strong/10 rounded-lg text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
                 >
                   <option value="T212">Trading 212</option>
                   <option value="DEGIRO">Degiro</option>
@@ -683,7 +683,7 @@ export default function PortfolioPage() {
                   type="file"
                   accept=".csv"
                   onChange={handleFileSelect}
-                  className="w-full text-text-primary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-text-primary file:cursor-pointer file:font-semibold hover:file:bg-indigo-700 file:transition-colors"
+                  className="w-full text-text-primary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-accent file:text-text-primary file:cursor-pointer file:font-semibold hover:file:bg-accent file:transition-colors"
                 />
                 {selectedFile && (
                   <p className="text-sm text-text-secondary mt-2">
@@ -705,7 +705,7 @@ export default function PortfolioPage() {
               <button
                 onClick={handleUploadCSV}
                 disabled={!selectedFile || loading}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-text-primary rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-accent text-text-primary rounded-lg font-semibold hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Nahrávání...' : 'Nahrát'}
               </button>
@@ -716,8 +716,8 @@ export default function PortfolioPage() {
 
       {/* Edit Position Modal */}
       {showEditModal && editingPosition && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
+        <div className="fixed inset-0 bg-surface-base/50 flex items-center justify-center z-50">
+          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-border-strong/10">
             <h2 className="text-2xl font-bold text-text-primary mb-6">Upravit pozici</h2>
             <div className="mb-4 p-4 bg-surface-raised rounded-lg">
               <div className="text-2xl font-bold text-accent">{editingPosition.ticker}</div>
@@ -736,7 +736,7 @@ export default function PortfolioPage() {
                   value={editShares}
                   onChange={(e) => setEditShares(e.target.value)}
                   placeholder="e.g., 100"
-                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-border-strong/10 rounded-lg text-text-primary placeholder-text-secondary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
               </div>
               <div>
@@ -749,10 +749,10 @@ export default function PortfolioPage() {
                   value={editAvgCost}
                   onChange={(e) => setEditAvgCost(e.target.value)}
                   placeholder="e.g., 150.50"
-                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-border-strong/10 rounded-lg text-text-primary placeholder-text-secondary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
               </div>
-              <div className="p-4 bg-accent/10 border border-indigo-500/30 rounded-lg">
+              <div className="p-4 bg-accent/10 border border-accent/30 rounded-lg">
                 <div className="text-sm text-text-secondary">
                   <div className="flex justify-between mb-1">
                     <span>Nová nákladová cena:</span>
@@ -784,7 +784,7 @@ export default function PortfolioPage() {
               <button
                 onClick={handleUpdatePosition}
                 disabled={loading || !editShares || !editAvgCost}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-text-primary rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-accent text-text-primary rounded-lg font-semibold hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Ukládám...' : 'Uložit změny'}
               </button>
@@ -795,8 +795,8 @@ export default function PortfolioPage() {
 
       {/* Edit Cash Balance Modal */}
       {showCashModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-white/10">
+        <div className="fixed inset-0 bg-surface-base/50 flex items-center justify-center z-50">
+          <div className="bg-surface-base p-8 rounded-xl max-w-md w-full mx-4 border border-border-strong/10">
             <h2 className="text-2xl font-bold text-text-primary mb-6">Upravit hotovost</h2>
             <div className="mb-4 p-4 bg-surface-raised rounded-lg">
               <div className="text-lg font-bold text-accent">Dostupná hotovost pro investice</div>
@@ -815,7 +815,7 @@ export default function PortfolioPage() {
                   value={editCashBalance}
                   onChange={(e) => setEditCashBalance(e.target.value)}
                   placeholder="e.g., 50000"
-                  className="w-full px-4 py-3 bg-surface-raised border border-white/10 rounded-lg text-text-primary placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="w-full px-4 py-3 bg-surface-raised border border-border-strong/10 rounded-lg text-text-primary placeholder-text-secondary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
               </div>
               <div className="p-4 bg-positive/10 border border-positive/30 rounded-lg">
@@ -842,7 +842,7 @@ export default function PortfolioPage() {
               <button
                 onClick={handleEditCashBalance}
                 disabled={loading || !editCashBalance}
-                className="flex-1 px-6 py-3 bg-green-600 text-text-primary rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-positive text-text-primary rounded-lg font-semibold hover:bg-positive transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Ukládám...' : 'Uložit hotovost'}
               </button>

@@ -21,14 +21,14 @@ const Toast: React.FC<{ toast: ToastType }> = ({ toast }) => {
   const getColorClasses = () => {
     switch (toast.type) {
       case 'success':
-        return 'bg-green-600 border-positive';
+        return 'bg-positive border-positive';
       case 'error':
-        return 'bg-red-600 border-negative';
+        return 'bg-negative border-negative';
       case 'warning':
-        return 'bg-yellow-600 border-yellow-500';
+        return 'bg-warning border-warning';
       case 'info':
       default:
-        return 'bg-blue-600 border-blue-500';
+        return 'bg-accent border-accent';
     }
   };
 
@@ -48,7 +48,7 @@ const Toast: React.FC<{ toast: ToastType }> = ({ toast }) => {
         </div>
         <button
           onClick={() => removeToast(toast.id)}
-          className="ml-4 text-text-primary hover:text-gray-200 transition-colors"
+          className="ml-4 text-text-primary hover:text-text-primary transition-colors"
           aria-label="Close"
         >
           <span className="text-xl">×</span>

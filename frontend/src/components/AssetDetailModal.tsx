@@ -243,7 +243,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
   useGatekeeperStatus(gatekeeperAnalysis);
 
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-2">
+    <div className="fixed inset-0 bg-surface-base/90 backdrop-blur-sm z-50 flex items-center justify-center p-2">
       <GatekeeperShield analysis={gatekeeperAnalysis}>
       <div className="bg-surface-base border border-border rounded-xl w-full max-w-7xl h-[95vh] flex flex-col overflow-hidden">
         
@@ -467,7 +467,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
           <div className="mx-3 mb-3 bg-warning-bg border-2 border-warning rounded-lg p-4 shadow-lg">
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 mt-1">
-                <AlertTriangle className="w-6 h-6 text-warning animate-pulse" />
+                <AlertTriangle className="w-6 h-6 text-warning" />
               </div>
               <div className="flex-1">
                 <div className="text-base text-warning font-bold mb-2 flex items-center gap-2">
@@ -558,7 +558,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
                   <div className="relative h-3 bg-surface-active rounded-full mb-1">
                     <div className="absolute inset-0 bg-gradient-to-r from-negative via-warning to-positive rounded-full opacity-40" />
                     <div 
-                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white border border-border rounded-full shadow-lg"
+                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-surface-overlay border border-border rounded-full shadow-lg"
                       style={{ left: `${pricePosition}%`, transform: 'translate(-50%, -50%)' }}
                     />
                   </div>
@@ -667,7 +667,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
         
         {/* Legend Popup Modal */}
         {showLegend && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4" onClick={() => setShowLegend(false)}>
+          <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4" onClick={() => setShowLegend(false)}>
             <div className="bg-surface-base border border-border-strong rounded-xl w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
               {/* Header */}
               <div className="px-5 py-4 border-b border-border flex items-center justify-between">
@@ -733,7 +733,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
           TRIM MODAL: Log Transaction
           ====================================================================== */}
       {showTrimModal && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-surface-base/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-surface-base border-2 border-negative rounded-xl w-full max-w-md">
             {/* Header */}
             <div className="bg-negative-bg border-b border-negative-border p-4 flex items-center justify-between">
@@ -851,7 +851,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
           TRANSCRIPT ANALYSIS MODAL: Add Analysis from Transcripts
           ====================================================================== */}
       {showTranscriptModal && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-surface-base/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-surface-base border border-border rounded-xl w-full max-w-2xl">
             {/* Header */}
             <div className="bg-surface-hover border-b border-border p-4 flex items-center justify-between">
@@ -1025,7 +1025,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
                 >
                   {isAnalyzing ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <div className="w-4 h-4 border-2 border-border-strong/30 border-t-white rounded-full animate-spin"></div>
                       Analyzuji...
                     </>
                   ) : (
@@ -1050,7 +1050,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
           EDIT MODAL: Manual Stock Data Edit
           ====================================================================== */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-surface-base/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-surface-base border border-border rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
             {/* Header */}
             <div className="bg-surface-hover border-b border-border p-4 flex items-center justify-between flex-shrink-0">
@@ -1212,7 +1212,7 @@ const AssetDetailModal: React.FC<Props> = ({ position, onClose, onUpdate }) => {
               >
                 {isSaving ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <div className="w-4 h-4 border-2 border-border-strong/30 border-t-white rounded-full animate-spin"></div>
                     Ukládám...
                   </>
                 ) : (

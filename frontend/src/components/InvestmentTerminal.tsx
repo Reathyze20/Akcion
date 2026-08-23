@@ -10,7 +10,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  TrendingUp, TrendingDown, AlertTriangle, Shield, Rocket, Anchor,
+  TrendingUp, TrendingDown, AlertTriangle, Shield,
   DollarSign, Users, PlusCircle, RefreshCw, Search,
   Target, Zap, AlertCircle, X, Check, Clock, BarChart3,
   Upload, Plus, FileSpreadsheet, Edit3
@@ -27,6 +27,8 @@ import MarketGaugeCard from './MarketGaugeCard';
 import CashHedgeCard from './CashHedgeCard';
 import AwayModeCard from './AwayModeCard';
 import ClearPortfolioButton from './ClearPortfolioButton';
+import RiskMeter from './RiskMeter';
+import Term from './ui/Term';
 import GoalPage from './goal/GoalPage';
 import ThemeToggle from './ui/ThemeToggle';
 
@@ -299,78 +301,6 @@ const getTrendStatus = (
 // SUB-COMPONENTS
 // ============================================================================
 
-// Risk Meter Component - warns when Growth > 60%
-const RiskMeter: React.FC<{ 
-  rocketCount: number; 
-  anchorCount: number; 
-  waitTimeCount: number; 
-  unanalyzedCount: number;
-  riskScore: number 
-}> = ({
-  rocketCount, anchorCount, waitTimeCount, unanalyzedCount, riskScore
-}) => {
-  // Risk thresholds: >60% Growth = Orange warning, >70% = Red danger
-  const analyzedTotal = rocketCount + anchorCount + waitTimeCount;
-  const isOverexposed = analyzedTotal > 0 && riskScore > 60;
-  const isDangerous = analyzedTotal > 0 && riskScore > 70;
-  const hasUnanalyzed = unanalyzedCount > 0;
-  const riskColor = isDangerous ? 'text-negative' : isOverexposed ? 'text-warning' : 'text-positive';
-  const borderColor = isDangerous ? 'border-negative/50' : isOverexposed ? 'border-warning/50' : hasUnanalyzed ? 'border-border' : 'border-border-subtle';
-  
-  return (
-    <div className={`bg-surface-raised/50 rounded-xl p-4 border ${borderColor} ${isDangerous ? 'animate-pulse' : ''}`}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-xs text-text-secondary uppercase tracking-wider">Risk Exposure</div>
-        {hasUnanalyzed && !isOverexposed && (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-600 text-text-secondary">
-            RUN DEEP DD
-          </span>
-        )}
-        {isOverexposed && (
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isDangerous ? 'bg-negative/20 text-negative' : 'bg-warning/20 text-warning'}`}>
-            {isDangerous ? 'REBALANCE' : 'MONITOR'}
-          </span>
-        )}
-      </div>
-      
-      {/* Score display */}
-      <div className={`text-3xl font-black ${riskColor} text-center mb-3`}>
-        {riskScore}%
-      </div>
-      
-      {/* Categories row */}
-      <div className="grid grid-cols-4 gap-1 text-center">
-        <div className="flex flex-col items-center">
-          <Rocket className={`w-4 h-4 mb-0.5 ${rocketCount > 0 ? 'text-accent' : 'text-text-muted'}`} />
-          <span className={`font-bold text-sm ${rocketCount > 0 ? 'text-accent' : 'text-text-muted'}`}>{rocketCount}</span>
-          <span className="text-[8px] text-text-muted">Growth</span>
-        </div>
-        <div className="flex flex-col items-center">
-          <Anchor className={`w-4 h-4 mb-0.5 ${anchorCount > 0 ? 'text-accent' : 'text-slate-600'}`} />
-          <span className={`font-bold text-sm ${anchorCount > 0 ? 'text-accent' : 'text-slate-600'}`}>{anchorCount}</span>
-          <span className="text-[8px] text-text-muted">Core</span>
-        </div>
-        <div className="flex flex-col items-center">
-          <Clock className={`w-4 h-4 mb-0.5 ${waitTimeCount > 0 ? 'text-warning' : 'text-text-muted'}`} />
-          <span className={`font-bold text-sm ${waitTimeCount > 0 ? 'text-warning' : 'text-text-muted'}`}>{waitTimeCount}</span>
-          <span className="text-[8px] text-text-muted">Wait</span>
-        </div>
-        <div className="flex flex-col items-center">
-          <AlertCircle className={`w-4 h-4 mb-0.5 ${unanalyzedCount > 0 ? 'text-text-secondary' : 'text-slate-600'}`} />
-          <span className={`font-bold text-sm ${unanalyzedCount > 0 ? 'text-text-secondary' : 'text-slate-600'}`}>{unanalyzedCount}</span>
-          <span className="text-[8px] text-text-muted">New</span>
-        </div>
-      </div>
-      
-      {isOverexposed && (
-        <div className={`mt-2 text-[10px] text-center ${isDangerous ? 'text-negative' : 'text-warning'}`}>
-          {isDangerous ? 'Rebalance needed' : 'Monitor growth allocation'}
-        </div>
-      )}
-    </div>
-  );
-};
-
 // Portfolio Row Component
 const PortfolioRow: React.FC<{
   position: EnrichedPosition;
@@ -436,7 +366,7 @@ const PortfolioRow: React.FC<{
         border-b border-border/50 cursor-pointer transition-all
         hover:bg-surface-raised/70
         ${isHardExit ? 'bg-negative/15' : ''}
-        ${position.is_deteriorated && !isHardExit ? 'animate-pulse bg-negative/10' : ''}
+        ${position.is_deteriorated && !isHardExit ? 'bg-negative/10' : ''}
       `}
     >
       {/* Ticker & Name */}
@@ -445,7 +375,7 @@ const PortfolioRow: React.FC<{
           <div className="flex items-center gap-2">
             <span className="font-bold text-text-primary text-base">{position.ticker}</span>
             {position.is_deteriorated && (
-              <span className="px-1.5 py-0.5 bg-negative/20 text-negative text-[10px] font-bold rounded animate-pulse">
+              <span className="px-1.5 py-0.5 bg-negative/20 text-negative text-[10px] font-bold rounded">
                 REVIEW
               </span>
             )}
@@ -539,7 +469,7 @@ const PortfolioRow: React.FC<{
         {!position.analysis_usable ? (
           <div className="flex flex-col">
             <div className="text-text-muted font-mono text-xs">—</div>
-            <div className="text-[9px] text-slate-600">bez analýzy nepočítám</div>
+            <div className="text-[9px] text-text-muted">bez analýzy nepočítám</div>
           </div>
         ) : position.action_signal === 'SELL' ? (
           <div className="flex flex-col">
@@ -579,7 +509,7 @@ const PortfolioRow: React.FC<{
         ) : (
           <div className="flex flex-col">
             <div className="text-text-muted font-mono text-xs">0 Kč</div>
-            <div className="text-[9px] text-slate-600">
+            <div className="text-[9px] text-text-muted">
               {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
             </div>
           </div>
@@ -638,7 +568,7 @@ const PortfolioRow: React.FC<{
         ) : position.unrealized_pl_percent == null ? (
           <div className="flex flex-col">
             <div className="text-[9px] text-warning uppercase">NEZNÁMÝ STAV</div>
-            <div className="text-[8px] text-slate-600 mt-0.5">⚠️ bez nákup. ceny</div>
+            <div className="text-[8px] text-text-muted mt-0.5">⚠️ bez nákup. ceny</div>
           </div>
         ) : position.unrealized_pl_percent < 0 ? (
           // This said "GROWING" for every position, including one down 94 %.
@@ -652,7 +582,7 @@ const PortfolioRow: React.FC<{
                 style={{ width: `${Math.min(100, Math.abs(position.unrealized_pl_percent))}%` }}
               />
             </div>
-            <div className="text-[8px] text-slate-600 mt-0.5">
+            <div className="text-[8px] text-text-muted mt-0.5">
               {position.unrealized_pl_percent.toFixed(0)}% od nákupu
             </div>
           </div>
@@ -665,7 +595,7 @@ const PortfolioRow: React.FC<{
                 style={{ width: `${progressTo150}%` }}
               />
             </div>
-            <div className="text-[8px] text-slate-600 mt-0.5">
+            <div className="text-[8px] text-text-muted mt-0.5">
               {position.unrealized_pl_percent.toFixed(0)}% / 150%
             </div>
           </div>
@@ -795,15 +725,15 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
       const price = parseFloat(editCurrentPrice);
       
       if (isNaN(shares) || shares <= 0) {
-        setSaveError('Shares must be a positive number');
+        setSaveError('Počet kusů musí být kladné číslo.');
         return;
       }
       if (isNaN(avgCost) || avgCost < 0) {
-        setSaveError('Average cost must be a non-negative number');
+        setSaveError('Průměrná pořizovací cena nesmí být záporná.');
         return;
       }
       if (isNaN(price) || price <= 0) {
-        setSaveError('Current price must be a positive number');
+        setSaveError('Aktuální cena musí být kladné číslo.');
         return;
       }
       
@@ -825,14 +755,14 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
       onUpdate();
     } catch (err) {
       console.error('Failed to save position:', err);
-      setSaveError('Failed to save changes. Please try again.');
+      setSaveError('Změny se nepodařilo uložit. Zkus to znovu.');
     } finally {
       setIsSavingPosition(false);
     }
   };
   
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-border rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-surface-base border-b border-border p-4 flex items-center justify-between z-10">
@@ -1010,7 +940,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                     onClick={handleSavePosition}
                     disabled={isSavingPosition}
                     className="p-1.5 bg-positive/20 hover:bg-positive/30 text-positive rounded-lg transition-colors disabled:opacity-50"
-                    title="Save changes"
+                    title="Uložit změny"
                   >
                     {isSavingPosition ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   </button>
@@ -1025,8 +955,8 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                       setEditCurrency(position.currency || 'USD');
                       setSaveError(null);
                     }}
-                    className="p-1.5 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded-lg transition-colors"
-                    title="Cancel"
+                    className="p-1.5 bg-surface-active hover:bg-surface-active text-text-secondary rounded-lg transition-colors"
+                    title="Zrušit"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1058,7 +988,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               
               {/* Company Name (editable) */}
               <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Company</span>
+                <span className="text-text-secondary">Firma</span>
                 {isEditingPosition ? (
                   <input
                     type="text"
@@ -1156,7 +1086,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                     </button>
                     <button
                       onClick={() => setIsEditingPrice(false)}
-                      className="p-1 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded transition-colors"
+                      className="p-1 bg-surface-active hover:bg-surface-active text-text-secondary rounded transition-colors"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -1261,7 +1191,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                 <span className={`w-3 h-3 rounded-full ${
                   position.inflection_status === 'ACHIEVED' ? 'bg-positive' :
                   position.inflection_status === 'UPCOMING' ? 'bg-warning animate-pulse' :
-                  'bg-slate-500'
+                  'bg-surface-active'
                 }`} />
                 <span className="font-semibold text-text-primary">
                   {position.inflection_status || 'PENDING'}
@@ -1289,7 +1219,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               <div className="text-xs text-text-muted uppercase mb-2">Upcoming Catalysts</div>
               <div className="flex flex-wrap gap-2">
                 {stock?.catalysts?.split(',').map((c, i) => (
-                  <span key={i} className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded">
+                  <span key={i} className="px-2 py-1 bg-accent/20 text-accent text-xs rounded">
                     {c.trim()}
                   </span>
                 )) || (
@@ -1316,7 +1246,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
                 <div className="h-4 bg-gradient-to-r from-positive via-warning to-negative rounded-full relative">
                   {/* Current Price Marker */}
                   <div 
-                    className="absolute top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded shadow-lg shadow-white/50"
+                    className="absolute top-1/2 -translate-y-1/2 w-1 h-8 bg-text-primary rounded"
                     style={{ left: `${Math.max(0, Math.min(100, pricePosition))}%` }}
                   >
                     <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-bold text-text-primary bg-surface-base px-2 py-1 rounded">
@@ -1400,7 +1330,7 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               {position.is_deteriorated && (
                 <button className="w-full py-2 bg-negative/20 hover:bg-negative/30 text-negative font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
                   <AlertCircle className="w-4 h-4" />
-                  Close Entire Position
+                  Uzavřít celou pozici
                 </button>
               )}
             </div>
@@ -1500,7 +1430,7 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-info/50 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-surface-base border-b border-info/50 p-4 flex items-center justify-between z-10">
@@ -1554,7 +1484,7 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     sourceType === opt.value
                       ? 'bg-info text-text-primary'
-                      : 'bg-surface-hover text-text-secondary hover:bg-slate-600'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
                   }`}
                 >
                   {opt.label}
@@ -1567,7 +1497,7 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
               onChange={(e) => setUpdateText(e.target.value)}
               placeholder="Paste new information about this stock..."
               rows={4}
-              className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-info resize-none mb-3"
+              className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-info resize-none mb-3"
             />
             
             <div className="flex items-center justify-between">
@@ -1581,7 +1511,7 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
                 <button
                   onClick={handleUpdate}
                   disabled={isUpdating || updateText.length < 50}
-                  className="px-4 py-2 bg-info hover:bg-info/80 disabled:bg-slate-600 text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
+                  className="px-4 py-2 bg-info hover:bg-info/80 disabled:bg-surface-active text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
                 >
                   {isUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                   {isUpdating ? 'Processing...' : 'Run Analysis'}
@@ -1627,11 +1557,11 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
             
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-text-secondary">Verdict</span>
+                <span className="text-text-secondary">Verdikt</span>
                 <span className={`font-bold px-2 py-0.5 rounded text-sm ${
                   stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
                   stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
-                  stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-accent' :
+                  stock.action_verdict === 'WATCH_LIST' ? 'bg-accent/20 text-accent' :
                   'bg-surface-hover text-text-secondary'
                 }`}>
                   {stock.action_verdict || 'N/A'}
@@ -1654,11 +1584,11 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
               </div>
               
               <div className="flex justify-between">
-                <span className="text-text-secondary">Price Zone</span>
+                <span className="text-text-secondary">Cenové pásmo</span>
                 <span className={`font-bold px-2 py-0.5 rounded text-sm ${
                   stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
                   stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
-                  stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-accent' :
+                  stock.price_zone === 'ACCUMULATE' ? 'bg-accent/20 text-accent' :
                   stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
                   'bg-surface-hover text-text-secondary'
                 }`}>
@@ -1811,7 +1741,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-positive/50 rounded-2xl w-full max-w-lg">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
@@ -1839,7 +1769,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     broker === b.value
                       ? 'bg-positive text-text-primary'
-                      : 'bg-surface-hover text-text-secondary hover:bg-slate-600'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
                   }`}
                 >
                   {b.label}
@@ -1866,7 +1796,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                 </select>
                 <button
                   onClick={() => setShowNewPortfolio(true)}
-                  className="px-3 py-2 bg-surface-hover hover:bg-slate-600 rounded-lg text-text-secondary"
+                  className="px-3 py-2 bg-surface-hover hover:bg-surface-active rounded-lg text-text-secondary"
                 >
                   <Plus className="w-5 h-5" />
                 </button>
@@ -1880,20 +1810,20 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
                 value={newPortfolioName}
                 onChange={(e) => setNewPortfolioName(e.target.value)}
                 placeholder="Portfolio name (e.g., Main, Wife, Kids)"
-                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-positive"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-positive"
               />
               <input
                 type="text"
                 value={newPortfolioOwner}
                 onChange={(e) => setNewPortfolioOwner(e.target.value)}
                 placeholder="Owner name (optional)"
-                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-positive"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-positive"
               />
               <div className="flex gap-2">
                 <button
                   onClick={handleCreatePortfolio}
                   disabled={loading || !newPortfolioName.trim()}
-                  className="flex-1 px-4 py-2 bg-positive hover:bg-positive/80 disabled:bg-slate-600 text-text-primary rounded-lg font-medium"
+                  className="flex-1 px-4 py-2 bg-positive hover:bg-positive/80 disabled:bg-surface-active text-text-primary rounded-lg font-medium"
                 >
                   Create Portfolio
                 </button>
@@ -1917,7 +1847,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
               className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
                 file 
                   ? 'border-positive bg-positive/10' 
-                  : 'border-border hover:border-slate-500 bg-surface-raised/50'
+                  : 'border-border hover:border-border-strong bg-surface-raised/50'
               }`}
             >
               <input
@@ -1967,7 +1897,7 @@ const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onSuccess, por
           <button
             onClick={handleUpload}
             disabled={!file || !selectedPortfolioId || loading}
-            className="px-6 py-2 bg-positive hover:bg-positive/80 disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-positive hover:bg-positive/80 disabled:bg-surface-active text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2039,7 +1969,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-border rounded-2xl w-full max-w-md">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
@@ -2083,7 +2013,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
                   value={ticker}
                   onChange={(e) => setTicker(e.target.value.toUpperCase())}
                   placeholder="e.g., GKPRF"
-                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
                 />
               </div>
 
@@ -2097,7 +2027,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
                     value={shares}
                     onChange={(e) => setShares(e.target.value)}
                     placeholder="100"
-                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
                   />
                 </div>
                 <div>
@@ -2108,7 +2038,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
                     value={avgCost}
                     onChange={(e) => setAvgCost(e.target.value)}
                     placeholder="1.50"
-                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
                   />
                 </div>
               </div>
@@ -2122,7 +2052,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
                   value={currentPrice}
                   onChange={(e) => setCurrentPrice(e.target.value)}
                   placeholder="Leave empty to use avg. cost"
-                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                  className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
                 />
               </div>
             </>
@@ -2151,7 +2081,7 @@ const AddPositionModal: React.FC<AddPositionModalProps> = ({ onClose, onSuccess,
           <button
             onClick={handleSubmit}
             disabled={loading || portfolios.length === 0}
-            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-surface-active text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2207,7 +2137,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-surface-base border border-border rounded-2xl w-full max-w-2xl">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
@@ -2236,7 +2166,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
               onClick={() => setInputType('youtube')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 inputType === 'youtube' 
-                  ? 'bg-red-600 text-text-primary' 
+                  ? 'bg-negative text-text-primary' 
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -2246,7 +2176,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
               onClick={() => setInputType('google-docs')}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 inputType === 'google-docs' 
-                  ? 'bg-blue-600 text-text-primary' 
+                  ? 'bg-accent text-text-primary' 
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -2269,7 +2199,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
               value={ticker}
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
               placeholder="e.g. GKPRF"
-              className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+              className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
             />
           </div>
           
@@ -2288,7 +2218,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
                     ? 'https://www.youtube.com/watch?v=...' 
                     : 'https://docs.google.com/document/d/...'
                 }
-                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent"
+                className="w-full px-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
               />
               <p className="mt-2 text-xs text-text-muted">
                 {inputType === 'youtube' 
@@ -2307,7 +2237,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
                 onChange={(e) => setTranscript(e.target.value)}
                 placeholder="Paste earnings call transcript, video notes, or research analysis..."
                 rows={10}
-                className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent resize-none"
+                className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent resize-none"
               />
             </div>
           )}
@@ -2323,7 +2253,7 @@ const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({ onClose, onSubmit }
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-slate-600 text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-accent hover:bg-accent disabled:bg-surface-active text-text-primary font-bold rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2984,7 +2914,7 @@ export const InvestmentTerminal: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-12 h-12 text-accent animate-spin mx-auto mb-4" />
           <p className="text-text-secondary">Loading portfolio data...</p>
@@ -2994,9 +2924,9 @@ export const InvestmentTerminal: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-text-primary">
+    <div className="min-h-screen bg-surface-base text-text-primary">
       {/* HEADER */}
-      <header className="bg-surface-base/80 backdrop-blur-sm border-b border-slate-800 sticky top-0 z-40">
+      <header className="bg-surface-base/80 backdrop-blur-sm border-b border-border-subtle sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -3054,7 +2984,7 @@ export const InvestmentTerminal: React.FC = () => {
                 className="btn-primary text-sm"
               >
                 <PlusCircle className="w-5 h-5" />
-                New Analysis
+                Nová analýza
               </button>
             </div>
           </div>
@@ -3063,7 +2993,7 @@ export const InvestmentTerminal: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Total Value with Target Progress */}
             <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
-              <div className="text-xs text-text-secondary uppercase tracking-wider">Total AUM</div>
+              <div className="text-xs text-text-secondary uppercase tracking-wider">Hodnota portfolia</div>
               <div className="text-2xl font-black text-text-primary mt-1">
                 {formatCurrency(familyData.totalValue)}
               </div>
@@ -3073,7 +3003,7 @@ export const InvestmentTerminal: React.FC = () => {
               {/* Target Progress Bar - Goal: 500,000 CZK */}
               <div className="mt-2">
                 <div className="flex justify-between items-center text-[10px] text-text-muted mb-1">
-                  <span>Target: 500k Kč</span>
+                  <span>Cíl: 500 tis. Kč</span>
                   <span className="font-mono">{Math.min(100, (familyData.totalValue / 500000 * 100)).toFixed(0)}%</span>
                 </div>
                 <div className="h-1.5 bg-surface-hover rounded-full overflow-hidden">
@@ -3104,7 +3034,7 @@ export const InvestmentTerminal: React.FC = () => {
             {/* Cash (Munice) - Editable. Neutral chrome: cash is a fact, not a gain. */}
             <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
               <div className="flex items-center justify-center gap-2">
-                <div className="text-xs text-text-secondary uppercase tracking-wider">Available Cash</div>
+                <div className="text-xs text-text-secondary uppercase tracking-wider">Volná hotovost</div>
                 {!isEditingCash && (
                   <button
                     onClick={() => {
@@ -3175,7 +3105,7 @@ export const InvestmentTerminal: React.FC = () => {
                     </button>
                     <button
                       onClick={() => setIsEditingCash(false)}
-                      className="px-3 py-1 bg-slate-600 hover:bg-slate-500 text-text-secondary text-sm rounded transition-colors"
+                      className="px-3 py-1 bg-surface-active hover:bg-surface-active text-text-secondary text-sm rounded transition-colors"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -3190,7 +3120,7 @@ export const InvestmentTerminal: React.FC = () => {
                     ≈ €{(familyData.totalCash / (exchangeRates.EUR || 25)).toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} EUR
                   </div>
                   <div className="text-xs text-text-muted mt-1">
-                    {familyData.totalValue > 0 ? ((familyData.totalCash / familyData.totalValue) * 100).toFixed(1) : 0}% of portfolio
+                    {familyData.totalValue > 0 ? ((familyData.totalCash / familyData.totalValue) * 100).toFixed(1) : 0}% portfolia
                   </div>
                 </>
               )}
@@ -3198,12 +3128,17 @@ export const InvestmentTerminal: React.FC = () => {
 
             {/* Position Count */}
             <div className="bg-surface-raised/50 rounded-xl p-4 border border-border text-center">
-              <div className="text-xs text-text-secondary uppercase tracking-wider">Positions</div>
+              <div className="text-xs text-text-secondary uppercase tracking-wider">Počet pozic</div>
               <div className="text-2xl font-black text-text-primary mt-1">
                 {familyData.allPositions.length}
               </div>
               <div className="text-xs text-text-muted mt-1">
-                {familyData.allPositions.filter(p => p.is_deteriorated).length} require attention
+                {(() => {
+                  const unrated = familyData.allPositions.filter((p) => !p.analysis_usable).length;
+                  return unrated === 0
+                    ? 'všechny s použitelným hodnocením'
+                    : `${unrated} z ${familyData.allPositions.length} bez použitelného hodnocení`;
+                })()}
               </div>
             </div>
 
@@ -3254,24 +3189,24 @@ export const InvestmentTerminal: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <input
                 type="text"
-                placeholder={activeTab === 'portfolio' ? "Search positions..." : "Search watchlist..."}
+                placeholder={activeTab === 'portfolio' ? "Hledat pozici…" : "Hledat mezi sledovanými…"}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-slate-500 focus:outline-none focus:border-accent w-64"
+                className="pl-10 pr-4 py-2 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent w-64"
               />
             </div>
             
             {activeTab === 'portfolio' && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-text-muted">Sort by:</span>
+                <span className="text-xs text-text-muted">Řadit podle:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
                   className="px-3 py-2 bg-surface-raised border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent"
                 >
-                  <option value="score">Score</option>
-                  <option value="weight">Weight</option>
-                  <option value="pl">P/L %</option>
+                  <option value="score">skóre</option>
+                  <option value="weight">váhy</option>
+                  <option value="pl">zisku a ztráty</option>
                 </select>
               </div>
             )}
@@ -3429,7 +3364,7 @@ export const InvestmentTerminal: React.FC = () => {
                       </button>
                       <button
                         onClick={() => setIsEditingContribution(false)}
-                        className="p-1 bg-slate-600 hover:bg-slate-500 text-text-secondary rounded transition-colors"
+                        className="p-1 bg-surface-active hover:bg-surface-active text-text-secondary rounded transition-colors"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -3449,9 +3384,9 @@ export const InvestmentTerminal: React.FC = () => {
                       >
                         <Edit3 className="w-3 h-3 text-text-muted hover:text-positive" />
                       </button>
-                      <span className="text-slate-600">|</span>
+                      <span className="text-text-muted">|</span>
                       <span>Alokováno: {formatCurrency(familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
-                      <span className="text-slate-600">|</span>
+                      <span className="text-text-muted">|</span>
                       <span>Zbývá: {formatCurrency(familyData.monthlyContribution - familyData.allPositions.reduce((sum, p) => sum + p.optimal_size, 0))}</span>
                     </p>
                   )}
@@ -3489,29 +3424,29 @@ export const InvestmentTerminal: React.FC = () => {
 
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
-        <div className="bg-surface-base/50 rounded-xl border border-slate-800 overflow-hidden">
+        <div className="bg-surface-base/50 rounded-xl border border-border-subtle overflow-hidden">
           <table className="w-full table-fixed">
             <thead>
               <tr className="border-b border-border bg-surface-raised/50">
                 <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">Symbol</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">Action</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">Pokyn</th>
                 <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">
                   <div>Váha</div>
                   <div className="text-[9px] text-text-muted font-normal">Aktuální / Cíl</div>
                 </th>
-                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[70px]">Score</th>
+                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[70px]"><Term id="konvikcniSkore">Skóre</Term></th>
                 <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">
-                  <div>Price</div>
-                  <div className="text-[9px] text-text-muted font-normal">Current</div>
+                  <div>Cena</div>
+                  <div className="text-[9px] text-text-muted font-normal">aktuální</div>
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">
-                  <div>Optimal Size</div>
+                  <div>Optimální dávka</div>
                   <div className="text-[9px] text-text-muted font-normal">Tento měsíc</div>
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Catalyst</th>
+                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Katalyzátor</th>
                 <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]" title="Kde leží cena v pásmu mezi zelenou a červenou linkou">Pásmo</th>
                 <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Stav pozice</th>
-                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">P/L</th>
+                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]"><Term id="pl">P/L</Term></th>
               </tr>
             </thead>
             <tbody>
@@ -3525,7 +3460,9 @@ export const InvestmentTerminal: React.FC = () => {
               {displayedPositions.length === 0 && (
                 <tr>
                   <td colSpan={10} className="text-center py-12 text-text-muted">
-                    {searchQuery ? 'No positions found' : 'No positions in portfolio. Import your DEGIRO CSV to get started.'}
+                    {searchQuery
+                      ? 'Hledání neodpovídá žádná pozice.'
+                      : 'V portfoliu zatím nejsou žádné pozice. Začni importem CSV z DEGIRO.'}
                   </td>
                 </tr>
               )}
@@ -3541,11 +3478,11 @@ export const InvestmentTerminal: React.FC = () => {
               <thead>
                 <tr className="border-b border-border bg-surface-overlay">
                   <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Symbol</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Company</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Score</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Verdict</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Price Zone</th>
-                  <th className="text-right py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Action</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Firma</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider"><Term id="konvikcniSkore">Skóre</Term></th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Verdikt</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Cenové pásmo</th>
+                  <th className="text-right py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Detail</th>
                 </tr>
               </thead>
               <tbody>
@@ -3558,7 +3495,7 @@ export const InvestmentTerminal: React.FC = () => {
                   
                   const zoneColor = stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
                                     stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
-                                    stock.price_zone === 'ACCUMULATE' ? 'bg-blue-500/20 text-accent' :
+                                    stock.price_zone === 'ACCUMULATE' ? 'bg-accent/20 text-accent' :
                                     stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
                                     stock.price_zone === 'SELL_ZONE' ? 'bg-warning/20 text-warning' :
                                     stock.price_zone === 'OVERVALUED' ? 'bg-negative/20 text-negative' :
@@ -3587,10 +3524,10 @@ export const InvestmentTerminal: React.FC = () => {
                         <span className={`px-2 py-1 rounded text-xs font-bold ${
                           stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
                           stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
-                          stock.action_verdict === 'WATCH_LIST' ? 'bg-blue-500/20 text-accent' :
+                          stock.action_verdict === 'WATCH_LIST' ? 'bg-accent/20 text-accent' :
                           stock.action_verdict === 'TRIM' ? 'bg-warning/20 text-warning' :
                           stock.action_verdict === 'SELL' ? 'bg-negative/20 text-negative' :
-                          stock.action_verdict === 'AVOID' ? 'bg-red-800/30 text-negative' :
+                          stock.action_verdict === 'AVOID' ? 'bg-negative/30 text-negative' :
                           'bg-surface-hover text-text-secondary'
                         }`}>
                           {stock.action_verdict || 'N/A'}
@@ -3603,7 +3540,7 @@ export const InvestmentTerminal: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button className="px-3 py-1 bg-accent hover:bg-accent/80 text-text-primary text-xs font-bold rounded transition-colors">
-                          View Details
+                          Otevřít
                         </button>
                       </td>
                     </tr>
@@ -3614,7 +3551,7 @@ export const InvestmentTerminal: React.FC = () => {
                     <td colSpan={6} className="text-center py-12 text-text-muted">
                       {searchQuery 
                         ? 'No stocks found in watchlist' 
-                        : 'No analyzed stocks yet. Click "New Analysis" to add stocks to your watchlist.'}
+                        : 'Zatím žádná analýza. Novou přidáš tlačítkem „Nová analýza“ v hlavičce.'}
                     </td>
                   </tr>
                 )}
@@ -3728,7 +3665,7 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Debt Modal */}
       {showAddDebtModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
@@ -3978,13 +3915,13 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Shared Payments Modal */}
       {showAddSharedPaymentsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                  {editingSharedPaymentsId ? <Edit3 className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-blue-500" />}
+                <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+                  {editingSharedPaymentsId ? <Edit3 className="w-5 h-5 text-accent" /> : <Plus className="w-5 h-5 text-accent" />}
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-text-primary">
@@ -4028,7 +3965,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={sharedPaymentsForm.name}
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, name: e.target.value })}
                   placeholder="Např. Netflix, Elektřina, Internet"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                   required
                 />
               </div>
@@ -4044,7 +3981,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={sharedPaymentsForm.monthlyPayment}
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, monthlyPayment: e.target.value })}
                   placeholder="Např. 500"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                   required
                 />
               </div>
@@ -4059,7 +3996,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={sharedPaymentsForm.accountNumber}
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, accountNumber: e.target.value })}
                   placeholder="Např. 123456789/0800"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
 
@@ -4073,7 +4010,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={sharedPaymentsForm.variableSymbol}
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, variableSymbol: e.target.value })}
                   placeholder="Např. 1234567890"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
 
@@ -4087,7 +4024,7 @@ export const InvestmentTerminal: React.FC = () => {
                   onChange={(e) => setSharedPaymentsForm({ ...sharedPaymentsForm, note: e.target.value })}
                   placeholder="Doplňující informace..."
                   rows={3}
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors resize-none"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors resize-none"
                 />
               </div>
             </div>
@@ -4183,7 +4120,7 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Savings Modal */}
       {showAddSavingsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
@@ -4374,13 +4311,13 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Tom Payments Modal */}
       {showAddTomPaymentsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
-                  {editingTomPaymentsId ? <Edit3 className="w-5 h-5 text-orange-500" /> : <Plus className="w-5 h-5 text-orange-500" />}
+                <div className="w-10 h-10 rounded-lg bg-warning/20 flex items-center justify-center">
+                  {editingTomPaymentsId ? <Edit3 className="w-5 h-5 text-warning" /> : <Plus className="w-5 h-5 text-warning" />}
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-text-primary">
@@ -4424,7 +4361,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={tomPaymentsForm.name}
                   onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, name: e.target.value })}
                   placeholder="Např. Nájem, Auto, Telefon"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-warning transition-colors"
                   required
                 />
               </div>
@@ -4440,7 +4377,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={tomPaymentsForm.monthlyPayment}
                   onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, monthlyPayment: e.target.value })}
                   placeholder="Např. 1500"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-warning transition-colors"
                   required
                 />
               </div>
@@ -4455,7 +4392,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={tomPaymentsForm.accountNumber}
                   onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, accountNumber: e.target.value })}
                   placeholder="Např. 123456789/0800"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-warning transition-colors"
                 />
               </div>
 
@@ -4469,7 +4406,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={tomPaymentsForm.variableSymbol}
                   onChange={(e) => setTomPaymentsForm({ ...tomPaymentsForm, variableSymbol: e.target.value })}
                   placeholder="Např. 1234567890"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-orange-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-warning transition-colors"
                 />
               </div>
             </div>
@@ -4565,13 +4502,13 @@ export const InvestmentTerminal: React.FC = () => {
 
       {/* Add Míša Payments Modal */}
       {showAddMisaPaymentsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-surface-base/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-base rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="sticky top-0 bg-surface-base border-b border-border px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                  {editingMisaPaymentsId ? <Edit3 className="w-5 h-5 text-purple-500" /> : <Plus className="w-5 h-5 text-purple-500" />}
+                <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+                  {editingMisaPaymentsId ? <Edit3 className="w-5 h-5 text-accent" /> : <Plus className="w-5 h-5 text-accent" />}
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-text-primary">
@@ -4615,7 +4552,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={misaPaymentsForm.name}
                   onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, name: e.target.value })}
                   placeholder="Např. Pojištění, Kredity, Předplatné"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                   required
                 />
               </div>
@@ -4631,7 +4568,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={misaPaymentsForm.monthlyPayment}
                   onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, monthlyPayment: e.target.value })}
                   placeholder="Např. 800"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                   required
                 />
               </div>
@@ -4646,7 +4583,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={misaPaymentsForm.accountNumber}
                   onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, accountNumber: e.target.value })}
                   placeholder="Např. 123456789/0800"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
 
@@ -4660,7 +4597,7 @@ export const InvestmentTerminal: React.FC = () => {
                   value={misaPaymentsForm.variableSymbol}
                   onChange={(e) => setMisaPaymentsForm({ ...misaPaymentsForm, variableSymbol: e.target.value })}
                   placeholder="Např. 1234567890"
-                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-purple-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-surface-raised border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
             </div>

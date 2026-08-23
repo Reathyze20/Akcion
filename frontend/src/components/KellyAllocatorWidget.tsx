@@ -60,7 +60,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
       case 'MEDIUM': return 'text-warning bg-warning/20';
       case 'HIGH': return 'text-warning bg-warning/20';
       case 'EXTREME': return 'text-negative bg-negative/20';
-      default: return 'text-text-secondary bg-slate-500/20';
+      default: return 'text-text-secondary bg-surface-active/20';
     }
   };
 
@@ -73,7 +73,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
   };
 
   return (
-    <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-indigo-500/30 p-5">
+    <div className="bg-gradient-to-br from-surface-raised to-surface-base rounded-xl border border-accent/30 p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -101,7 +101,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
               value={availableCzk}
               onChange={(e) => setAvailableCzk(Number(e.target.value))}
               className="w-full pl-10 pr-3 py-2 bg-surface-hover/50 border border-border rounded-lg 
-                         text-text-primary font-mono text-sm focus:outline-none focus:border-indigo-500"
+                         text-text-primary font-mono text-sm focus:outline-none focus:border-accent"
             />
           </div>
         </div>
@@ -114,7 +114,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
               value={availableEur}
               onChange={(e) => setAvailableEur(Number(e.target.value))}
               className="w-full pl-10 pr-3 py-2 bg-surface-hover/50 border border-border rounded-lg 
-                         text-text-primary font-mono text-sm focus:outline-none focus:border-indigo-500"
+                         text-text-primary font-mono text-sm focus:outline-none focus:border-accent"
             />
           </div>
         </div>
@@ -124,7 +124,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
       <button
         onClick={fetchPlan}
         disabled={loading}
-        className="w-full py-2 mb-4 bg-indigo-600 hover:bg-accent disabled:bg-slate-600 
+        className="w-full py-2 mb-4 bg-accent hover:bg-accent disabled:bg-surface-active 
                    text-text-primary font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
       >
         {loading ? (
@@ -139,7 +139,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
 
       {/* Error */}
       {error && (
-        <div className="mb-4 p-3 bg-negative/20 border border-negative/50 rounded-lg flex items-center gap-2 text-red-300 text-sm">
+        <div className="mb-4 p-3 bg-negative/20 border border-negative/50 rounded-lg flex items-center gap-2 text-negative text-sm">
           <AlertCircle className="w-4 h-4" />
           {error}
         </div>
@@ -175,7 +175,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
             <div 
               key={rec.ticker}
               className="flex items-center justify-between p-3 bg-surface-hover/30 rounded-lg 
-                         border border-border/50 hover:border-indigo-500/50 transition-colors"
+                         border border-border/50 hover:border-accent/50 transition-colors"
             >
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-lg
@@ -207,7 +207,7 @@ export const KellyAllocatorWidget: React.FC<KellyAllocatorWidgetProps> = ({
           ))}
 
           {/* Summary */}
-          <div className="mt-4 p-3 bg-accent/10 rounded-lg border border-indigo-500/30">
+          <div className="mt-4 p-3 bg-accent/10 rounded-lg border border-accent/30">
             <div className="flex justify-between items-center">
               <span className="text-text-secondary">Celkem alokováno:</span>
               <span className="text-lg font-bold text-accent font-mono">

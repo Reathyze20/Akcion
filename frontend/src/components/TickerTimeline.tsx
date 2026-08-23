@@ -21,13 +21,13 @@ const getSentimentColor = (sentiment: string) => {
     case 'BULLISH':
       return 'text-positive bg-positive/10';
     case 'NEUTRAL':
-      return 'text-gray-400 bg-gray-500/10';
+      return 'text-text-secondary bg-surface-active/10';
     case 'BEARISH':
       return 'text-warning bg-warning/10';
     case 'VERY_BEARISH':
       return 'text-negative bg-negative/20';
     default:
-      return 'text-gray-400 bg-gray-500/10';
+      return 'text-text-secondary bg-surface-active/10';
   }
 };
 
@@ -52,18 +52,18 @@ const getActionBadge = (action: string | null) => {
   if (!action) return null;
   
   const colors: Record<string, string> = {
-    'BUY_NOW': 'bg-green-600',
+    'BUY_NOW': 'bg-positive',
     'ACCUMULATE': 'bg-positive',
     'BUY': 'bg-positive',
-    'WATCH': 'bg-yellow-600',
-    'HOLD': 'bg-yellow-600',
+    'WATCH': 'bg-warning',
+    'HOLD': 'bg-warning',
     'TRIM': 'bg-warning',
     'SELL': 'bg-negative',
-    'AVOID': 'bg-red-600',
+    'AVOID': 'bg-negative',
   };
   
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[action] || 'bg-gray-600'}`}>
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[action] || 'bg-surface-active'}`}>
       {action.replace('_', ' ')}
     </span>
   );
@@ -85,23 +85,23 @@ const WeightedSentimentBar: React.FC<{ score: number }> = ({ score }) => {
   return (
     <div className="flex items-center gap-3">
       <span className="text-sm text-negative">Medvěd</span>
-      <div className="flex-1 h-3 bg-gray-700 rounded-full overflow-hidden">
+      <div className="flex-1 h-3 bg-surface-hover rounded-full overflow-hidden">
         <div 
           className="h-full transition-all duration-500"
           style={{
             width: `${percentage}%`,
-            background: `linear-gradient(90deg, 
-              #ef4444 0%, 
-              #f97316 25%, 
-              #eab308 50%, 
-              #84cc16 75%, 
-              #22c55e 100%
+            background: `linear-gradient(90deg,
+              rgb(var(--signal-red)) 0%,
+              rgb(var(--signal-orange)) 25%,
+              rgb(var(--signal-amber)) 50%,
+              rgb(var(--signal-green)) 75%,
+              rgb(var(--signal-green)) 100%
             )`
           }}
         />
       </div>
       <span className="text-sm text-positive">Býk</span>
-      <span className="text-sm font-mono text-gray-400 w-16 text-right">
+      <span className="text-sm font-mono text-text-secondary w-16 text-right">
         {score >= 0 ? '+' : ''}{(score * 100).toFixed(0)}%
       </span>
     </div>
@@ -110,12 +110,12 @@ const WeightedSentimentBar: React.FC<{ score: number }> = ({ score }) => {
 
 const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
   return (
-    <div className="relative pl-6 pb-6 border-l-2 border-gray-700 last:border-l-0 last:pb-0">
+    <div className="relative pl-6 pb-6 border-l-2 border-border last:border-l-0 last:pb-0">
       {/* Timeline dot */}
-      <div className="absolute -left-2 top-0 w-4 h-4 rounded-full bg-gray-800 border-2 border-blue-500" />
+      <div className="absolute -left-2 top-0 w-4 h-4 rounded-full bg-surface-raised border-2 border-accent" />
       
       {/* Card */}
-      <div className="bg-gray-800/50 rounded-lg p-4 ml-4">
+      <div className="bg-surface-raised/50 rounded-lg p-4 ml-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -124,12 +124,12 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
             </span>
             {getActionBadge(mention.action_mentioned)}
             {mention.conviction_level && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-text-secondary">
                 {mention.conviction_level} přesvědčení
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 text-sm text-gray-400">
+          <div className="flex items-center gap-2 text-sm text-text-secondary">
             <span>{formatDate(mention.mention_date)}</span>
             <span className="text-xs">({mention.age_days}d ago)</span>
           </div>
@@ -137,14 +137,14 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
         
         {/* Context snippet */}
         {mention.context_snippet && (
-          <p className="text-gray-300 text-sm italic mb-2">
+          <p className="text-text-primary text-sm italic mb-2">
             "{mention.context_snippet}"
           </p>
         )}
         
         {/* Key points */}
         {mention.key_points && mention.key_points.length > 0 && (
-          <ul className="text-sm text-gray-400 space-y-1 mb-2">
+          <ul className="text-sm text-text-secondary space-y-1 mb-2">
             {mention.key_points.map((point, i) => (
               <li key={i} className="flex items-start gap-2">
                 <span className="text-accent">•</span>
@@ -162,8 +162,8 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
         )}
         
         {/* Source & Weight */}
-        <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-700">
-          <div className="text-xs text-gray-500">
+        <div className="flex items-center justify-between mt-3 pt-2 border-t border-border">
+          <div className="text-xs text-text-muted">
             {mention.source_name}
             {mention.video_url && (
               <a 
@@ -176,7 +176,7 @@ const MentionCard: React.FC<{ mention: TickerMention }> = ({ mention }) => {
               </a>
             )}
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-text-muted">
             Váha: {(mention.weight * 100).toFixed(0)}%
           </div>
         </div>
@@ -210,9 +210,9 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
 
   if (loading) {
     return (
-      <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
+      <div className="bg-surface-base rounded-lg p-6 border border-border">
         <div className="flex items-center justify-center h-40">
-          <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+          <div className="animate-spin h-8 w-8 border-2 border-accent border-t-transparent rounded-full" />
         </div>
       </div>
     );
@@ -220,13 +220,13 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
 
   if (error) {
     return (
-      <div className="bg-gray-900 rounded-lg p-6 border border-red-700">
+      <div className="bg-surface-base rounded-lg p-6 border border-negative">
         <div className="text-negative text-center">
           <span className="text-2xl mb-2"></span>
           <p>{error}</p>
           <button 
             onClick={fetchTimeline}
-            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-text-primary"
+            className="mt-4 px-4 py-2 bg-negative hover:bg-negative rounded text-text-primary"
           >
             Zkusit znovu
           </button>
@@ -237,8 +237,8 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
 
   if (!timeline || timeline.total_mentions === 0) {
     return (
-      <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
-        <div className="text-center text-gray-400">
+      <div className="bg-surface-base rounded-lg p-6 border border-border">
+        <div className="text-center text-text-secondary">
           <span className="text-4xl mb-4 block"></span>
           <h3 className="text-lg font-medium text-text-primary mb-2">Žádné zmínky nenalezeny</h3>
           <p className="text-sm">
@@ -253,20 +253,20 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
   }
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
+    <div className="bg-surface-base rounded-lg border border-border overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-gray-700 bg-gray-800/50">
+      <div className="p-4 border-b border-border bg-surface-raised/50">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
             {ticker} Časová osa
-            <span className="text-sm font-normal text-gray-400">
+            <span className="text-sm font-normal text-text-secondary">
               ({timeline.total_mentions} zmínek)
             </span>
           </h3>
           {onClose && (
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-text-primary transition-colors"
+              className="text-text-secondary hover:text-text-primary transition-colors"
             >
               ✕
             </button>
@@ -277,7 +277,7 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
         <div className="flex items-center gap-4 mb-3">
           {timeline.latest_sentiment && (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">Nejnovější:</span>
+              <span className="text-sm text-text-secondary">Nejnovější:</span>
               <span className={`px-2 py-1 rounded text-sm ${getSentimentColor(timeline.latest_sentiment)}`}>
                 {getSentimentIcon(timeline.latest_sentiment)} {timeline.latest_sentiment.replace('_', ' ')}
               </span>
@@ -290,7 +290,7 @@ const TickerTimeline: React.FC<TickerTimelineProps> = ({ ticker, onClose }) => {
         
         {/* Weighted sentiment bar */}
         <div className="mt-3">
-          <div className="text-xs text-gray-400 mb-1">Vážené skóre sentimentu</div>
+          <div className="text-xs text-text-secondary mb-1">Vážené skóre sentimentu</div>
           <WeightedSentimentBar score={timeline.weighted_sentiment_score} />
         </div>
       </div>

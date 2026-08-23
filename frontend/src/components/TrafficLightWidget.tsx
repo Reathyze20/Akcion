@@ -61,7 +61,7 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
           label: 'SELECTIVE',
           color: 'text-warning',
           bgColor: 'bg-warning/10',
-          borderColor: 'border-yellow-500/30',
+          borderColor: 'border-warning/30',
           hoverBg: 'hover:bg-warning/20',
           dotColor: 'bg-warning',
           description: 'Be cautious - Only best setups'
@@ -70,9 +70,9 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
         return {
           icon: Shield,
           label: 'DEFENSE',
-          color: 'text-orange-500',
+          color: 'text-warning',
           bgColor: 'bg-warning/10',
-          borderColor: 'border-orange-500/30',
+          borderColor: 'border-warning/30',
           hoverBg: 'hover:bg-warning/20',
           dotColor: 'bg-warning',
           description: 'Reducing exposure - Protecting gains'
@@ -97,7 +97,7 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
   if (loading) {
     return (
       <div className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-tertiary ${className}`}>
-        <div className="w-2 h-2 rounded-full bg-gray-500 animate-pulse" />
+        <div className="w-2 h-2 rounded-full bg-surface-active animate-pulse" />
         <span className="text-sm text-text-secondary">Loading...</span>
       </div>
     );
@@ -129,20 +129,20 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
           />
           
           {/* Dropdown Menu */}
-          <div className="absolute right-0 mt-2 w-72 bg-[#161B22] border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
-            <div className="p-4 border-b border-gray-700 bg-[#1C2128]">
+          <div className="absolute right-0 mt-2 w-72 bg-surface-raised border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
+            <div className="p-4 border-b border-border bg-surface-overlay">
               <h3 className="text-sm font-bold text-text-primary mb-1">Market Status</h3>
               <p className="text-xs text-text-secondary">{config.description}</p>
             </div>
             
-            <div className="p-2 space-y-1 bg-[#161B22]">
+            <div className="p-2 space-y-1 bg-surface-raised">
               <button
                 onClick={() => updateStatus('GREEN')}
                 disabled={status === 'GREEN'}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   status === 'GREEN'
                     ? 'bg-positive/20 border border-positive/30'
-                    : 'hover:bg-[#22272E]'
+                    : 'hover:bg-surface-hover'
                 }`}
               >
                 <CheckCircle size={18} className="text-positive" />
@@ -157,8 +157,8 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
                 disabled={status === 'YELLOW'}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   status === 'YELLOW'
-                    ? 'bg-warning/20 border border-yellow-500/30'
-                    : 'hover:bg-[#22272E]'
+                    ? 'bg-warning/20 border border-warning/30'
+                    : 'hover:bg-surface-hover'
                 }`}
               >
                 <AlertTriangle size={18} className="text-warning" />
@@ -173,13 +173,13 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
                 disabled={status === 'ORANGE'}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   status === 'ORANGE'
-                    ? 'bg-warning/20 border border-orange-500/30'
-                    : 'hover:bg-[#22272E]'
+                    ? 'bg-warning/20 border border-warning/30'
+                    : 'hover:bg-surface-hover'
                 }`}
               >
-                <Shield size={18} className="text-orange-500" />
+                <Shield size={18} className="text-warning" />
                 <div className="flex-1 text-left">
-                  <div className="text-sm font-semibold text-orange-500">ORANGE ALERT - DEFENSE</div>
+                  <div className="text-sm font-semibold text-warning">ORANGE ALERT - DEFENSE</div>
                   <div className="text-xs text-text-secondary">Reducing exposure</div>
                 </div>
               </button>
@@ -190,7 +190,7 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   status === 'RED'
                     ? 'bg-negative/20 border border-negative/30'
-                    : 'hover:bg-[#22272E]'
+                    : 'hover:bg-surface-hover'
                 }`}
               >
                 <AlertCircle size={18} className="text-negative" />
@@ -202,12 +202,12 @@ export default function TrafficLightWidget({ className = '' }: TrafficLightWidge
             </div>
 
             {note && (
-              <div className="p-3 border-t border-gray-700 bg-[#1C2128]">
+              <div className="p-3 border-t border-border bg-surface-overlay">
                 <p className="text-xs text-text-secondary italic">&quot;{note}&quot;</p>
               </div>
             )}
             
-            <div className="p-3 border-t border-gray-700 bg-[#0E1117]">
+            <div className="p-3 border-t border-border bg-surface-base">
               <p className="text-xs text-text-muted">Default market status</p>
             </div>
           </div>
