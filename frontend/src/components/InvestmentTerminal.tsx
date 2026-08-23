@@ -304,10 +304,25 @@ const getTrendStatus = (
 // ============================================================================
 
 // Portfolio Row Component
+/**
+ * Které nepovinné sloupce má smysl kreslit.
+ *
+ * Deset sloupců, z nichž čtyři jsou u čtrnácti z patnácti řádků prázdné,
+ * není tabulka — je to mřížka pomlček. Sloupec, pro který nemá data ani
+ * jedna pozice, se proto nevykreslí vůbec a řádek se o jeho výšku zkrátí.
+ */
+export interface PositionColumns {
+  score: boolean;
+  size: boolean;
+  catalyst: boolean;
+  band: boolean;
+}
+
 const PortfolioRow: React.FC<{
   position: EnrichedPosition;
+  columns: PositionColumns;
   onClick: () => void;
-}> = ({ position, onClick }) => {
+}> = ({ position, columns, onClick }) => {
   const scoreColor = position.conviction_score 
     ? position.conviction_score >= 7 ? 'text-positive' 
       : position.conviction_score >= 5 ? 'text-warning' 
@@ -372,7 +387,7 @@ const PortfolioRow: React.FC<{
       `}
     >
       {/* Ticker & Name */}
-      <td className="py-3 px-3">
+      <td className="py-1.5 px-2.5">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <span className="font-bold text-text-primary text-base">{position.ticker}</span>
@@ -389,7 +404,7 @@ const PortfolioRow: React.FC<{
       </td>
 
       {/* ACTION - Dynamic Command */}
-      <td className="py-3 px-3">
+      <td className="py-1.5 px-2.5">
         <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
           {actionCmd.text}
         </div>
@@ -405,7 +420,7 @@ const PortfolioRow: React.FC<{
       </td>
 
       {/* Weight % - Aktuální vs Cílová */}
-      <td className="py-3 px-3">
+      <td className="py-1.5 px-2.5">
         <div className="flex flex-col">
           {/* Numbers stay neutral; only the small status tag carries color.
               A column of red values reads as panic — this is a caution, not a loss. */}
@@ -430,8 +445,10 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* Conviction Score — a number with no date reads as today's view */}
-      <td className="py-3 px-3 text-center">
+            {columns.score && (
+        <>
+{/* Conviction Score — a number with no date reads as today's view */}
+      <td className="py-1.5 px-2.5 text-center">
         <div className={`text-xl font-black ${position.analysis_usable ? scoreColor : 'text-text-muted'}`}>
           {position.conviction_score ?? '—'}
         </div>
@@ -441,9 +458,11 @@ const PortfolioRow: React.FC<{
           </div>
         )}
       </td>
+        </>
+      )}
 
-      {/* Current Price */}
-      <td className="py-3 px-3 text-right">
+{/* Current Price */}
+      <td className="py-1.5 px-2.5 text-right">
         <div className="flex flex-col items-end">
           {position.current_price ? (
             <>
@@ -466,8 +485,10 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* Optimal Size - GAP ANALYSIS */}
-      <td className="py-3 px-3">
+            {columns.size && (
+        <>
+{/* Optimal Size - GAP ANALYSIS */}
+      <td className="py-1.5 px-2.5">
         {!position.analysis_usable ? (
           <div className="flex flex-col">
             <div className="text-text-muted font-mono text-xs">—</div>
@@ -518,8 +539,13 @@ const PortfolioRow: React.FC<{
         )}
       </td>
 
-      {/* NEXT CATALYST */}
-      <td className="py-3 px-3">
+            {columns.catalyst && (
+        <>
+        </>
+      )}
+
+{/* NEXT CATALYST */}
+      <td className="py-1.5 px-2.5">
         {position.next_catalyst ? (
           <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
             {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
@@ -530,9 +556,14 @@ const PortfolioRow: React.FC<{
         )}
       </td>
 
-      {/* Where the price sits in the green/red band. Not a trend — it has
+            {columns.band && (
+        <>
+        </>
+      )}
+
+{/* Where the price sits in the green/red band. Not a trend — it has
           no direction in it — and blank when there are no lines to sit in. */}
-      <td className="py-3 px-3">
+      <td className="py-1.5 px-2.5">
         <div className="flex flex-col items-center gap-1">
           {position.trend_status === 'UNKNOWN' ? (
             <>
@@ -557,9 +588,11 @@ const PortfolioRow: React.FC<{
           )}
         </div>
       </td>
+        </>
+      )}
 
-      {/* STRATEGY - Position Health */}
-      <td className="py-3 px-3">
+{/* STRATEGY - Position Health */}
+      <td className="py-1.5 px-2.5">
         {isFreeRideEligible ? (
           <div className="flex flex-col">
             <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
@@ -605,7 +638,7 @@ const PortfolioRow: React.FC<{
       </td>
 
       {/* P/L % — unknown cost basis renders as a prompt, never as 0.00% */}
-      <td className="py-3 px-3 text-right">
+      <td className="py-1.5 px-2.5 text-right">
         {hasCostBasis && position.unrealized_pl_percent != null ? (
           <>
             <div className={`font-bold text-sm ${plColor}`}>
@@ -2899,6 +2932,26 @@ export const InvestmentTerminal: React.FC = () => {
     return filtered;
   }, [familyData.allPositions, searchQuery, sortBy]);
 
+  /**
+   * Které nepovinné sloupce vůbec nakreslit.
+   *
+   * Skóre bylo prázdné u třinácti řádků z patnácti, optimální dávka
+   * a katalyzátor u čtrnácti, pásmo u dvanácti. Čtyřicet procent tabulky
+   * byly pomlčky — a každá z nich přidávala řádku výšku, kvůli které se
+   * portfolio nevešlo na obrazovku.
+   *
+   * Sloupec se ukáže, jakmile pro něj má data aspoň jedna pozice. Nic se
+   * neskrývá natrvalo: zmizí přesně to, o čem aplikace nic neví.
+   */
+  const columns: PositionColumns = useMemo(() => ({
+    score: displayedPositions.some((p) => p.analysis_usable && p.conviction_score != null),
+    size: displayedPositions.some((p) => (p.optimal_size ?? 0) > 0),
+    catalyst: displayedPositions.some((p) => Boolean(p.next_catalyst)),
+    band: displayedPositions.some(
+      (p) => p.stock?.green_line != null || p.stock?.red_line != null,
+    ),
+  }), [displayedPositions]);
+
   // Filter and sort watchlist
   const displayedWatchlist = useMemo(() => {
     let filtered = [...watchlistStocks];
@@ -3397,17 +3450,25 @@ export const InvestmentTerminal: React.FC = () => {
                   <div>Váha</div>
                   <div className="text-[9px] text-text-muted font-normal">Aktuální / Cíl</div>
                 </th>
-                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[70px]"><Term id="konvikcniSkore">Skóre</Term></th>
+                {columns.score && (
+                  <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[70px]"><Term id="konvikcniSkore">Skóre</Term></th>
+                )}
                 <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">
                   <div>Cena</div>
                   <div className="text-[9px] text-text-muted font-normal">aktuální</div>
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">
+                {columns.size && (
+                  <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">
                   <div>Optimální dávka</div>
                   <div className="text-[9px] text-text-muted font-normal">Tento měsíc</div>
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Katalyzátor</th>
-                <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]" title="Kde leží cena v pásmu mezi zelenou a červenou linkou">Pásmo</th>
+                )}
+                {columns.catalyst && (
+                  <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Katalyzátor</th>
+                )}
+                {columns.band && (
+                  <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]" title="Kde leží cena v pásmu mezi zelenou a červenou linkou">Pásmo</th>
+                )}
                 <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Stav pozice</th>
                 <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]"><Term id="pl">P/L</Term></th>
               </tr>
@@ -3417,6 +3478,7 @@ export const InvestmentTerminal: React.FC = () => {
                 <PortfolioRow
                   key={`${pos.portfolio_id}-${pos.ticker}`}
                   position={pos}
+                  columns={columns}
                   onClick={() => setSelectedPosition(pos)}
                 />
               ))}
