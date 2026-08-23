@@ -44,6 +44,27 @@ naměřená čísla z tabulky výše. Snímek bez čísla neprokazuje nic.
 
 ## Zábradlí
 
+### Cizí práce se nemaže
+
+Na aplikaci pracoval víc než jeden člověk. Autor **Majkysa
+<miska.svo@seznam.cz>** přidala evidenci dluhů a plateb (záložka Platby:
+Společné splácení, Společné platby, Platby Míša, Šetření Míša, Platby Tom)
+v commitech `c1839a6` a `03f8a21`, plus opravy backendu v `b86a848`.
+
+Tahle funkce **se neruší, neslučuje ani „neuklízí" jako mrtvý kód.** Smí se
+překreslit do nového vzhledu, ale musí zůstat dosažitelná z navigace a musí
+dál číst a zapisovat stejné klíče `localStorage`:
+`akcion_debts`, `akcion_shared_payments`, `akcion_misa_payments`,
+`akcion_savings`, `akcion_tom_payments`.
+
+Data leží v prohlížeči, ne na serveru. Přejmenování klíče = ztráta cizích dat
+bez možnosti obnovy z gitu.
+
+**Před smazáním čehokoli spusť `git log --format='%an' -- <soubor>` a podívej
+se, kdo to psal.** Jednou už se stalo, že se záložka Platby smazala jako
+„prázdná" — nebyla prázdná, jen ji nikdo nenaplnil v testovacím prostředí.
+
+
 - Commit na `feature/gomes-fidelity`. **Nepushovat, nezakládat PR.**
 - `backend/.env` se nečte do výstupu, nekopíruje, necommituje.
 - Žádné skutečné notifikace ani příkazy k obchodu kvůli ověření.

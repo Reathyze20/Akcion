@@ -2383,7 +2383,7 @@ export const InvestmentTerminal: React.FC = () => {
   const [showAddPositionModal, setShowAddPositionModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'weight' | 'score' | 'pl'>('score');
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'cil'>('portfolio');
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'cil' | 'splaceni'>('portfolio');
   
   // Cash editing state
   const [isEditingCash, setIsEditingCash] = useState(false);
@@ -3167,6 +3167,7 @@ export const InvestmentTerminal: React.FC = () => {
             { id: 'portfolio', label: 'Portfolio', count: familyData.allPositions.length },
             { id: 'watchlist', label: 'Sledované', count: watchlistStocks.length },
             { id: 'cil', label: 'Cíl', count: undefined },
+            { id: 'splaceni', label: 'Platby', count: undefined },
           ] as const).map((tab) => (
             <button
               key={tab.id}
@@ -3596,6 +3597,642 @@ export const InvestmentTerminal: React.FC = () => {
             portfolioValue={familyData.totalValue}
             monthlyContribution={familyData.monthlyContribution}
           />
+        )}
+
+        {/* PLATBY TAB - Debt Management */}
+        {activeTab === 'splaceni' && (
+          <div className="space-y-6">
+            {/* Společné splácení */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-text-primary">Společné splácení</h2>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-4 gap-4 mb-6">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Zbývá uhradit</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(debts.reduce((sum, d) => {
+                      const startDate = new Date(d.date);
+                      const now = new Date();
+                      const monthsPassed = (now.getFullYear() - startDate.getFullYear()) * 12 + 
+                                         (now.getMonth() - startDate.getMonth()) + 1;
+                      const paid = Math.max(0, monthsPassed) * parseFloat(d.monthlyPayment || '0');
+                      const remaining = Math.max(0, parseFloat(d.amount || '0') - paid);
+                      return sum + remaining;
+                    }, 0))}
+                  </div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Měsíční splátka</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(debts.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                  </div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Celkový dluh</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(debts.reduce((sum, d) => sum + parseFloat(d.amount || '0'), 0))}
+                  </div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Splaceno</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(debts.reduce((sum, d) => {
+                      const startDate = new Date(d.date);
+                      const now = new Date();
+                      const monthsPassed = Math.max(0, (now.getFullYear() - startDate.getFullYear()) * 12 + 
+                                         (now.getMonth() - startDate.getMonth()) + 1);
+                      const paid = monthsPassed * parseFloat(d.monthlyPayment || '0');
+                      return sum + paid;
+                    }, 0))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Přehled závazků */}
+              <div>
+              
+              {debts.length === 0 ? (
+                /* Empty State */
+                <div className="text-center py-6">
+                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-10 h-10 text-positive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">
+                    Žádné aktivní závazky
+                  </h3>
+                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                    Zatím nemáte evidované žádné dluhy nebo splátky. 
+                    Můžete přidat hypotéku, auto-leasing, studijní půjčku nebo jiný závazek.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddDebtModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat závazek
+                  </button>
+                </div>
+              ) : (
+                /* Debts Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Částka</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Zbývá</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splaceno</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">1. splátka</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Komu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Informace</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {debts.map((debt) => (
+                        <tr key={debt.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{debt.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(debt.amount))}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">
+                              {(() => {
+                                const startDate = new Date(debt.date);
+                                const now = new Date();
+                                const monthsPassed = (now.getFullYear() - startDate.getFullYear()) * 12 + 
+                                                   (now.getMonth() - startDate.getMonth()) + 1;
+                                const paid = Math.max(0, monthsPassed) * parseFloat(debt.monthlyPayment || '0');
+                                const remaining = Math.max(0, parseFloat(debt.amount || '0') - paid);
+                                return formatCurrency(remaining);
+                              })()}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">
+                              {(() => {
+                                const startDate = new Date(debt.date);
+                                const now = new Date();
+                                const monthsPassed = Math.max(0, (now.getFullYear() - startDate.getFullYear()) * 12 + 
+                                                   (now.getMonth() - startDate.getMonth()) + 1);
+                                const paid = monthsPassed * parseFloat(debt.monthlyPayment || '0');
+                                return formatCurrency(paid);
+                              })()}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">
+                              {new Date(debt.date).toLocaleDateString('cs-CZ')}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(debt.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{debt.creditor}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{debt.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{debt.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm max-w-xs truncate">{debt.note || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingDebtId(debt.id);
+                                setDebtForm({
+                                  name: debt.name,
+                                  amount: debt.amount,
+                                  date: debt.date,
+                                  monthlyPayment: debt.monthlyPayment,
+                                  creditor: debt.creditor,
+                                  accountNumber: debt.accountNumber,
+                                  variableSymbol: debt.variableSymbol,
+                                  note: debt.note
+                                });
+                                setShowAddDebtModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit závazek"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddDebtModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další závazek
+                    </button>
+                  </div>
+                </div>
+              )}
+              </div>
+            </div>
+
+            {/* Společné platby */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-text-primary">Společné platby</h2>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(sharedPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                  </div>
+                </div>
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Na jednoho</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(sharedPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0) / 2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Přehled */}
+              <div>
+              
+              {sharedPayments.length === 0 ? (
+                /* Empty State */
+                <div className="text-center py-6">
+                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-10 h-10 text-positive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">
+                    Žádné aktivní záznamy
+                  </h3>
+                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                    Zatím nemáte evidované žádné společné platby. 
+                    Můžete přidat novou položku.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddSharedPaymentsModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat položku
+                  </button>
+                </div>
+              ) : (
+                /* Shared Payments Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Informace</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sharedPayments.map((item) => (
+                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{item.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm max-w-xs truncate">{item.note || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingSharedPaymentsId(item.id);
+                                setSharedPaymentsForm({
+                                  name: item.name,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  monthlyPayment: item.monthlyPayment,
+                                  creditor: item.creditor,
+                                  accountNumber: item.accountNumber,
+                                  variableSymbol: item.variableSymbol,
+                                  note: item.note
+                                });
+                                setShowAddSharedPaymentsModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit položku"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddSharedPaymentsModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další položku
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+
+            {/* Grid wrapper pro Šetření Míša a Platby Míša vedle sebe */}
+            <div className="grid grid-cols-2 gap-6">
+              {/* Platby Míša */}
+              <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold text-text-primary">Platby Míša</h2>
+                </div>
+
+                {/* Summary Stats */}
+                <div className="grid grid-cols-1 gap-4 mb-6">
+                  <div className="bg-surface-raised/50 rounded-lg p-4">
+                    <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
+                    <div className="text-2xl font-bold text-text-primary">
+                      {formatCurrency(misaPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Přehled */}
+                <div>
+                
+                {misaPayments.length === 0 ? (
+                  /* Empty State */
+                  <div className="text-center py-6">
+                    <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                      <Check className="w-10 h-10 text-positive" />
+                    </div>
+                    <h3 className="text-xl font-bold text-text-primary mb-2">
+                      Žádné aktivní záznamy
+                    </h3>
+                    <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                      Zatím nemáte evidované žádné platby Míša. 
+                    Můžete přidat novou položku.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddMisaPaymentsModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat položku
+                  </button>
+                </div>
+              ) : (
+                /* Míša Payments Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {misaPayments.map((item) => (
+                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{item.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingMisaPaymentsId(item.id);
+                                setMisaPaymentsForm({
+                                  name: item.name,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  monthlyPayment: item.monthlyPayment,
+                                  creditor: item.creditor,
+                                  accountNumber: item.accountNumber,
+                                  variableSymbol: item.variableSymbol,
+                                  note: item.note
+                                });
+                                setShowAddMisaPaymentsModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit položku"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddMisaPaymentsModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další položku
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+
+            {/* Šetření Míša */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-text-primary">Šetření Míša</h2>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-1 gap-4 mb-6">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(savings.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Přehled */}
+              <div>
+              
+              {savings.length === 0 ? (
+                /* Empty State */
+                <div className="text-center py-6">
+                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-10 h-10 text-positive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">
+                    Žádné aktivní záznamy
+                  </h3>
+                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                    Zatím nemáte evidované žádné šetření. 
+                    Můžete přidat novou položku.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddSavingsModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat položku
+                  </button>
+                </div>
+              ) : (
+                /* Savings Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {savings.map((item) => (
+                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{item.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingSavingsId(item.id);
+                                setSavingsForm({
+                                  name: item.name,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  monthlyPayment: item.monthlyPayment,
+                                  creditor: item.creditor,
+                                  accountNumber: item.accountNumber,
+                                  variableSymbol: item.variableSymbol,
+                                  note: item.note
+                                });
+                                setShowAddSavingsModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit položku"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddSavingsModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další položku
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+            </div> {/* End grid wrapper pro Šetření Míša a Platby Míša */}
+
+            {/* Platby Tom */}
+            <div className="bg-gradient-to-br from-slate-800/80 to-purple-500/10 rounded-xl p-6 border border-purple-500/30">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-text-primary">Platby Tom</h2>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-1 gap-4 mb-6">
+                <div className="bg-surface-raised/50 rounded-lg p-4">
+                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {formatCurrency(tomPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Přehled */}
+              <div>
+              
+              {tomPayments.length === 0 ? (
+                /* Empty State */
+                <div className="text-center py-6">
+                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-10 h-10 text-positive" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">
+                    Žádné aktivní záznamy
+                  </h3>
+                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
+                    Zatím nemáte evidované žádné platby Tom. 
+                    Můžete přidat novou položku.
+                  </p>
+                  <button 
+                    onClick={() => setShowAddTomPaymentsModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Přidat položku
+                  </button>
+                </div>
+              ) : (
+                /* Tom Payments Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
+                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
+                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tomPayments.map((item) => (
+                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm">{item.name}</div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                setEditingTomPaymentsId(item.id);
+                                setTomPaymentsForm({
+                                  name: item.name,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  monthlyPayment: item.monthlyPayment,
+                                  creditor: item.creditor,
+                                  accountNumber: item.accountNumber,
+                                  variableSymbol: item.variableSymbol,
+                                  note: item.note
+                                });
+                                setShowAddTomPaymentsModal(true);
+                              }}
+                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
+                              title="Upravit položku"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShowAddTomPaymentsModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Přidat další položku
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+          </div>
         )}
       </main>
 
