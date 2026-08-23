@@ -40,6 +40,19 @@ interface GoalPageProps {
 const DEFAULT_TARGET = 30_000_000;
 const DEFAULT_RETURN_PCT = 15;
 const DEFAULT_AGE = 35;
+const DEFAULT_CONTRIBUTION = 20_000;
+
+/**
+ * Stav formuláře. `null` u prvních dvou polí znamená „ber skutečnou
+ * hodnotu z portfolia"; číslo znamená, že si ji člověk přepsal.
+ */
+interface FormState {
+  presentValue: number | null;
+  monthlyContribution: number | null;
+  annualReturnPct: number;
+  target: number;
+  currentAge: number;
+}
 
 /** O kolik let dopředu graf kreslí, když cíl leží dál nebo vůbec. */
 const FALLBACK_HORIZON = 25;
@@ -48,9 +61,20 @@ export const GoalPage: React.FC<GoalPageProps> = ({
   portfolioValue,
   monthlyContribution,
 }) => {
-  const [state, setState] = useState<CalculatorState>({
-    presentValue: portfolioValue,
-    monthlyContribution: monthlyContribution || 20_000,
+  /*
+   * Dvě pole kalkulačky mají skutečnou předlohu v portfoliu: dnešní hodnota
+   * a měsíční vklad. Ta se navíc načítá až po prvním vykreslení.
+   *
+   * `null` znamená „drž se skutečnosti". Jakmile člověk posuvníkem hodnotu
+   * změní, uloží se jako přepis a živá data ji už nepřebijí.
+   *
+   * Dřív se to řešilo efektem, který skutečnou hodnotu kopíroval do stavu.
+   * To spouští další vykreslení kvůli údaji, který nikdy nebyl stavem —
+   * je odvozený. Takhle žádný efekt není potřeba.
+   */
+  const [form, setForm] = useState<FormState>({
+    presentValue: null,
+    monthlyContribution: null,
     annualReturnPct: DEFAULT_RETURN_PCT,
     target: DEFAULT_TARGET,
     currentAge: DEFAULT_AGE,
@@ -58,15 +82,18 @@ export const GoalPage: React.FC<GoalPageProps> = ({
 
   const [indexTrendPct, setIndexTrendPct] = useState<number | null>(null);
 
-  // Skutečná hodnota se může načíst až po prvním vykreslení. Přepíše se
-  // jen dokud si s ní člověk nezačal hrát — jinak by mu mizely úpravy
-  // pod rukama.
-  const [touchedValue, setTouchedValue] = useState(false);
-  useEffect(() => {
-    if (!touchedValue) {
-      setState((prev) => ({ ...prev, presentValue: portfolioValue }));
-    }
-  }, [portfolioValue, touchedValue]);
+  const liveContribution = monthlyContribution || DEFAULT_CONTRIBUTION;
+
+  // Musí to být useMemo, ne prostý objekt: nová reference při každém
+  // vykreslení by zneplatnila projekci níž, takže by se počítala pořád
+  // dokola, i když se nic nezměnilo.
+  const state: CalculatorState = useMemo(() => ({
+    presentValue: form.presentValue ?? portfolioValue,
+    monthlyContribution: form.monthlyContribution ?? liveContribution,
+    annualReturnPct: form.annualReturnPct,
+    target: form.target,
+    currentAge: form.currentAge,
+  }), [form, portfolioValue, liveContribution]);
 
   // Dlouhodobý trend indexu jako opora u pole s očekávaným výnosem.
   // Když se nenačte, pole funguje dál — jen bez opory.
@@ -230,12 +257,19 @@ export const GoalPage: React.FC<GoalPageProps> = ({
             value={state}
             actualValue={portfolioValue}
             indexTrendPct={indexTrendPct}
-            onChange={(next) => {
-              if (Math.round(next.presentValue) !== Math.round(portfolioValue)) {
-                setTouchedValue(true);
-              }
-              setState(next);
-            }}
+            onChange={(next) => setForm({
+              // Vrátí-li se hodnota na skutečnou, přepis se zruší a pole
+              // zase sleduje portfolio.
+              presentValue: Math.round(next.presentValue) === Math.round(portfolioValue)
+                ? null
+                : next.presentValue,
+              monthlyContribution: next.monthlyContribution === liveContribution
+                ? null
+                : next.monthlyContribution,
+              annualReturnPct: next.annualReturnPct,
+              target: next.target,
+              currentAge: next.currentAge,
+            })}
           />
         </section>
       </div>

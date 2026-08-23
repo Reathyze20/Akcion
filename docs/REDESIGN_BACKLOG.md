@@ -246,6 +246,14 @@ fáze životního cyklu, zelená a červená linka).
 **Hotovo, když:** test projde `.tsx` soubory a ohlásí zkratku ze slovníku,
 která není obalená v `Term`.
 
+### H0. Lint musí projít
+`npm run lint` dnes hlásí **24 chyb a 5 varování** ve 12 souborech —
+`no-explicit-any`, nepoužité proměnné, chybějící závislosti hooků. Podle
+CLAUDE.md je úkol hotový až když příkaz skončí nulou, takže tenhle dluh
+blokuje uzavření všech ostatních. Je předchozí, ne způsobený přestavbou.
+
+**Hotovo, když:** `npm run lint` skončí návratovým kódem 0.
+
 ### H5. Formátování čísel jen přes `format.ts`
 Zrušit místní `formatCurrency` a `formatPercent` v `InvestmentTerminal.tsx`.
 Jedno číslo se nesmí na dvou místech zaokrouhlit jinak.
@@ -281,7 +289,7 @@ C1 → C2 → C3 → C4 → C5   deska Portfolia          ← tady se přestane 
 D1 → D2 → D3 → D4        cesta k hodnocení        ← tady appka začne radit
 E1 → E2 → E3 → E4        detail pozice
 F1 · G1 · G2             sledované a cíl
-H1 … H5                  napříč aplikací
+H0 … H5                  napříč aplikací (H0 blokuje uzavření všeho)
 I1                       oprava alertů
 ```
 
