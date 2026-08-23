@@ -107,6 +107,9 @@ Nahradilo to escalation semaforu: GREEN se pro odlehčování bere jako YELLOW, 
 ORANGE se **nezvyšuje** na RED — „prodej skoro všechno" není rozhodnutí, které se dělá za někoho,
 kdo nemůže odpovědět. Je to rozšíření aplikace, ne kánon, a každá zpráva to říká.
 
+**UI:** `AwayModeCard` na dashboardu — přepínač, pravidla, poslední rozhodnutí a tlačítko
+„Co by se poslalo teď" (spustí skutečný cyklus, nic neodešle).
+
 **Známý limit, ověřeno na živém portfoliu:** away mode teď reálně nemá na čem zabrat. Všech 15 pozic
 nemá fázi ani konvikční skóre, takže se motor odmítá k nim vyjádřit (což je záměrná pojistka) a away
 mode mlčí. Aby se mlčení nedalo splést s „všechno je v pořádku", ukládá se k rozhodnutí i důvod —
@@ -169,6 +172,9 @@ rozbil, tvrzení v textu přestane být pravda a testy spadnou.
 Semafor **nepřepisuje**. `suggested_alert` je návrh; `AT_UPPER_LINE` navrhuje ORANGE a ne RED,
 protože RED je dvakrát za život a jednou z těch dvou tenhle ukazatel nevidí.
 
+**UI:** `MarketGaugeCard` — z-skóre, značka mezi třemi linkami, shoda se semaforem, a slepá
+skvrna přímo na kartě. **Žádné tlačítko, které semafor přepíše.**
+
 Dnes: `z=+1,46`, 91. percentil, `EXPENSIVE` → návrh **YELLOW**, což **sedí** s tím, co máš ručně
 nastavené.
 
@@ -200,6 +206,8 @@ pořád odstraňujeme.
 `XSPS.L` (Xtrackers S&P 500 Inverse Daily Swap UCITS) se vrací jako **důkaz, že evropská inverzní
 ETF existují — ne jako náhrada**: shortuje S&P 500, ne Russell 2000, a resetuje se denně, takže
 v rozkolísaném bočním trhu ztrácí, i když index skončí tam, kde začal.
+
+**UI:** `CashHedgeCard` — vede blokací a náhradou, ne cílovou částkou.
 
 **Čí je které číslo:** kánon dává procento jen pro GREEN (0 % hedge) a YELLOW (20–30 % v RWM).
 ORANGE má větu („I have ALL of my cash in RWM"), RED popis. Odpověď proto nese `interpreted: true`
