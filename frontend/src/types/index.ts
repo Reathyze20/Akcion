@@ -560,3 +560,34 @@ export interface PriceUpdateResponse {
   price_zone: string | null;
   message: string;
 }
+
+// Trade ledger — recording a BUY/SELL executed at the broker.
+
+export type TradeSide = 'BUY' | 'SELL';
+
+export interface TradeRequest {
+  side: TradeSide;
+  shares: number;
+  price: number;
+  emotion_tag?: string | null;
+  note?: string | null;
+}
+
+export interface TradeResponse {
+  success: boolean;
+  log_id: number;
+  ticker: string;
+  side: TradeSide;
+  shares: number;
+  price: number;
+  currency: string | null;
+  gross_amount: number;
+  /** null (never 0) when the purchase price was never known. */
+  realized_pl: number | null;
+  cost_basis: number | null;
+  new_shares_count: number;
+  new_avg_cost: number | null;
+  avg_cost_known: boolean;
+  position_closed: boolean;
+  message: string;
+}

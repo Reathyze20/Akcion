@@ -43,6 +43,27 @@ class Settings(BaseSettings):
         alias="GEMINI_API_KEY",
         description="Google Gemini API key",
     )
+
+    anthropic_api_key: str | None = Field(
+        default=None,
+        alias="ANTHROPIC_API_KEY",
+        description="Anthropic Claude API key — research layer (web_search + MCP)",
+    )
+
+    t212_api_key_id: str | None = Field(
+        default=None,
+        alias="T212_API_KEY_ID",
+        description="Trading 212 API Key ID (pairs with the secret in T212_API_KEY)",
+    )
+
+    t212_api_key: str | None = Field(
+        default=None,
+        alias="T212_API_KEY",
+        description=(
+            "Trading 212 READ-ONLY API key. Must be created without the "
+            "'orders' permission — the app never places trades."
+        ),
+    )
     
     # Market Data API
     massive_api_key: str | None = Field(
@@ -102,7 +123,7 @@ class Settings(BaseSettings):
     
     # API Settings (for FastAPI)
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
-    api_port: int = Field(default=8000, alias="API_PORT")
+    api_port: int = Field(default=8002, alias="API_PORT")
     
     # CORS Settings
     cors_origins: str | list[str] = Field(

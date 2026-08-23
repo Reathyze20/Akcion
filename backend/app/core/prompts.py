@@ -19,7 +19,6 @@ from .constants import (
     MarketStatus,
     MoatRating,
     MAX_TRANSCRIPT_LENGTH,
-    GEMINI_CONFIG,
 )
 
 
@@ -257,16 +256,12 @@ def get_analysis_prompt(transcript: str) -> str:
 # External Tools Configuration
 # ==============================================================================
 
-# Google Search Retrieval was deprecated by Gemini API
-# Kept as None for interface compatibility
-GOOGLE_SEARCH_CONFIG: Final[None] = None
+# Web search was never wired up: GOOGLE_SEARCH_CONFIG was the literal value
+# None, and the health endpoint advertised it anyway. Removed rather than kept
+# "for interface compatibility" — a capability the app does not have should not
+# have a name it can be reported under.
 
-
-# ==============================================================================
-# Model Configuration (Delegated to constants module)
-# ==============================================================================
-
-GEMINI_MODEL_NAME: Final[str] = GEMINI_CONFIG.model_name
+# The model name lives in services.llm.MODEL, and nowhere else.
 
 
 # ==============================================================================

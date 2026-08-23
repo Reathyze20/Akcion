@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.config.settings import Settings
+from app.services.llm import complete_json
 from app.models.stock import Stock
 from app.models.score_history import ConvictionScoreHistory, ThesisDriftAlert
 from app.models.trading import ActiveWatchlist
@@ -111,20 +112,11 @@ class KnowledgeSynthesisService:
     def __init__(self, db: Session):
         self.db = db
         self.settings = Settings()
-        self._init_gemini()
         
-    def _init_gemini(self) -> None:
-        """Initialize Gemini AI for intelligent merging."""
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.settings.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash')
-            self.gemini_available = True
-            logger.info("Gemini initialized for Knowledge Synthesis")
-        except Exception as e:
-            logger.warning(f"Gemini not available for synthesis: {e}")
-            self.gemini_available = False
-            self.model = None
+    @property
+    def ai_available(self) -> bool:
+        """Whether the AI merge path can run; the rule-based one always can."""
+        return bool(self.settings.anthropic_api_key)
     
     # =========================================================================
     # MAIN SYNTHESIS METHODS
@@ -243,7 +235,7 @@ class KnowledgeSynthesisService:
         - Management changes
         - Guidance revisions
         """
-        if not self.gemini_available:
+        if not self.ai_available:
             return self._rule_based_conflict_check(existing, new_info)
         
         prompt = f"""Analyze if this new information conflicts with the existing investment thesis.
@@ -276,8 +268,7 @@ Respond in JSON:
 }}
 """
         try:
-            response = self.model.generate_content(prompt)
-            result = self._parse_json_response(response.text)
+            result = complete_json(prompt)
             
             return ConflictAnalysis(
                 conflict_type=ConflictType(result.get("conflict_type", "NONE")),
@@ -624,17 +615,3 @@ Respond in JSON:
             .first()
         )
     
-    def _parse_json_response(self, text: str) -> dict:
-        """Extract and parse JSON from AI response."""
-        # Try to find JSON in markdown code block
-        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
-        if json_match:
-            return json.loads(json_match.group(1))
-        
-        # Try to find raw JSON
-        start = text.find('{')
-        end = text.rfind('}') + 1
-        if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        
-        return {}

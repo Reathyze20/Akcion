@@ -26,6 +26,9 @@ import type {
   MarketStatusData,
   BrokerType,
   MarketStatus,
+  // Trade ledger
+  TradeRequest,
+  TradeResponse,
   // Gomes Analyzer types
   ConvictionScoreResponse,
   AnalyzeRequest,
@@ -290,6 +293,75 @@ class ApiClient {
     return response.data;
   }
 
+  // ==========================================================================
+  // SEC EDGAR — results, outlook, insiders
+  // ==========================================================================
+
+  async getSecData(ticker: string): Promise<SecTickerData> {
+    const response = await this.client.get<SecTickerData>(
+      `/api/sec/${encodeURIComponent(ticker)}`
+    );
+    return response.data;
+  }
+
+  async syncSecTicker(ticker: string, withOutlook = true): Promise<SecSyncResult> {
+    const response = await this.client.post<SecSyncResult>(
+      `/api/sec/sync/${encodeURIComponent(ticker)}`,
+      null,
+      { params: { with_outlook: withOutlook } }
+    );
+    return response.data;
+  }
+
+  async syncSecAll(withOutlook = false): Promise<SecSyncResult[]> {
+    const response = await this.client.post<SecSyncResult[]>(
+      '/api/sec/sync', null, { params: { with_outlook: withOutlook } }
+    );
+    return response.data;
+  }
+
+
+  // ==========================================================================
+  // Away mode — one message a day, and never one built on stale data
+  // ==========================================================================
+
+  async getAwayStatus(): Promise<AwayStatus> {
+    const response = await this.client.get<AwayStatus>('/api/away');
+    return response.data;
+  }
+
+  async setAwayMode(update: AwayUpdate): Promise<AwayStatus> {
+    const response = await this.client.put<AwayStatus>('/api/away', update);
+    return response.data;
+  }
+
+  async previewAway(): Promise<AwayPreview> {
+    const response = await this.client.post<AwayPreview>('/api/away/preview');
+    return response.data;
+  }
+
+  // ==========================================================================
+  // Market gauge — where the S&P sits on its 40-year chart
+  // ==========================================================================
+
+  async getMarketGauge(refresh = false): Promise<MarketGauge> {
+    const response = await this.client.get<MarketGauge>(
+      '/api/market-gauge', { params: { refresh } }
+    );
+    return response.data;
+  }
+
+  // ==========================================================================
+  // Cash and hedge — the semafor in instruments, not percentages
+  // ==========================================================================
+
+  async getCashHedgePlan(alert?: string): Promise<CashHedgePlan> {
+    const response = await this.client.get<CashHedgePlan>(
+      '/api/cash-hedge', { params: alert ? { alert } : undefined }
+    );
+    return response.data;
+  }
+
   async deletePosition(positionId: number): Promise<void> {
     await this.client.delete(`/api/portfolio/positions/${positionId}`);
   }
@@ -308,6 +380,24 @@ class ApiClient {
     const response = await this.client.put<Position>(
       `/api/portfolio/positions/${positionId}`,
       data
+    );
+    return response.data;
+  }
+
+  /**
+   * Record a BUY/SELL already executed at the broker.
+   *
+   * Writes the ledger row and moves the position server-side in ONE
+   * transaction — do not emulate this with updatePosition(), which discards
+   * the trade price and leaves realized P/L unrecoverable.
+   */
+  async recordTrade(
+    positionId: number,
+    trade: TradeRequest
+  ): Promise<TradeResponse> {
+    const response = await this.client.post<TradeResponse>(
+      `/api/portfolio/positions/${positionId}/trade`,
+      trade
     );
     return response.data;
   }
@@ -912,6 +1002,188 @@ export interface DailyActionsResponse {
   actions: DailyAction[];
   warnings: string[];
   generated_at: string;
+}
+
+// ==========================================================================
+// SEC EDGAR
+// ==========================================================================
+
+/**
+ * Why a ticker has the SEC data it has — or has none.
+ *
+ * Four distinct absences, none of which means the company reported nothing:
+ * a foreign listing, an ISIN stored where a symbol belongs, a foreign private
+ * issuer on the 20-F schedule, and EDGAR being unreachable.
+ */
+export type SecCoverageStatus =
+  | 'COVERED'
+  | 'NOT_AN_SEC_FILER'
+  | 'FOREIGN_PRIVATE_ISSUER'
+  | 'NOT_A_TICKER'
+  | 'LOOKUP_FAILED';
+
+export interface SecFiling {
+  form: string;
+  filed_date: string;
+  period_date: string | null;
+  url: string | null;
+  /** Czech reading of the filing's narrative. null = not analysed yet. */
+  analysis: string | null;
+  analyzed: boolean;
+}
+
+export interface SecInsiderTrade {
+  insider_name: string;
+  role: string;
+  transaction_date: string | null;
+  code: string;
+  code_label: string | null;
+  /** Only BUY and SELL reach the UI; the rest are counted, not listed. */
+  signal: 'BUY' | 'SELL' | 'NO_SIGNAL';
+  shares: number | null;
+  price_per_share: number | null;
+}
+
+export interface SecTickerData {
+  ticker: string;
+  status: SecCoverageStatus;
+  company_name: string | null;
+  note: string | null;
+  last_checked_at: string | null;
+  /** Exact figures from XBRL, each carrying the period it covers. */
+  findings: string[];
+  /** Line items the company does not tag. A gap, not a zero. */
+  gaps: string[];
+  filings: SecFiling[];
+  insider_trades: SecInsiderTrade[];
+  /** Grants, gifts, tax withholding — recorded, but no decision behind them. */
+  insider_non_signal_count: number;
+}
+
+export interface SecSyncResult {
+  ticker: string;
+  status: SecCoverageStatus | 'ERROR';
+  company_name?: string | null;
+  filings_stored?: number;
+  insider_stored?: number;
+  findings?: string[];
+  gaps?: string[];
+  note?: string | null;
+  error?: string | null;
+}
+
+
+// ============================================================================
+// Away mode
+// ============================================================================
+
+export interface AwayStatus {
+  is_away: boolean;
+  /** On *and* inside its window. An `until` in the past reads as off. */
+  active: boolean;
+  since?: string | null;
+  until?: string | null;
+  reason?: string | null;
+  days_away?: number | null;
+  last_push_at?: string | null;
+  last_push_subject?: string | null;
+  /**
+   * Why the last cycle did or did not send. Away mode is quiet on purpose;
+   * this is what makes the quiet readable rather than indistinguishable from
+   * the app having stopped working.
+   */
+  last_digest_reason?: string | null;
+  max_data_age_hours: number;
+  quiet_period_hours: number;
+}
+
+export interface AwayUpdate {
+  is_away: boolean;
+  until?: string | null;
+  reason?: string | null;
+}
+
+export interface AwayPreview {
+  away: boolean;
+  would_send: boolean;
+  decision: string;
+  subject?: string | null;
+  body?: string | null;
+  /** What was held back, and why. Never silently dropped. */
+  held: string[];
+}
+
+// ============================================================================
+// Market gauge
+// ============================================================================
+
+export type ChannelPosition =
+  | 'AT_UPPER_LINE'
+  | 'EXPENSIVE'
+  | 'ABOVE_TREND'
+  | 'BELOW_GREY'
+  | 'AT_LOWER_LINE';
+
+export interface MarketGauge {
+  index: string;
+  as_of: string;
+  close: number;
+  z_score: number;
+  percentile: number;
+  position: ChannelPosition;
+  position_cs: string;
+  /** A suggestion. Nothing in the app acts on it by itself. */
+  suggested_alert: string;
+  current_alert?: string | null;
+  agreement_cs: string;
+  trend_value: number;
+  upper_line: number;
+  grey_line: number;
+  lower_line: number;
+  trend_pct_per_year: number;
+  years: number;
+  /** What this measure cannot see — it finds the 1999 top, misses 2007. */
+  blind_spot_cs: string;
+}
+
+// ============================================================================
+// Cash and hedge
+// ============================================================================
+
+export type HedgeAvailability =
+  | 'LIKELY_AVAILABLE'
+  | 'LIKELY_BLOCKED_EU_RETAIL'
+  | 'UNKNOWN';
+
+export interface CashHedgeLeg {
+  ticker: string;
+  name: string;
+  role: 'CASH_PARK' | 'HEDGE';
+  currency: string;
+  exchange: string;
+  availability: HedgeAvailability;
+  note_cs: string;
+  target_czk: number;
+  price?: number | null;
+  /** null when the price or the rate could not be read — never a guess. */
+  shares?: number | null;
+  blocker_cs?: string | null;
+}
+
+export interface CashHedgePlan {
+  alert: string;
+  portfolio_czk: number;
+  stocks_pct: number;
+  cash_pct: number;
+  hedge_pct: number;
+  canon_text: string;
+  /** True when the percentages are the app's reading, not the canon's. */
+  interpreted: boolean;
+  legs: CashHedgeLeg[];
+  fallback_cs?: string | null;
+  /** Proof that UCITS inverse ETFs exist — explicitly not a substitute. */
+  ucits_example?: CashHedgeLeg | null;
+  gaps: string[];
 }
 
 // Export singleton instance

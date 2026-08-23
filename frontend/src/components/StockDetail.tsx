@@ -14,20 +14,27 @@
  * @fiduciary This component prioritizes capital protection over information density.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Stock } from '../types';
-import { 
-  GomesHeader, 
-  SafetyGaugeRow, 
-  ThesisCard, 
-  TradingDeck 
+import { apiClient } from '../api/client';
+import {
+  GomesHeader,
+  SafetyGaugeRow,
+  ThesisCard,
+  TradeForm,
+  TradingDeck,
+  SecFilingsCard
 } from './stock-detail';
+import type { MarketAlert, TradeSide } from '../types';
 import {
   BarChart3,
   FileText,
   Clock,
   Info,
-  Briefcase
+  Briefcase,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 
 // Extended position type - loosely typed to accept various position formats
@@ -50,7 +57,7 @@ interface EnrichedPosition {
   action_signal?: 'BUY' | 'HOLD' | 'SELL' | 'SNIPER';
   next_catalyst?: string;
   max_allocation_cap?: number;
-  trend_status?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  trend_status?: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
   is_deteriorated?: boolean;
 }
 
@@ -60,7 +67,12 @@ interface StockDetailProps {
   position?: EnrichedPosition;
   onClose: () => void;
   onUpdate?: () => void;
-  marketAlert?: 'RED' | 'YELLOW' | 'GREEN';
+  /**
+   * Optional override. When omitted the modal fetches the real traffic light
+   * itself — it used to default to GREEN, and since neither call site ever
+   * passed it, the RED-market buy block was unreachable in the shipped app.
+   */
+  marketAlert?: MarketAlert;
 }
 
 type TabId = 'overview' | 'trading' | 'analysis' | 'metadata' | 'position';
@@ -71,20 +83,17 @@ interface Tab {
   icon: React.ReactNode;
 }
 
-export const StockDetail: React.FC<StockDetailProps> = ({ 
-  stock: stockProp, 
+export const StockDetail: React.FC<StockDetailProps> = ({
+  stock: stockProp,
   position,
   onClose,
-  onUpdate: _onUpdate, // Reserved for future use
-  marketAlert = 'GREEN' 
+  onUpdate,
+  marketAlert: marketAlertOverride,
 }) => {
   // Derive stock from either prop or position
   const stock = stockProp ?? position?.stock;
   const hasPosition = !!position;
-  
-  // Silence unused variable warning
-  void _onUpdate;
-  
+
   // Build tabs dynamically based on whether we have position data
   const tabs: Tab[] = [
     { id: 'overview', label: 'Přehled', icon: <Info className="w-4 h-4" /> },
@@ -93,8 +102,85 @@ export const StockDetail: React.FC<StockDetailProps> = ({
     { id: 'analysis', label: 'Analýza', icon: <FileText className="w-4 h-4" /> },
     { id: 'metadata', label: 'Metadata', icon: <Clock className="w-4 h-4" /> },
   ];
-  
+
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+
+  // Real traffic light. Stays null until it actually loads — null means
+  // "unknown", which TradingDeck treats as a hard blocker, not as GREEN.
+  const [fetchedAlert, setFetchedAlert] = useState<MarketAlert | null>(null);
+  const marketAlert: MarketAlert | null = marketAlertOverride ?? fetchedAlert;
+
+  useEffect(() => {
+    if (marketAlertOverride) return;
+    let cancelled = false;
+    apiClient
+      .getMarketStatus()
+      .then((data) => {
+        if (!cancelled) setFetchedAlert(data.status as MarketAlert);
+      })
+      .catch(() => {
+        // Deliberately leave it null: a failed fetch must not read as GREEN.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [marketAlertOverride]);
+
+  // Which trade form is open, if any.
+  const [trade, setTrade] = useState<{ side: TradeSide; requireReason: boolean } | null>(null);
+
+  // Position edit — the only reachable way to fill in a purchase price
+  // (Degiro imports leave it null; see AKCION_SPEC §4/§7).
+  const [isEditingPosition, setIsEditingPosition] = useState(false);
+  const [editShares, setEditShares] = useState('');
+  const [editAvgCost, setEditAvgCost] = useState('');
+  const [isSavingPosition, setIsSavingPosition] = useState(false);
+  const [savePositionError, setSavePositionError] = useState<string | null>(null);
+  // `position` is a snapshot prop — refreshPortfolios() updates the row
+  // behind this modal but not this already-open instance. Without this
+  // override the modal would keep showing "chybí nákupní cena" right after
+  // a successful save, which reads as "it didn't work" (a trust bug).
+  const [savedOverride, setSavedOverride] = useState<{ shares_count: number; avg_cost: number } | null>(null);
+
+  const startEditingPosition = () => {
+    if (!position) return;
+    setEditShares((savedOverride?.shares_count ?? position.shares_count).toString());
+    const cost = savedOverride ? savedOverride.avg_cost : position.avg_cost;
+    setEditAvgCost(cost != null ? cost.toString() : '');
+    setSavePositionError(null);
+    setIsEditingPosition(true);
+  };
+
+  const handleSavePosition = async () => {
+    if (!position) return;
+    const shares = parseFloat(editShares);
+    const avgCost = parseFloat(editAvgCost);
+    if (isNaN(shares) || shares <= 0) {
+      setSavePositionError('Počet akcií musí být kladné číslo.');
+      return;
+    }
+    if (isNaN(avgCost) || avgCost <= 0) {
+      setSavePositionError('Nákupní cena musí být kladné číslo.');
+      return;
+    }
+    setIsSavingPosition(true);
+    setSavePositionError(null);
+    try {
+      await apiClient.updatePosition(position.id, {
+        shares_count: shares,
+        avg_cost: avgCost,
+      });
+      setIsEditingPosition(false);
+      setSavedOverride({ shares_count: shares, avg_cost: avgCost });
+      await onUpdate?.();
+    } catch (err) {
+      setSavePositionError(
+        err instanceof Error ? err.message : 'Uložení selhalo, zkus to znovu.'
+      );
+    } finally {
+      setIsSavingPosition(false);
+    }
+  };
 
   // If no stock data available, show error state
   if (!stock) {
@@ -126,16 +212,26 @@ export const StockDetail: React.FC<StockDetailProps> = ({
     }).format(value);
   };
 
-  const handleBuyClick = () => {
-    console.log(`Buy clicked for ${stock.ticker}`);
-  };
-
-  const handleSellClick = () => {
-    console.log(`Sell clicked for ${stock.ticker}`);
-  };
+  const handleBuyClick = () => setTrade({ side: 'BUY', requireReason: false });
+  const handleSellClick = () => setTrade({ side: 'SELL', requireReason: false });
+  // Reached only via "už jsem obchod udělal" — the trade went against the
+  // rules, so the reason field becomes mandatory.
+  const handleRecordOffPlan = (side: TradeSide) =>
+    setTrade({ side, requireReason: true });
 
   // Use position's current_price if available, otherwise stock's
   const currentPrice = position?.current_price ?? stock.current_price;
+
+  // Post-save display values: prefer what we just saved (see savedOverride
+  // above) over the possibly-stale position prop.
+  const displayShares = savedOverride?.shares_count ?? position?.shares_count;
+  const displayAvgCost = savedOverride ? savedOverride.avg_cost : position?.avg_cost ?? null;
+  const displayUnrealizedPl = savedOverride && currentPrice != null && displayShares != null
+    ? (currentPrice - savedOverride.avg_cost) * displayShares
+    : position?.unrealized_pl ?? null;
+  const displayUnrealizedPlPercent = savedOverride
+    ? ((currentPrice != null ? currentPrice : savedOverride.avg_cost) - savedOverride.avg_cost) / savedOverride.avg_cost * 100
+    : position?.unrealized_pl_percent ?? null;
 
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
@@ -210,7 +306,12 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                   primaryCatalyst={stock.primary_catalyst ?? null}
                   catalystDate={stock.catalyst_date ?? null}
                 />
-                
+
+                {/* What the company told the regulator. Above the price
+                    targets on purpose: reported results outrank anyone's
+                    estimate of where the price should go. */}
+                <SecFilingsCard ticker={stock.ticker} />
+
                 {/* Price Targets */}
                 {(stock.price_target || stock.price_target_short || stock.price_target_long) && (
                   <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
@@ -269,6 +370,28 @@ export const StockDetail: React.FC<StockDetailProps> = ({
             {/* Trading Tab */}
             {activeTab === 'trading' && (
               <div className="space-y-5">
+                {/* Recording a trade takes over the panel while it is open. */}
+                {trade && position && (
+                  <TradeForm
+                    positionId={position.id}
+                    ticker={stock.ticker}
+                    side={trade.side}
+                    currentPrice={currentPrice}
+                    sharesHeld={displayShares ?? 0}
+                    avgCost={displayAvgCost}
+                    currency={position.currency ?? null}
+                    requireReason={trade.requireReason}
+                    onRecorded={() => { void onUpdate?.(); }}
+                    onCancel={() => setTrade(null)}
+                  />
+                )}
+
+                {trade && !position && (
+                  <p className="text-sm text-warning">
+                    ⚠️ Obchod nelze zapsat — tahle akcie zatím není pozicí v portfoliu.
+                  </p>
+                )}
+
                 {/* Trading Deck */}
                 <TradingDeck
                   ticker={stock.ticker}
@@ -282,8 +405,11 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                   maxBuyPrice={stock.max_buy_price ?? null}
                   stopLossPrice={stock.stop_loss_price ?? null}
                   actionVerdict={stock.action_verdict}
+                  currency={position?.currency ?? null}
+                  sharesHeld={displayShares ?? 0}
                   onBuyClick={handleBuyClick}
                   onSellClick={handleSellClick}
+                  onRecordOffPlan={handleRecordOffPlan}
                 />
                 
                 {/* Entry/Exit Zones */}
@@ -383,48 +509,117 @@ export const StockDetail: React.FC<StockDetailProps> = ({
             {/* Position Tab - Only shows when position data is available */}
             {activeTab === 'position' && position && (
               <div className="space-y-5">
-                {/* Position Summary */}
+                {/* Position Summary — editable: this is the only place in the
+                    app to fill in shares/purchase price (e.g. after a Degiro
+                    import, which never carries a buy price). */}
                 <div className="bg-[#161b22] rounded-lg p-4 border border-slate-700">
-                  <h4 className="text-sm font-semibold text-emerald-400 mb-3">Pozice</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <MetricCard 
-                      label="Počet akcií" 
-                      value={position.shares_count}
-                    />
-                    <MetricCard
-                      label="Průměrná cena"
-                      value={position.avg_cost != null ? formatCurrency(position.avg_cost, position.currency) : '⚠️ doplň nákupní cenu'}
-                    />
-                    <MetricCard 
-                      label="Aktuální cena" 
-                      value={currentPrice ? formatCurrency(currentPrice, position.currency) : null}
-                    />
-                    <MetricCard 
-                      label="Hodnota pozice" 
-                      value={currentPrice ? formatCurrency(position.shares_count * currentPrice, position.currency) : null}
-                    />
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-emerald-400">Pozice</h4>
+                    {!isEditingPosition && (
+                      <button
+                        onClick={startEditingPosition}
+                        className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Upravit
+                      </button>
+                    )}
                   </div>
+
+                  {isEditingPosition ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Počet akcií</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={editShares}
+                            onChange={(e) => setEditShares(e.target.value)}
+                            className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700 rounded-lg text-slate-100 text-sm focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">
+                            Nákupní cena / akcii ({position.currency || 'USD'})
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={editAvgCost}
+                            onChange={(e) => setEditAvgCost(e.target.value)}
+                            placeholder="např. 27.75"
+                            autoFocus
+                            className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700 rounded-lg text-slate-100 text-sm placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                      {savePositionError && (
+                        <p className="text-xs text-red-400">{savePositionError}</p>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleSavePosition}
+                          disabled={isSavingPosition}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {isSavingPosition ? 'Ukládám…' : 'Uložit'}
+                        </button>
+                        <button
+                          onClick={() => setIsEditingPosition(false)}
+                          disabled={isSavingPosition}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Zrušit
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <MetricCard
+                        label="Počet akcií"
+                        value={displayShares}
+                      />
+                      <MetricCard
+                        label="Průměrná cena"
+                        value={displayAvgCost != null ? formatCurrency(displayAvgCost, position.currency) : '⚠️ doplň nákupní cenu'}
+                      />
+                      <MetricCard
+                        label="Aktuální cena"
+                        value={currentPrice ? formatCurrency(currentPrice, position.currency) : null}
+                      />
+                      <MetricCard
+                        label="Hodnota pozice"
+                        value={currentPrice && displayShares != null ? formatCurrency(displayShares * currentPrice, position.currency) : null}
+                      />
+                    </div>
+                  )}
                 </div>
-                
+
                 {/* P/L Section — unknown cost basis is a prompt, never a number */}
                 <div className="grid grid-cols-2 gap-4">
-                  {position.unrealized_pl != null && position.unrealized_pl_percent != null ? (
-                    <div className={`p-4 rounded-lg border ${position.unrealized_pl >= 0 ? 'bg-green-900/20 border-green-700' : 'bg-red-900/20 border-red-700'}`}>
+                  {displayUnrealizedPl != null && displayUnrealizedPlPercent != null ? (
+                    <div className={`p-4 rounded-lg border ${displayUnrealizedPl >= 0 ? 'bg-green-900/20 border-green-700' : 'bg-red-900/20 border-red-700'}`}>
                       <p className="text-xs text-slate-500 mb-1">Nerealizovaný P/L</p>
-                      <p className={`text-xl font-bold ${position.unrealized_pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {formatCurrency(position.unrealized_pl, position.currency)}
+                      <p className={`text-xl font-bold ${displayUnrealizedPl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatCurrency(displayUnrealizedPl, position.currency)}
                       </p>
-                      <p className={`text-sm ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(2)}%
+                      <p className={`text-sm ${displayUnrealizedPlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {displayUnrealizedPlPercent >= 0 ? '+' : ''}{displayUnrealizedPlPercent.toFixed(2)}%
                       </p>
                     </div>
                   ) : (
-                    <div className="p-4 rounded-lg border border-amber-700 bg-amber-900/20">
+                    <button
+                      onClick={startEditingPosition}
+                      className="text-left p-4 rounded-lg border border-amber-700 bg-amber-900/20 hover:bg-amber-900/30 transition-colors"
+                    >
                       <p className="text-xs text-slate-500 mb-1">Nerealizovaný P/L</p>
                       <p className="text-sm font-bold text-amber-400">
-                        ⚠️ Chybí nákupní cena — doplň ji v editaci pozice, P/L do té doby nelze spočítat
+                        ⚠️ Chybí nákupní cena — klikni pro doplnění, P/L do té doby nelze spočítat
                       </p>
-                    </div>
+                    </button>
                   )}
                   
                   {/* Allocation */}

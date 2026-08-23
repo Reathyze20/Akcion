@@ -1,178 +1,223 @@
+/* ============================================================================
+   Akcion — globální styly
+
+   Písma se přibalují, ne stahují: aplikace se otevírá i bez internetu
+   a české diakritice nesmí chybět řez. Archivo jede v plné variabilní
+   podobě, tedy s osou šířky (font-stretch 62–125 %), kterou používá
+   displejové písmo v panelu.
+   ============================================================================ */
+
+@import '@fontsource-variable/archivo/standard.css';
+
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
+@import './design/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ================================================================
-   AKCION PRO - Professional Investment Terminal
-   Design Philosophy: Bloomberg meets Linear
-   - Minimal color, maximum clarity
-   - Data-first, not decoration-first
-   - Monochrome with semantic accents only
-================================================================ */
+/* ---------------------------------------------------------------------------
+   Základ
+   --------------------------------------------------------------------------- */
 
 :root {
-  /* System fonts for maximum rendering quality */
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  
-  /* Semantic colors as CSS variables - ONLY for indicators.
-     Desaturated: color = meaning, never decoration. */
-  --color-positive: #4da37a;
-  --color-negative: #c95c5c;
-  --color-warning: #c0913f;
-  /* Accent for interactive elements */
-  --color-accent: #4f81b3;
+  font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  font-synthesis-weight: none;
 }
 
 body {
-  /* Deep, near-black background - easy on the eyes */
-  background-color: #0a0c10;
-  color: #e8ecf4;
+  margin: 0;
+  background-color: rgb(var(--page));
+  color: rgb(var(--ink));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Minimal scrollbar that doesn't distract */
+/* Číslice lícují ve sloupcích všude, kde se čtou jako data. */
+.font-mono,
+table,
+[data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Viditelné zaostření klávesnicí. Bez něj se aplikace nedá ovládat bez myši. */
+:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Posuvník, který nepřekáží a drží se tématu. */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: #2a3140;
-  border-radius: 3px;
+  background-color: rgb(var(--border-strong));
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #3a4355;
+  background-color: rgb(var(--text-muted));
 }
 
+/* ---------------------------------------------------------------------------
+   Komponenty
+   --------------------------------------------------------------------------- */
+
 @layer components {
-  /* ================================================================
-     PROFESSIONAL CARD SYSTEM
-     - Subtle borders, no heavy shadows
-     - Consistent elevation hierarchy
-  ================================================================ */
+
+  /* --- panel: odkud aplikace mluví ------------------------------------- */
+
+  .panel {
+    @apply bg-frame text-frame-text border border-frame-line;
+  }
+  .panel-inset {
+    @apply bg-frame-raised border border-frame-line rounded-card;
+  }
+
+  /* --- list: kde se vedou záznamy -------------------------------------- */
+
+  .sheet {
+    @apply bg-sheet text-sheet-text border border-sheet-rule rounded-card overflow-hidden;
+  }
+  .sheet-head {
+    @apply flex items-baseline gap-3 px-4 py-3 border-b border-sheet-rule;
+  }
+  .sheet-title {
+    @apply font-display text-[13px] font-bold uppercase tracking-[0.09em];
+  }
+  .sheet-row {
+    @apply px-4 py-3 border-b border-sheet-rule last:border-b-0;
+  }
+  .sheet-row-alt {
+    @apply even:bg-sheet-alt;
+  }
+
+  /* --- popisky a hodnoty ------------------------------------------------ */
+
+  .eyebrow {
+    @apply font-mono text-[10px] font-medium uppercase tracking-[0.16em];
+  }
+  .data-label {
+    @apply font-mono text-[11px] font-medium text-text-muted uppercase tracking-wider;
+  }
+  .data-value {
+    @apply font-mono text-sm font-semibold text-text-primary;
+  }
+  .data-value-positive {
+    @apply font-mono text-sm font-semibold text-positive;
+  }
+  .data-value-negative {
+    @apply font-mono text-sm font-semibold text-negative;
+  }
+
+  /* --- karty (stávající komponenty) ------------------------------------ */
+
   .pro-card {
-    @apply bg-[#12151a] border border-[#1e2430] rounded-lg;
+    @apply bg-surface-raised border border-border-subtle rounded-card;
     transition: border-color 0.15s ease, background-color 0.15s ease;
   }
   .pro-card:hover {
-    @apply border-[#2a3140] bg-[#181c24];
+    @apply border-border bg-surface-hover;
   }
   .pro-card-elevated {
-    @apply bg-[#181c24] border border-[#2a3140] rounded-lg;
+    @apply bg-surface-overlay border border-border rounded-card;
   }
 
-  /* ================================================================
-     DATA DISPLAY COMPONENTS
-     - Optimized for financial data readability
-  ================================================================ */
-  .data-label {
-    @apply text-[11px] font-medium text-[#6b7280] uppercase tracking-wider;
-  }
-  .data-value {
-    @apply text-sm font-semibold text-[#e8ecf4] font-mono;
-  }
-  .data-value-positive {
-    @apply text-sm font-semibold text-[#4da37a] font-mono;
-  }
-  .data-value-negative {
-    @apply text-sm font-semibold text-[#c95c5c] font-mono;
-  }
+  /* --- štítky ----------------------------------------------------------- */
 
-  /* ================================================================
-     BADGE SYSTEM
-     - Flat, muted colors
-     - Clear semantic meaning
-  ================================================================ */
   .badge {
-    @apply px-2 py-0.5 text-[11px] font-semibold rounded;
+    @apply px-2 py-0.5 text-[11px] font-semibold rounded-input;
   }
   .badge-positive {
-    @apply bg-[rgba(77,163,122,0.10)] text-[#4da37a] border border-[rgba(77,163,122,0.18)];
+    @apply bg-positive-bg text-positive border border-positive-border;
   }
   .badge-negative {
-    @apply bg-[rgba(201,92,92,0.10)] text-[#c95c5c] border border-[rgba(201,92,92,0.18)];
+    @apply bg-negative-bg text-negative border border-negative-border;
   }
   .badge-warning {
-    @apply bg-[rgba(192,145,63,0.10)] text-[#c0913f] border border-[rgba(192,145,63,0.18)];
+    @apply bg-warning-bg text-warning border border-warning-border;
   }
   .badge-info {
-    @apply bg-[rgba(79,129,179,0.10)] text-[#4f81b3] border border-[rgba(79,129,179,0.18)];
+    @apply bg-accent-bg text-accent border border-accent-border;
   }
   .badge-neutral {
-    @apply bg-[#1e232d] text-[#9ca3b0] border border-[#2a3140];
+    @apply bg-surface-hover text-text-secondary border border-border;
   }
 
-  /* ================================================================
-     BUTTON SYSTEM
-     - Primary: Solid accent (main CTA)
-     - Secondary: Subtle surface (secondary actions)
-     - Ghost: Minimal (tertiary actions)
-     - Danger: Red semantic (destructive actions)
-  ================================================================ */
+  /* --- tlačítka --------------------------------------------------------- */
+
   .btn-primary {
-    @apply px-4 py-2 bg-accent hover:bg-accent-hover text-white font-semibold rounded-md transition-colors flex items-center gap-2;
+    @apply px-4 py-2 bg-accent hover:bg-accent-hover text-text-inverse font-semibold rounded-button transition-colors flex items-center gap-2;
   }
   .btn-secondary {
-    @apply px-4 py-2 bg-surface-hover hover:bg-surface-active text-text-primary border border-border font-semibold rounded-md transition-colors flex items-center gap-2;
+    @apply px-4 py-2 bg-surface-hover hover:bg-surface-active text-text-primary border border-border font-semibold rounded-button transition-colors flex items-center gap-2;
   }
   .btn-danger {
-    @apply px-4 py-2 bg-negative-bg hover:bg-negative/20 text-negative font-semibold rounded-md transition-colors flex items-center gap-2;
+    @apply px-4 py-2 bg-negative-bg hover:bg-negative/20 text-negative font-semibold rounded-button transition-colors flex items-center gap-2;
   }
   .btn-ghost {
-    @apply px-4 py-2 bg-transparent hover:bg-surface-hover text-text-muted hover:text-text-primary font-medium rounded-md transition-colors flex items-center gap-2;
+    @apply px-4 py-2 bg-transparent hover:bg-surface-hover text-text-muted hover:text-text-primary font-medium rounded-button transition-colors flex items-center gap-2;
   }
 
-  /* ================================================================
-     TABLE STYLES
-     - Clean, minimal borders
-     - Alternating row subtle distinction
-  ================================================================ */
+  /* --- tabulky ---------------------------------------------------------- */
+
   .table-pro {
     @apply w-full text-sm;
   }
   .table-pro thead th {
-    @apply px-4 py-3 text-left text-[11px] font-medium text-[#6b7280] uppercase tracking-wider border-b border-[#1e2430];
+    @apply px-4 py-3 text-left text-[11px] font-medium text-text-muted uppercase tracking-wider border-b border-border-subtle;
   }
   .table-pro tbody tr {
-    @apply border-b border-[#1e2430] hover:bg-[#12151a] transition-colors cursor-pointer;
+    @apply border-b border-border-subtle hover:bg-surface-hover transition-colors cursor-pointer;
   }
   .table-pro tbody td {
     @apply px-4 py-3;
   }
 
-  /* ================================================================
-     SCORE INDICATOR
-     - Monochrome base with semantic color for value
-  ================================================================ */
-  .score-high {
-    @apply text-[#4da37a];
-  }
-  .score-medium {
-    @apply text-[#c0913f];
-  }
-  .score-low {
-    @apply text-[#c95c5c];
-  }
-  .score-neutral {
-    @apply text-[#6b7280];
-  }
+  /* --- skóre ------------------------------------------------------------ */
 
-  /* ================================================================
-     INPUT STYLES
-     - Minimal, functional
-  ================================================================ */
+  .score-high    { @apply text-positive; }
+  .score-medium  { @apply text-warning; }
+  .score-low     { @apply text-negative; }
+  .score-neutral { @apply text-text-muted; }
+
+  /* --- vstupy ----------------------------------------------------------- */
+
   .input-pro {
-    @apply w-full px-3 py-2 bg-surface-raised border border-border rounded text-text-primary placeholder-text-muted;
+    @apply w-full px-3 py-2 bg-surface-raised border border-border rounded-input text-text-primary placeholder-text-muted;
     @apply focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30;
   }
 }
 
-/* Disable all unnecessary animations for professional feel */
+/* ---------------------------------------------------------------------------
+   Pohyb
+   Aplikaci používá člověk s roztroušenou sklerózou. Omezení pohybu tady
+   není zaškrtávací políčko — animace se opravdu vypnou.
+   --------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  /* Keep only essential transitions */
   .transition-colors {
     transition-duration: 0.15s;
   }

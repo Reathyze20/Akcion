@@ -134,23 +134,20 @@ class StockStatus(str, Enum):
 # ==============================================================================
 
 @dataclass(frozen=True)
-class GeminiConfig:
+class AIConfig:
     """
-    Immutable configuration for Gemini AI model.
-    
-    Frozen dataclass ensures these values cannot be accidentally modified.
+    Model-independent analysis settings.
+
+    The model name deliberately does NOT live here. It has exactly one home,
+    `services.llm.MODEL`. When it was written out in five places, a model
+    retired on 1 June went on being called until late August.
     """
-    model_name: str = "gemini-2.0-flash"
-    """Stable Gemini model for financial analysis."""
-    
+
     max_output_tokens: int = 8192
     """Maximum response length."""
-    
-    temperature: float = 0.1
-    """Low temperature for consistent, factual responses."""
 
 
-GEMINI_CONFIG: Final[GeminiConfig] = GeminiConfig()
+AI_CONFIG: Final[AIConfig] = AIConfig()
 
 
 # ==============================================================================

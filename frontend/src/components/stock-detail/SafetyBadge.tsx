@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import type { MarketAlert } from '../../types';
 import { 
   Shield, 
   AlertTriangle, 
@@ -91,7 +92,8 @@ export interface SafetyGaugeRowProps {
   cashRunwayMonths: number | null;
   inflectionStatus: 'WAIT_TIME' | 'UPCOMING' | 'ACTIVE_GOLD_MINE' | null;
   priceZone: string | null;
-  marketAlert?: 'RED' | 'YELLOW' | 'GREEN';
+  /** `null` = not known yet. Renders as unknown, never as safe. */
+  marketAlert: MarketAlert | null;
 }
 
 /**
@@ -126,20 +128,30 @@ const getPriceZoneStatus = (zone: string | null): SafetyStatus => {
   return 'danger'; // SELL_ZONE, OVERVALUED
 };
 
+/**
+ * Determine market traffic-light safety status
+ * @fiduciary Rule: only GREEN is safe. Unknown is NOT safe — this badge
+ * used to fall through to 'safe' for anything that wasn't RED or YELLOW,
+ * which painted both ORANGE and "not loaded yet" green.
+ */
+const getMarketAlertStatus = (alert: MarketAlert | null): SafetyStatus => {
+  if (alert === null) return 'unknown';
+  if (alert === 'GREEN') return 'safe';
+  if (alert === 'YELLOW') return 'warning';
+  return 'danger'; // ORANGE, RED
+};
+
 export const SafetyGaugeRow: React.FC<SafetyGaugeRowProps> = ({
   cashRunwayMonths,
   inflectionStatus,
   priceZone,
-  marketAlert = 'GREEN',
+  marketAlert,
 }) => {
   const runwayStatus = getCashRunwayStatus(cashRunwayMonths);
   const lifecycleStatus = getLifecycleStatus(inflectionStatus);
   const zoneStatus = getPriceZoneStatus(priceZone);
   
-  // Market alert badge
-  const marketStatus: SafetyStatus = 
-    marketAlert === 'RED' ? 'danger' :
-    marketAlert === 'YELLOW' ? 'warning' : 'safe';
+  const marketStatus: SafetyStatus = getMarketAlertStatus(marketAlert);
   
   return (
     <div className="flex flex-wrap gap-2 p-3 bg-primary-card rounded-lg border border-border">

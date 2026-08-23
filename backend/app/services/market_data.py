@@ -98,17 +98,21 @@ class MarketDataService:
     # ==========================================================================
 
     @staticmethod
-    def _get_price_from_massive(ticker: str) -> float | None:
+    def _get_previous_close_from_massive(ticker: str) -> float | None:
         """
-        Fetch current price from Massive.com API (US stocks only).
-        
-        Uses previous day close (15-min delayed on Starter plan).
-        
+        Fetch the PREVIOUS DAY'S CLOSE from Massive.com (US stocks only).
+
+        The endpoint is `/prev`; this has never been a live quote, and the name
+        now says so. It was called `_get_price_from_massive` and its result was
+        handed onward as "current price" — accurate to within a day, which is
+        fine for a method that holds positions for months, but not something
+        the app gets to leave unstated.
+
         Args:
             ticker: Stock ticker symbol
             
         Returns:
-            Price as float or None if fetch failed
+            Previous close as float, or None if the fetch failed
         """
         try:
             settings = get_settings()
@@ -165,9 +169,12 @@ class MarketDataService:
                 current_price = data.get("c")
                 if current_price and current_price > 0:
                     return float(current_price)
-                prev_close = data.get("pc")
-                if prev_close and prev_close > 0:
-                    return float(prev_close)
+                # No quote. There used to be a fallback to `pc` (the previous
+                # close) here, returned to the caller as the current price with
+                # nothing marking the difference. A missing quote is missing —
+                # the next source gets to try, and if none has one, the app
+                # says so.
+                logger.debug(f"Finnhub has no quote for {ticker} (c=0)")
             elif response.status_code == 429:
                 logger.warning(f"Finnhub rate limit hit for {ticker}")
             else:
@@ -253,16 +260,17 @@ class MarketDataService:
             except Exception as e:
                 logger.warning(f"Yahoo Cache failed for {ticker}: {e}")
         
-        # Fallback to Massive API (US stocks)
-        price = MarketDataService._get_price_from_massive(ticker)
-        if price is not None:
-            logger.info(f"{ticker}: ${price:.2f} (Massive API)")
-            return price
-        
-        # Fallback to Finnhub.io (global)
+        # Fallback to Finnhub (global) — a live quote, so it goes before the
+        # close-based source. The old order asked for yesterday's close first.
         price = MarketDataService._get_price_from_finnhub(ticker)
         if price is not None:
-            logger.info(f"{ticker}: ${price:.2f} (Finnhub API)")
+            logger.info(f"{ticker}: ${price:.2f} (Finnhub quote)")
+            return price
+        
+        # Last resort: previous day's close. Explicitly not a live price.
+        price = MarketDataService._get_previous_close_from_massive(ticker)
+        if price is not None:
+            logger.info(f"{ticker}: ${price:.2f} (Massive — VČEREJŠÍ close)")
             return price
         
         logger.warning(f"No price data for {ticker} from any source")
@@ -515,7 +523,10 @@ class MarketDataService:
             max_age_hours: Unused (kept for API compat)
             
         Returns:
-            Dict with stats: updated_count, failed_count, cached_count, tickers
+            Dict with stats: updated_count, failed_count, stale_count,
+            cached_count, tickers. `stale_count` is prices served from
+            cache because the refresh failed — counted apart from
+            `updated_count`, which claims a fetch actually succeeded.
         """
         # Build query
         query = db.query(Position)
@@ -529,6 +540,7 @@ class MarketDataService:
                 "updated_count": 0,
                 "failed_count": 0,
                 "cached_count": 0,
+                "stale_count": 0,
                 "tickers": [],
             }
         
@@ -543,6 +555,7 @@ class MarketDataService:
         updated_count = 0
         failed_count = 0
         cached_count = 0
+        stale_count = 0
         
         for ticker in tickers_to_fetch:
             try:
@@ -555,15 +568,29 @@ class MarketDataService:
                 
                 if data and data.get("current_price"):
                     price = float(data["current_price"])
-                    
-                    # Update all positions with this ticker
+                    # A failed refresh still returns the last known row, price
+                    # and all. Writing utcnow() over that was what permanently
+                    # disabled the only guard against old data: daily_actions
+                    # flags a price older than STALE_PRICE_AFTER, and every
+                    # failure reset that clock. A week offline and the app
+                    # asserted a week-old price as today's.
+                    is_stale = bool(data.get("is_stale"))
+
                     for position in positions:
                         if position.ticker == ticker:
                             position.current_price = price
-                            position.last_price_update = datetime.utcnow()
-                    
-                    updated_count += 1
-                    logger.info(f"{ticker}: ${price:.2f} (Yahoo Cache)")
+                            if not is_stale:
+                                position.last_price_update = datetime.utcnow()
+
+                    if is_stale:
+                        stale_count += 1
+                        logger.warning(
+                            f"{ticker}: {price} je STARÁ cena "
+                            f"({data.get('stale_reason')}) — razítko stáří ponecháno"
+                        )
+                    else:
+                        updated_count += 1
+                        logger.info(f"{ticker}: ${price:.2f} (Yahoo Cache)")
                 else:
                     failed_count += 1
                     logger.warning(f"No price data for {ticker}")
@@ -572,8 +599,10 @@ class MarketDataService:
                 failed_count += 1
                 logger.error(f"Failed to fetch {ticker}: {e}")
         
-        # Count cached positions (those not updated)
-        cached_count = len(tickers_to_fetch) - updated_count - failed_count
+        # Count cached positions (those neither refreshed nor failed outright)
+        cached_count = (
+            len(tickers_to_fetch) - updated_count - failed_count - stale_count
+        )
         
         db.commit()
         
@@ -581,6 +610,10 @@ class MarketDataService:
             "updated_count": updated_count,
             "failed_count": failed_count,
             "cached_count": cached_count,
+            # Served from cache because the refresh failed. Counted separately
+            # from `updated_count`: "we showed you a price" and "we fetched you
+            # a price" are different claims.
+            "stale_count": stale_count,
             "tickers": tickers_to_fetch,
         }
 

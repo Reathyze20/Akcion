@@ -29,6 +29,7 @@ from app.core.prompts import (
     THESIS_DRIFT_PROMPT_V2,
 )
 from app.models.stock import Stock
+from app.services.llm import LLMError, complete
 from app.models.score_history import ConvictionScoreHistory, ThesisDriftAlert, AlertType
 from app.schemas.gomes import (
     DeepDueDiligenceRequest,
@@ -63,20 +64,18 @@ class GomesDeepDueDiligenceService:
     def __init__(self, db: Session):
         self.db = db
         self.settings = Settings()
-        self._init_gemini()
-    
-    def _init_gemini(self) -> None:
-        """Initialize Gemini AI client"""
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.settings.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash')
-            self.gemini_available = True
-            logger.info("Gemini 2.5 Pro initialized for Deep Due Diligence")
-        except Exception as e:
-            logger.error(f"Failed to initialize Gemini: {e}")
-            self.gemini_available = False
-            self.model = None
+
+    @property
+    def ai_available(self) -> bool:
+        """
+        Whether an analysis can be attempted at all.
+
+        Only the credential is checked here. Which model is called, and whether
+        it is still a live one, is `services.llm`'s business — this class used
+        to name the model itself, and that is precisely how it went on calling
+        a retired one for twelve weeks.
+        """
+        return bool(self.settings.anthropic_api_key)
     
     async def analyze(
         self,
@@ -93,8 +92,10 @@ class GomesDeepDueDiligenceService:
         Returns:
             DeepDueDiligenceResponse with analysis and structured data
         """
-        if not self.gemini_available:
-            raise RuntimeError("Gemini AI not available")
+        if not self.ai_available:
+            raise RuntimeError(
+                "Analýza není dostupná: chybí ANTHROPIC_API_KEY v backend/.env"
+            )
         
         # Get existing stock data for thesis drift comparison
         existing_data = ""
@@ -122,14 +123,13 @@ class GomesDeepDueDiligenceService:
                 transcript=request.transcript[:50000]
             )
         
-        # Call Gemini
+        # Call the model
         try:
-            response = self.model.generate_content(prompt)
-            raw_output = response.text
-            logger.info(f"Gemini raw output length: {len(raw_output)}")
-        except Exception as e:
-            logger.error(f"Gemini API call failed: {e}")
-            raise RuntimeError(f"AI analysis failed: {e}")
+            raw_output = complete(prompt)
+            logger.info(f"AI raw output length: {len(raw_output)}")
+        except LLMError as e:
+            logger.error(f"AI call failed: {e}")
+            raise RuntimeError(f"Analýza selhala: {e}")
         
         # Parse response
         try:
@@ -295,31 +295,12 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         # Extract current_price from AI response or use provided
         current_price = data_dict.get("current_price")
         
-        # Get price lines with fallback calculations
+        # Price lines: only ever what the AI extracted from the transcript.
+        # Never back-calculated from current_price — a guessed number presented
+        # as the analyst's stated buy/sell zone would be worse than a missing one.
         green_line = data_dict.get("green_line")
         red_line = data_dict.get("red_line")
         grey_line = data_dict.get("grey_line")
-        
-        # Fallback: Calculate price lines if not provided by AI
-        price_lines_estimated = data_dict.get("price_lines_estimated", False)
-        if current_price and current_price > 0:
-            if not green_line:
-                # Default: 20% below current price (buy zone)
-                green_line = round(current_price * 0.80, 2)
-                price_lines_estimated = True
-                logger.info(f"Estimated green_line: ${green_line} (20% below ${current_price})")
-            
-            if not red_line:
-                # Default: 50% above current price (sell zone for growth stocks)
-                red_line = round(current_price * 1.50, 2)
-                price_lines_estimated = True
-                logger.info(f"Estimated red_line: ${red_line} (50% above ${current_price})")
-            
-            if not grey_line:
-                # Default: 35% below current price (danger zone)
-                grey_line = round(current_price * 0.65, 2)
-                price_lines_estimated = True
-                logger.info(f"Estimated grey_line: ${grey_line} (35% below ${current_price})")
         
         # Convert to Pydantic model
         price_targets = PriceTargetsSchema(
@@ -340,19 +321,20 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             action_signal=data_dict.get("action_signal", "HOLD"),
             kelly_criterion_hint=float(data_dict.get("kelly_criterion_hint", 5)),
             price_targets=price_targets,
-            green_line=green_line,  # Use calculated/fallback value
-            red_line=red_line,      # Use calculated/fallback value
+            green_line=green_line,
+            red_line=red_line,
+            grey_line=grey_line,
+            current_price=current_price,
             key_milestones=data_dict.get("key_milestones", []),
             red_flags=data_dict.get("red_flags", []),
             edge=data_dict.get("edge"),
             catalysts=data_dict.get("catalysts"),
             risks=data_dict.get("risks"),
         )
-        
-        # Log if price lines were estimated
-        if price_lines_estimated:
-            logger.info(f"Price lines for {data.ticker} were estimated (not from transcript)")
-        
+
+        if not green_line or not red_line:
+            logger.info(f"Price lines for {data.ticker} not stated in transcript — left null")
+
         # Extract analysis text (everything before JSON)
         if json_match:
             analysis_text = raw_output[:json_match.start()].strip()
@@ -433,16 +415,44 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         """
         Update or create stock record from analysis result.
         Also saves to score history for thesis drift tracking.
-        
+
+        All of it lands or none of it does. This used to commit the new
+        conviction score, then build the score-history row, then commit again —
+        and the line in between read `data.current_price`, a field the schema
+        did not have. So the failure mode was the worst available one: the UI
+        said "analýza selhala" while the score in the database had already
+        changed, with no history row recording that it had.
+
         Args:
             result: Analysis result
             analysis_source: Source of analysis (deep_dd, transcript, earnings, manual)
             
         Returns:
             Updated/created Stock model
+
+        Raises:
+            Exception: re-raised after rollback. Nothing is left half-written.
         """
         data = result.data
         
+        try:
+            return self._apply_analysis(result, data, analysis_source)
+        except Exception:
+            # A half-applied analysis is worse than none: the score would move
+            # without the history row that explains why.
+            self.db.rollback()
+            logger.exception(
+                f"Zápis analýzy {data.ticker} selhal — databáze vrácena beze změn"
+            )
+            raise
+
+    def _apply_analysis(
+        self,
+        result: DeepDueDiligenceResponse,
+        data: DeepDueDiligenceResult,
+        analysis_source: str,
+    ) -> Stock:
+        """The write itself. One transaction, committed by its caller's guard."""
         # Find or create stock
         stock = self.db.query(Stock).filter(
             Stock.ticker == data.ticker.upper()
@@ -468,9 +478,11 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
             stock.green_line = data.green_line
         if data.red_line:
             stock.red_line = data.red_line
+        if data.grey_line:
+            stock.grey_line = data.grey_line
         
         # Calculate price zone based on current price and lines
-        if hasattr(data, 'current_price') and data.current_price and data.green_line and data.red_line:
+        if data.current_price and data.green_line and data.red_line:
             stock.current_price = data.current_price
             price_range = data.red_line - data.green_line
             if price_range > 0:
@@ -505,8 +517,9 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         if data.price_targets.realistic:
             stock.price_target = str(data.price_targets.realistic)
         
-        self.db.commit()
-        self.db.refresh(stock)
+        # flush, not commit: `stock.id` is needed for the history row below, and
+        # that is the only thing the old commit here was buying.
+        self.db.flush()
         
         # === SAVE TO SCORE HISTORY ===
         score_history = ConvictionScoreHistory(
@@ -556,5 +569,6 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
                 self.db.add(alert)
         
         self.db.commit()
+        self.db.refresh(stock)
         
         return stock

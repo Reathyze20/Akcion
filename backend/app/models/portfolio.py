@@ -343,6 +343,21 @@ class InvestmentLog(Base):
         nullable=True,
         doc="Price per share at time of action"
     )
+    cost_basis = Column(
+        Float,
+        nullable=True,
+        doc="Position avg_cost at the moment of the trade (NULL = purchase price unknown)"
+    )
+    realized_pl = Column(
+        Float,
+        nullable=True,
+        doc="P/L locked in on a SELL. NULL when cost_basis is unknown — never 0 as a stand-in."
+    )
+    currency = Column(
+        String(3),
+        nullable=True,
+        doc="ISO code for price/amount/cost_basis/realized_pl on this row"
+    )
     emotion_tag = Column(
         String(100),
         nullable=True,

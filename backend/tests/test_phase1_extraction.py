@@ -46,13 +46,12 @@ def test_extractors():
 
 def test_prompts():
     """Verify prompts are loaded correctly"""
-    from app.core.prompts import FIDUCIARY_ANALYST_PROMPT, GEMINI_MODEL_NAME
+    from app.core.prompts import FIDUCIARY_ANALYST_PROMPT
     
     assert "Fiduciary" in FIDUCIARY_ANALYST_PROMPT
     assert "Multiple Sclerosis" in FIDUCIARY_ANALYST_PROMPT
     assert "AGGRESSIVE EXTRACTION" in FIDUCIARY_ANALYST_PROMPT
     assert "Gomes" in FIDUCIARY_ANALYST_PROMPT
-    assert GEMINI_MODEL_NAME == "gemini-3-pro-preview"
     
     print("✓ All critical prompt content preserved")
     print("  - Fiduciary analyst persona: PRESENT")

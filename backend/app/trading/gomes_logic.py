@@ -21,6 +21,8 @@ Reference: Mark Gomes "How I Make Money On Stocks" transcript
 from __future__ import annotations
 
 import math
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -346,95 +348,128 @@ class StockLifecycleClassifier:
     ]
     
     @classmethod
-    def classify(cls, ticker: str, text: str | None = None) -> LifecycleAssessment:
+    def _sentences_about(
+        cls, ticker: str, text: str, aliases: Sequence[str]
+    ) -> list[str]:
         """
-        Classify stock into lifecycle phase.
-        
+        The sentences that actually name this company.
+
+        A Gomes stream covers forty tickers in two hours. Searching the whole
+        document for a phrase and attributing the hit to whichever ticker the
+        caller happened to pass in is not evidence about that company — it is
+        evidence that someone said the words. Scope first, then count.
+        """
+        names = {n.lower() for n in (ticker, *aliases) if n and len(n) >= 2}
+        if not names:
+            return []
+        pattern = re.compile(
+            r"\b(" + "|".join(re.escape(n) for n in sorted(names)) + r")\b"
+        )
+        return [
+            sentence
+            for sentence in re.split(r"(?<=[.!?])\s+|\n", text)
+            if pattern.search(sentence.lower())
+        ]
+
+    @classmethod
+    def classify(
+        cls,
+        ticker: str,
+        text: str | None = None,
+        *,
+        aliases: Sequence[str] = (),
+    ) -> LifecycleAssessment:
+        """
+        Classify stock into lifecycle phase from text that mentions it.
+
         Args:
-            ticker: Stock ticker
-            text: Optional transcript/analysis text
-            
-        Returns:
-            LifecycleAssessment with phase and investability
-            
+            ticker: Stock ticker.
+            text: Transcript or analysis text. May cover many companies.
+            aliases: Other ways this company is named in speech — Gomes says
+                "gatekeeper", never "GKPRF". Without them a transcript that
+                never spells the ticker yields UNKNOWN, which is the safe
+                answer, not a wrong one.
+
+        Cylinders are deliberately NOT inferred here; see below.
+
         Ref: Minute 31:28 - "Wait Time is the KILLER. Don't invest."
         """
         signals: dict[str, bool] = {}
-        text_lower = (text or "").lower()
-        
-        # Check for WAIT_TIME signals first (highest priority for rejection)
-        wait_time_count = 0
-        for signal in cls.WAIT_TIME_SIGNALS:
-            if signal in text_lower:
-                signals[f"wait_time:{signal}"] = True
-                wait_time_count += 1
-        
-        # Check for GOLD_MINE signals
-        gold_mine_count = 0
-        for signal in cls.GOLD_MINE_SIGNALS:
-            if signal in text_lower:
-                signals[f"gold_mine:{signal}"] = True
-                gold_mine_count += 1
-        
-        # Check for GREAT_FIND signals
-        great_find_count = 0
-        for signal in cls.GREAT_FIND_SIGNALS:
-            if signal in text_lower:
-                signals[f"great_find:{signal}"] = True
-                great_find_count += 1
-        
-        # Determine phase based on signal counts
+        scoped = cls._sentences_about(ticker, text or "", aliases)
+        haystack = " ".join(scoped).lower()
+
+        def count(kind: str, phrases: list[str]) -> int:
+            hits = 0
+            for phrase in phrases:
+                if phrase in haystack:
+                    signals[f"{kind}:{phrase}"] = True
+                    hits += 1
+            return hits
+
+        # WAIT_TIME first — it is the one that blocks money.
+        wait_time_count = count("wait_time", cls.WAIT_TIME_SIGNALS)
+        gold_mine_count = count("gold_mine", cls.GOLD_MINE_SIGNALS)
+        great_find_count = count("great_find", cls.GREAT_FIND_SIGNALS)
+
         phase = LifecyclePhase.UNKNOWN
         is_investable = True
         reasoning = ""
         confidence = "LOW"
-        
-        # WAIT_TIME takes priority (it's the killer)
+
         if wait_time_count >= 2:
             phase = LifecyclePhase.WAIT_TIME
             is_investable = False
             reasoning = f"Detected {wait_time_count} Wait Time signals - DEAD MONEY"
             confidence = "HIGH" if wait_time_count >= 3 else "MEDIUM"
-        
+
         elif gold_mine_count >= 2:
             phase = LifecyclePhase.GOLD_MINE
             is_investable = True
             reasoning = f"Detected {gold_mine_count} Gold Mine signals - proven execution"
             confidence = "HIGH" if gold_mine_count >= 3 else "MEDIUM"
-        
+
         elif great_find_count >= 2:
             phase = LifecyclePhase.GREAT_FIND
             is_investable = True
             reasoning = f"Detected {great_find_count} Great Find signals - early opportunity"
             confidence = "MEDIUM"
-        
-        elif text:
-            # Text provided but no clear signals
-            reasoning = "Insufficient signals to determine phase"
-        else:
+
+        elif not text:
             reasoning = "No text provided for analysis"
-        
-        # Check for "firing on all cylinders"
-        firing = None
-        cylinders = None
-        if "firing on all cylinders" in text_lower or "10 cylinders" in text_lower:
-            firing = True
-            cylinders = 10
-        elif "not firing" in text_lower or "problems" in text_lower:
-            firing = False
-            cylinders = 5  # Default partial
-        
+        elif not scoped:
+            reasoning = f"Text does not mention {ticker} - nothing to judge it on"
+        else:
+            reasoning = "Insufficient signals to determine phase"
+
+        # Cylinders (0-10) are NOT derived here, on purpose.
+        #
+        # This method used to search the whole document for "10 cylinders" and
+        # record ten if it appeared, five if the word "problems" did. Run over
+        # a real two-hour Gomes stream that produced ten cylinders and
+        # GOLD_MINE for ITMSF, because the phrase had been said about WATT's
+        # chart and about GateKeeper. Ten cylinders means a deserved score of
+        # zero, which lets almost any beaten-down price clear the Buy Guard.
+        #
+        # Scoping the search to sentences naming the company is necessary but
+        # still not sufficient: this very transcript says "I think Watt is
+        # executing on MORE THAN one cylinder", and a count lifted out of that
+        # is wrong in a way that spends money. A cylinder count is a judgement
+        # about a business, not a substring, and it reaches the database only
+        # through claim extraction with a verified quote behind it.
+        #
+        # Unknown cylinders make the Buy Guard refuse to emit BUY. Failing
+        # closed is the correct behaviour here.
         return LifecycleAssessment(
             ticker=ticker,
             phase=phase,
             is_investable=is_investable,
-            firing_on_all_cylinders=firing,
-            cylinders_count=cylinders,
+            firing_on_all_cylinders=None,
+            cylinders_count=None,
             signals=signals,
             reasoning=reasoning,
             confidence=confidence
         )
-    
+
     @classmethod
     def is_investable(cls, phase: LifecyclePhase | str) -> bool:
         """

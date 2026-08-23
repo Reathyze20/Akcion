@@ -45,6 +45,7 @@ from ..schemas.responses import (
     StockAnalysisResult,
     StockResponse,
 )
+from ..services import llm
 from ..services.gomes_intelligence import GomesIntelligenceService
 
 
@@ -511,21 +512,36 @@ async def analyze_google_docs(
 @router.get(
     "/health",
     summary="Health check for analysis service",
-    description="Verify that Gemini AI connection is working",
+    description="Report what the analysis path is actually configured to do",
 )
 async def health_check():
-    """Check if the analysis service is operational."""
-    try:
-        settings = get_settings()
-        analyzer = StockAnalyzer(api_key=settings.gemini_api_key)
-        return {
-            "status": "healthy",
-            "service": "analysis",
-            "model": "gemini-3-pro-preview",
-            "features": ["google_search", "aggressive_extraction", "gomes_rules"],
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Analysis service unavailable: {str(e)}",
-        )
+    """
+    Report the analysis service's real configuration.
+
+    This endpoint used to answer "healthy", name a model
+    (`gemini-3-pro-preview`) that no code path has ever called, and advertise a
+    `google_search` feature whose config was the literal value `None`. It said
+    all of that while the analysis had been dead for twelve weeks, because the
+    only thing it actually checked was that a constructor did not raise.
+
+    Health you cannot trust is worse than none — it is the first place you look
+    when something feels wrong. So this now reports only what it can verify
+    without spending money: which model the app would call, and whether the
+    credential to call it exists. It does not claim the model answers; a live
+    call on every health check would bill you for the reassurance.
+    """
+    settings = get_settings()
+    key_present = bool(settings.anthropic_api_key)
+
+    return {
+        "status": "configured" if key_present else "missing_credentials",
+        "service": "analysis",
+        "model": llm.MODEL,
+        "api_key_present": key_present,
+        "features": ["aggressive_extraction", "gomes_rules"],
+        "note": (
+            None if key_present
+            else "Chybí ANTHROPIC_API_KEY v backend/.env — analýza nepoběží."
+        ),
+        "web_access": False,
+    }

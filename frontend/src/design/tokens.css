@@ -1,0 +1,205 @@
+/* ============================================================================
+   Akcion — barevné tokeny
+   ============================================================================
+
+   Dvě témata, jeden koncept.
+
+   Aplikace má tři druhy plochy a každá něco znamená:
+
+     podklad (page)   plocha, na které všechno leží
+     panel   (frame)  odkud aplikace mluví — verdikt, semafor, navigace
+     list    (sheet)  kde se vedou záznamy — pozice, čísla, zjištění
+
+   Téma nemění ten vztah, mění osvětlení. Panel je v obou tématech
+   nejtmavší plocha, protože úsudek má mít váhu. List je v obou tématech
+   linkovaný jako účetní arch — ve světlém je bílý, v tmavém teplý tmavý.
+   Bílý arch v noční aplikaci se nečte, a přepínač existuje právě proto,
+   aby si člověk zvolil hladinu světla.
+
+   Hodnoty jsou trojice RGB bez funkce, ne hex. Tailwind je skládá přes
+   rgb(var(--x) / <alpha-value>), takže dál fungují zápisy jako
+   bg-positive/20 nebo border-accent/30 ve stávajících komponentách.
+
+   Jediná chroma na stránce je semafor. Barva tady něco znamená;
+   dekorativní barvu aplikace nemá.
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   SVĚTLÉ TÉMA — výchozí definice na holém :root
+   Musí být kompletní. Token, který má jedinou definici uvnitř media dotazu
+   nebo pod [data-theme], se ve výchozím stavu nikdy neuplatní.
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* --- podklad a listy ---------------------------------------------------- */
+  --page:            242 240 233;   /* #F2F0E9  teplá lomená bílá */
+  --sheet:           255 253 248;   /* #FFFDF8  arch, světlejší než podklad */
+  --sheet-alt:       246 243 234;   /* #F6F3EA  střídavý řádek */
+  --rule:            223 217 201;   /* #DFD9C9  linka archu */
+
+  --ink:              35  38  31;   /* #23261F  text na archu */
+  --ink-2:            99 102  91;   /* #63665B  druhotný text */
+  --ink-3:           138 141 130;   /* #8A8D82  potlačený text */
+
+  /* --- panel (úsudek) — tmavý v obou tématech ---------------------------- */
+  --frame:            28  32  27;   /* #1C201B */
+  --frame-2:          38  43  36;   /* #262B24 */
+  --frame-3:          51  57  48;   /* #333930  linky v panelu */
+  --on-frame:        233 231 223;   /* #E9E7DF */
+  --on-frame-2:      157 160 150;   /* #9DA096 */
+
+  /* --- semafor: sytější, aby držel kontrast na bílém --------------------- */
+  --signal-green:     63 122  75;   /* #3F7A4B */
+  --signal-amber:    138 106  16;   /* #8A6A10 */
+  --signal-orange:   168  95  34;   /* #A85F22 */
+  --signal-red:      156  58  50;   /* #9C3A32 */
+
+  /* --- interakce ---------------------------------------------------------- */
+  --accent:           47  86 122;   /* #2F567A  ocelová modř, ztmavená */
+  --accent-strong:    36  68  98;
+
+  /* --- kompatibilita se stávajícími komponentami ------------------------- *
+   * 44 komponent používá bg-surface-raised, text-text-primary a spol.
+   * Namapované na nové plochy tu zůstávají funkční a rovnou se přebarvují
+   * s tématem, aniž by se musely přepisovat.                               */
+  --surface-base:    242 240 233;
+  --surface-raised:  255 253 248;
+  --surface-overlay: 255 255 255;
+  --surface-hover:   246 243 234;
+  --surface-active:  237 233 221;
+
+  --border-subtle:   232 227 214;
+  --border-default:  223 217 201;
+  --border-strong:   201 194 176;
+
+  --text-primary:     35  38  31;
+  --text-secondary:   99 102  91;
+  --text-muted:      138 141 130;
+  --text-inverse:    255 253 248;
+
+  --positive:         63 122  75;
+  --positive-muted:   50  99  60;
+  --negative:        156  58  50;
+  --negative-muted:  128  47  40;
+  --warning:         138 106  16;
+  --warning-muted:   112  86  12;
+
+  /* Průhlednost podkladů a rámečků indikátorů. Ve světlém tématu musí být
+     silnější, jinak se ztratí na bílé. */
+  --tint-bg:    0.10;
+  --tint-border: 0.28;
+
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------------------
+   TMAVÉ TÉMA
+   Dvakrát: jednou pro systémovou volbu (kterou výslovná volba světlého
+   přebije), jednou pro výslovnou volbu tmavého.
+   --------------------------------------------------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page:             15  17  16;   /* #0F1110  zelenočerná, ne modročerná */
+    --sheet:            26  30  25;   /* #1A1E19  arch při nočním světle */
+    --sheet-alt:        32  37  31;   /* #20251F */
+    --rule:             55  61  52;   /* #373D34 */
+
+    --ink:             232 231 223;   /* #E8E7DF */
+    --ink-2:           142 145 137;   /* #8E9189 */
+    --ink-3:            98 101  93;   /* #62655D */
+
+    --frame:            23  26  23;   /* #171A17 */
+    --frame-2:          30  34  30;   /* #1E221E */
+    --frame-3:          39  44  38;   /* #272C26 */
+    --on-frame:        232 231 223;
+    --on-frame-2:      142 145 137;
+
+    --signal-green:     92 155  98;   /* #5C9B62 */
+    --signal-amber:    211 160  23;   /* #D3A017 */
+    --signal-orange:   201 119  46;   /* #C9772F */
+    --signal-red:      178  69  61;   /* #B2453D */
+
+    --accent:          109 152 190;   /* #6D98BE  prosvětlená, aby držela na tmavé */
+    --accent-strong:   137 176 210;
+
+    --surface-base:     15  17  16;
+    --surface-raised:   26  30  25;
+    --surface-overlay:  32  37  31;
+    --surface-hover:    39  44  38;
+    --surface-active:   48  54  46;
+
+    --border-subtle:    32  37  31;
+    --border-default:   45  51  43;
+    --border-strong:    64  71  60;
+
+    --text-primary:    232 231 223;
+    --text-secondary:  142 145 137;
+    --text-muted:       98 101  93;
+    --text-inverse:     15  17  16;
+
+    --positive:         92 155  98;
+    --positive-muted:   74 128  80;
+    --negative:        178  69  61;
+    --negative-muted:  148  57  50;
+    --warning:         211 160  23;
+    --warning-muted:   174 131  18;
+
+    --tint-bg:    0.12;
+    --tint-border: 0.24;
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --page:             15  17  16;
+  --sheet:            26  30  25;
+  --sheet-alt:        32  37  31;
+  --rule:             55  61  52;
+
+  --ink:             232 231 223;
+  --ink-2:           142 145 137;
+  --ink-3:            98 101  93;
+
+  --frame:            23  26  23;
+  --frame-2:          30  34  30;
+  --frame-3:          39  44  38;
+  --on-frame:        232 231 223;
+  --on-frame-2:      142 145 137;
+
+  --signal-green:     92 155  98;
+  --signal-amber:    211 160  23;
+  --signal-orange:   201 119  46;
+  --signal-red:      178  69  61;
+
+  --accent:          109 152 190;
+  --accent-strong:   137 176 210;
+
+  --surface-base:     15  17  16;
+  --surface-raised:   26  30  25;
+  --surface-overlay:  32  37  31;
+  --surface-hover:    39  44  38;
+  --surface-active:   48  54  46;
+
+  --border-subtle:    32  37  31;
+  --border-default:   45  51  43;
+  --border-strong:    64  71  60;
+
+  --text-primary:    232 231 223;
+  --text-secondary:  142 145 137;
+  --text-muted:       98 101  93;
+  --text-inverse:     15  17  16;
+
+  --positive:         92 155  98;
+  --positive-muted:   74 128  80;
+  --negative:        178  69  61;
+  --negative-muted:  148  57  50;
+  --warning:         211 160  23;
+  --warning-muted:   174 131  18;
+
+  --tint-bg:    0.12;
+  --tint-border: 0.24;
+
+  color-scheme: dark;
+}

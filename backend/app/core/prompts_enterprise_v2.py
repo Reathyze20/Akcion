@@ -42,10 +42,12 @@ Tvá analýza musí generovat MASTER SIGNAL, který kombinuje 3 pilíře:
    - Valuace: Green Line (koupit) vs Red Line (prodat)
    - Price Zone: DEEP_VALUE | BUY_ZONE | FAIR_VALUE | OVERVALUED | EXTREME_PREMIUM
 
-**3. WEINSTEIN GUARD (15% váhy)**
+**3. WEINSTEIN GUARD (0% váhy — NENÍ z Gomesovy metody)**
+   - Gomes o své metodě píše, že "nemá skoro nic společného s technickou
+     analýzou". Tenhle pilíř je naše vlastní rozšíření, ne kánon, a proto
+     do skóre nevstupuje — slouží jen jako informativní odznak.
    - Technická fáze: Phase 1 (basing), Phase 2 (uptrend), Phase 3 (topping), Phase 4 (decline)
-   - NIKDY nekupuj v Phase 4 (cena pod klesající 30 WMA)
-   - Preferuj Phase 2 breakouty
+   - Phase 4 (cena pod klesající 30 WMA) hlas neblokuje, jen upozorňuje.
 
 ### LIFECYCLE PHASES (Rozhodující pro akci)
 
@@ -120,35 +122,15 @@ _EXTRACTION_RULES: Final[str] = """
    - SELLING: "CFO selling", "Insider dumps"
    - NEUTRAL: If not mentioned, default to NEUTRAL
 
-### PRICE ESTIMATION (Pokud ceny nejsou explicitně zmíněny)
-
-**POVINNOST:** Pokud green_line nebo red_line NEJSOU explicitně zmíněny, ODHADNI je:
+### PRICE LINES (Pouze pokud explicitně zmíněny)
 
 **AKTUÁLNÍ CENA (poskytnutá systémem):** {current_price}
 
-**ODHAD GREEN LINE (Buy Zone):**
-Pokud není explicitně zmíněna, odhadni na základě:
-1. **Sentiment & Conviction:** Pokud je BULLISH a price "attractive" → green_line = current_price * 0.85-0.95
-2. **Support Levels:** Pokud zmíněny support levels, použij je
-3. **Fair Value:** Pokud zmíněno "undervalued" → current_price JE v buy zone
-4. **Default:** green_line = current_price * 0.80 (20% pod aktuální cenou)
-
-**ODHAD RED LINE (Sell Zone):**
-Pokud není explicitně zmíněna, odhadni na základě:
-1. **Price Targets:** Pokud zmíněn target, použij ho
-2. **Upside Potential:** Pokud "2x potential" → red_line = current_price * 1.8
-3. **Resistance Levels:** Pokud zmíněny, použij je
-4. **Default:** red_line = current_price * 1.50 (50% nad aktuální cenou pro growth stock)
-
-**ODHAD GREY LINE (Danger Zone):**
-1. **Stop Loss:** Pokud zmíněn stop loss, použij ho
-2. **Thesis Break:** Pokud zmíněno "below $X thesis broken"
-3. **Default:** grey_line = current_price * 0.65 (35% pod aktuální cenou)
-
-**DŮLEŽITÉ:** 
-- Vždy označ, zda je cena EXPLICITNÍ (z transkriptu) nebo ODHADOVANÁ
-- V "data_gaps" uveď "green_line_estimated" nebo "red_line_estimated" pokud odhaduješ
-- NIKDY nenechávej null - vždy poskytni odhad
+**GREEN LINE (Buy Zone), RED LINE (Sell Zone), GREY LINE (Danger Zone):**
+- Vyplň POUZE pokud je cena explicitně zmíněná v transkriptu (číslo, které analytik skutečně řekl).
+- Pokud cenu analytik neřekl, nech pole `null`. NIKDY nedopočítávej ani neodhaduj cenu z current_price
+  (žádné "current_price * 0.80" apod.) — to by byla vymyšlená hodnota prezentovaná jako analytikův názor.
+- V "data_gaps" uveď "green_line_missing" / "red_line_missing", pokud pole zůstalo null.
 """
 
 
@@ -508,12 +490,10 @@ DEEP_DD_PROMPT_V2: Final[str] = """
 
 **DŮLEŽITÉ PRO PRICE LINES:**
 - Aktuální cena je ${current_price}
-- Pokud green_line/red_line NENÍ explicitně v transkriptu, ODHADNI ji:
-  - green_line = cena kde je akcie "undervalued" (typicky 15-25% pod aktuální cenou pokud bullish)
-  - red_line = cena kde je "fully valued" (typicky price target nebo 50%+ nad aktuální cenou)
-  - grey_line = stop-loss úroveň (typicky 30-40% pod aktuální cenou)
-- NIKDY neponechávej null - vždy poskytni hodnotu
-- V "data_gaps" uveď které hodnoty jsou odhadované
+- green_line/red_line/grey_line vyplň POUZE pokud je cena explicitně zmíněná v transkriptu.
+- Pokud analytik cenu neřekl, nech pole `null`. Nedopočítávej ji z current_price — vymyšlená cena
+  prezentovaná jako analytikův názor je horší než chybějící údaj.
+- V "data_gaps" uveď, které cenové hodnoty chybí (nebyly v transkriptu zmíněné).
 
 ```json
 {
@@ -524,10 +504,9 @@ DEEP_DD_PROMPT_V2: Final[str] = """
   "thesis_status": "IMPROVED | STABLE | DETERIORATED | BROKEN",
   "action_verdict": "STRING",
   "current_price": NUMBER,
-  "green_line": NUMBER,
-  "red_line": NUMBER,
-  "grey_line": NUMBER,
-  "price_lines_estimated": true | false,
+  "green_line": NUMBER | null,
+  "red_line": NUMBER | null,
+  "grey_line": NUMBER | null,
   "cash_runway_months": NUMBER,
   "cash_status": "SAFE | WATCH | CRITICAL",
   "insider_activity": "BUYING | SELLING | NEUTRAL",
