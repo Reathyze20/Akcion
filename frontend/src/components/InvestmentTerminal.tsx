@@ -3378,36 +3378,16 @@ export const InvestmentTerminal: React.FC = () => {
             {/* Pravý sloupec: hledání, alokace a pozice. */}
             <div className="flex min-h-0 min-w-0 flex-col gap-3">
 
-              <div className="flex items-center justify-between gap-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input
-                    type="text"
-                    placeholder="Hledat pozici…"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-56 rounded-button border border-border bg-surface-raised py-1.5 pl-9 pr-3 text-[13px] text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-text-muted">Řadit podle:</span>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
-                    className="rounded-button border border-border bg-surface-raised px-2 py-1.5 text-[13px] text-text-primary focus:border-accent focus:outline-none"
-                  >
-                    <option value="score">skóre</option>
-                    <option value="weight">váhy</option>
-                    <option value="pl">zisku a ztráty</option>
-                  </select>
-                </div>
-              </div>
-
-
+              {/* Ovládací pruh: alokační plán vlevo, hledání a řazení
+                  vpravo. Hledání mělo dřív vlastní řádek nad plánem —
+                  čtyřicet pixelů výšky na dva prvky, které spolu s ním
+                  nevyplnily ani polovinu šířky. Tabulka o ten řádek
+                  povyrostla. */}
+              <div className="flex items-stretch gap-2">
 
         {/* Gomes Allocation Plan - Monthly Summary */}
         {activeTab === 'portfolio' && (
-          <div className="p-3 bg-surface-raised rounded-card border border-positive/20">
+          <div className="min-w-0 flex-1 p-2.5 bg-surface-raised rounded-card border border-positive/20">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-positive/10 rounded-lg">
@@ -3514,6 +3494,30 @@ export const InvestmentTerminal: React.FC = () => {
             </div>
           </div>
         )}
+
+                <div className="flex shrink-0 items-center gap-2 rounded-card border border-border bg-surface-raised px-2.5">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+                    <input
+                      type="text"
+                      placeholder="Hledat pozici…"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-44 rounded-button border border-border bg-surface-base py-1 pl-8 pr-2 text-[12.5px] text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
+                    />
+                  </div>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as 'weight' | 'score' | 'pl')}
+                    title="Podle čeho se pozice řadí"
+                    className="rounded-button border border-border bg-surface-base px-2 py-1 text-[12.5px] text-text-primary focus:border-accent focus:outline-none"
+                  >
+                    <option value="score">řadit podle skóre</option>
+                    <option value="weight">řadit podle váhy</option>
+                    <option value="pl">řadit podle zisku a ztráty</option>
+                  </select>
+                </div>
+              </div>
 
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
