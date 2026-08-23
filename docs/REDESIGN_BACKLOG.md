@@ -316,3 +316,51 @@ I1                       oprava alertů
 
 Blok **C** je ten, po kterém uvidíš rozdíl. Blok **D** je ten, po kterém
 bude aplikace k něčemu.
+
+---
+
+## Stav po sezení 23. 8. 2026 — odrážky a redundance
+
+Hotovo mimo původní pořadí, protože si to vyžádalo zadání „vše přehledně
+na jedné obrazovce, bez scrollování".
+
+- **Skořápka nescrolluje.** `h-screen` + `overflow-hidden` nahoře, `min-h-0`
+  po celém řetězu dolů. Stránka nikdy neroste; scrollují jen panely.
+- **Podklady jako odrážky** (`shell/ContextPanel.tsx`). Graf trhu, hotovost
+  s hedgem a nepřítomnost stály pod tabulkou a přidávaly ~700 px. Zavřený
+  pruh měří 38 px; otevřená je vždy jen jedna. Volba v `akcion.panel.open`
+  a `akcion.panel.tab`.
+- **Platby na jedné obrazovce** (`payments/PaymentsPage.tsx`). Pět knih jako
+  odrážky s vlastní měsíční částkou, jedna tabulka pod nimi. Data a formuláře
+  zůstaly v `InvestmentTerminal` — komponenta jen kreslí.
+- **Cíl je pružný.** Graf bere zbylou výšku, takže se stránka vejde i do
+  okna, kterému lišty prohlížeče ukrojily dvě stě pixelů. Ověřeno na
+  výškách 760 / 800 / 850 / 1000: přebytek 0 px.
+- **Opraven posun sloupců.** Buňky pro katalyzátor a pásmo byly vnořené do
+  podmínky pro dávku, takže při chybějící dávce zmizely a hlavičky zůstaly.
+  Pod „Katalyzátorem" stálo „V ZISKU".
+
+### Pravidlo proti redundanci
+
+Údaj se v rozhraní říká **jednou**, na místě, kde se podle něj rozhoduje.
+Konkrétně:
+
+- Co platí pro **každý** řádek, není vlastnost řádku. Patnáctkrát
+  „DOPLŇ ANALÝZU" je jedna věta o portfoliu — patří do denního seznamu
+  vlevo, i s důsledkem.
+- Doplňkový sloupec se kreslí, až když ho vyplní **aspoň pětina** řádků.
+  Vlastní výstupy aplikace (skóre, dávka) stačí jeden.
+- Prázdná buňka, ne pomlčka. Sloupec pomlček je svislý pruh bez informace.
+- Popisek, který opakuje hodnotu vedle sebe, se maže (`233 294` pod polem
+  s `233294`).
+
+### Zbývá u tohohle tématu
+
+- **Tabulka pozic roluje ve svém rámu**: 15 pozic × 51 px se do ~500 px
+  panelu při okně 800 px nevejde. Vejde se deset. Buď se s tím smířit
+  (seznam roste s počtem pozic, je to jediné místo, kde scrollování dává
+  smysl), nebo zkrátit řádek na jednu úroveň — tedy název firmy a nákupní
+  cenu do vysvětlivky. Rozhodnutí je na uživateli, protože „US40053W1018"
+  bez názvu firmy nic neříká.
+- **H0** dál platí: 19 chyb lintu v jedenácti souborech, které tenhle běh
+  nekontroloval. `InvestmentTerminal.tsx` je od nich čistý.
