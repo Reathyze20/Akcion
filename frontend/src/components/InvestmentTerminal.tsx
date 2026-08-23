@@ -23,9 +23,6 @@ import type {
 import { StockDetail } from './StockDetail';
 import NotificationBell from './NotificationBell';
 import DailyActionWidget from './DailyActionWidget';
-import MarketGaugeCard from './MarketGaugeCard';
-import CashHedgeCard from './CashHedgeCard';
-import AwayModeCard from './AwayModeCard';
 import ClearPortfolioButton from './ClearPortfolioButton';
 import RiskMeter from './RiskMeter';
 import Term from './ui/Term';
@@ -33,6 +30,8 @@ import { percent, plural } from '../lib/format';
 import GoalPage from './goal/GoalPage';
 import ThemeToggle from './ui/ThemeToggle';
 import SideRail from './shell/SideRail';
+import ContextPanel from './shell/ContextPanel';
+import PaymentsPage from './payments/PaymentsPage';
 
 // ============================================================================
 // TYPES
@@ -316,7 +315,46 @@ export interface PositionColumns {
   size: boolean;
   catalyst: boolean;
   band: boolean;
+  /** Cesta ke zdvojnásobení. Bez známé nákupní ceny se nedá spočítat. */
+  freeride: boolean;
+  /**
+   * Vysvětlivka „bez analýzy“ pod pokynem.
+   *
+   * Kreslí se jen tehdy, když se pozice v tomhle liší. Když analýzu nemá
+   * ani jedna, je to vlastnost portfolia, ne řádku — a stojí to jednou
+   * v denním seznamu vlevo, se všemi důsledky, místo patnáctkrát tady.
+   */
+  analysisNote: boolean;
 }
+
+/**
+ * Hlavička sloupce.
+ *
+ * Devět hlaviček psaných ručně mělo šest různých kombinací velikosti,
+ * tučnosti a odsazení, a dvouřádkové („Váha" nad „Aktuální / Cíl")
+ * přidávaly hlavičce výšku, kterou pak neměla tabulka. Upřesnění se
+ * proto píše za název, ne pod něj.
+ */
+const Th: React.FC<{
+  children: React.ReactNode;
+  width: string;
+  align?: 'left' | 'center' | 'right';
+  /** Upřesnění za názvem — „teď / cíl", „tento měsíc". */
+  sub?: string;
+  hint?: string;
+}> = ({ children, width, align = 'left', sub, hint }) => (
+  <th
+    title={hint}
+    className={`eyebrow px-2.5 py-2 font-medium text-text-muted ${width} ${
+      align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
+    }`}
+  >
+    {children}
+    {sub && (
+      <span className="ml-1 font-normal normal-case tracking-normal opacity-60">{sub}</span>
+    )}
+  </th>
+);
 
 const PortfolioRow: React.FC<{
   position: EnrichedPosition;
@@ -403,13 +441,14 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* ACTION - Dynamic Command */}
+      {/* Pokyn. Věta „bez analýzy“ pod ním se kreslí, jen když se tím
+          liší od ostatních — když ji nemá ani jedna pozice, stojí to
+          jednou nad tabulkou místo patnáctkrát v ní. */}
       <td className="py-1.5 px-2.5">
         <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
           {actionCmd.text}
         </div>
-        {/* Why there is no verdict — the gap itself, stated */}
-        {!position.analysis_usable && position.analysis_note && (
+        {columns.analysisNote && !position.analysis_usable && position.analysis_note && (
           <div className="text-[9px] text-text-muted mt-0.5">{position.analysis_note}</div>
         )}
         {isWaitTime && (
@@ -419,7 +458,8 @@ const PortfolioRow: React.FC<{
         )}
       </td>
 
-      {/* Weight % - Aktuální vs Cílová */}
+      {/* Váha aktuální / cílová. Pomlčka na místě cíle už říká, že cíl
+          neznáme — řádek „CÍL NEZNÁMÝ“ pod ní byl totéž podruhé. */}
       <td className="py-1.5 px-2.5">
         <div className="flex flex-col">
           {/* Numbers stay neutral; only the small status tag carries color.
@@ -431,37 +471,37 @@ const PortfolioRow: React.FC<{
             <span className="text-text-muted text-xs">/</span>
             {/* A target of "0.0 %" computed from a missing score used to read
                 as "sell it all". Without an analysis there is no target. */}
-            <span className="font-mono text-xs text-text-muted">
+            <span
+              className="font-mono text-xs text-text-muted"
+              title={position.analysis_usable ? undefined : 'Cílovou váhu aplikace bez konvikčního skóre nespočítá.'}
+            >
               {position.analysis_usable ? `${position.max_allocation_cap.toFixed(1)}%` : '—'}
             </span>
           </div>
-          {!position.analysis_usable ? (
-            <div className="text-[9px] text-text-muted">CÍL NEZNÁMÝ</div>
-          ) : position.is_overweight ? (
-            <div className="text-[9px] text-warning">OVERWEIGHT</div>
-          ) : position.is_underweight ? (
-            <div className="text-[9px] text-text-muted">UNDERWEIGHT</div>
+          {position.analysis_usable && position.is_overweight ? (
+            <div className="text-[9px] text-warning">NAD LIMITEM</div>
+          ) : position.analysis_usable && position.is_underweight ? (
+            <div className="text-[9px] text-text-muted">POD CÍLEM</div>
           ) : null}
         </div>
       </td>
 
-            {columns.score && (
-        <>
-{/* Conviction Score — a number with no date reads as today's view */}
-      <td className="py-1.5 px-2.5 text-center">
-        <div className={`text-xl font-black ${position.analysis_usable ? scoreColor : 'text-text-muted'}`}>
-          {position.conviction_score ?? '—'}
-        </div>
-        {position.conviction_score !== null && !position.analysis_usable && (
-          <div className="text-[9px] text-warning" title={position.analysis_note ?? ''}>
-            neaktuální
+      {/* Konvikční skóre — číslo bez data se čte jako dnešní pohled. */}
+      {columns.score && (
+        <td className="py-1.5 px-2.5 text-center">
+          <div className={`text-xl font-black ${position.analysis_usable ? scoreColor : 'text-text-muted'}`}>
+            {position.conviction_score ?? '—'}
           </div>
-        )}
-      </td>
-        </>
+          {position.conviction_score !== null && !position.analysis_usable && (
+            <div className="text-[9px] text-warning" title={position.analysis_note ?? ''}>
+              neaktuální
+            </div>
+          )}
+        </td>
       )}
 
-{/* Current Price */}
+      {/* Cena. Nákupní cena se píše, jen když ji známe — že chybí, stojí
+          ve sloupci P/L, kde na ní záleží. */}
       <td className="py-1.5 px-2.5 text-right">
         <div className="flex flex-col items-end">
           {position.current_price ? (
@@ -469,173 +509,139 @@ const PortfolioRow: React.FC<{
               <div className="text-sm font-bold text-text-primary font-mono">
                 {formatPrice(position.current_price, position.currency)}
               </div>
-              {position.avg_cost != null ? (
+              {position.avg_cost != null && (
                 <div className="text-[9px] text-text-muted">
                   Nákup: {formatPrice(position.avg_cost, position.currency)}
-                </div>
-              ) : (
-                <div className="text-[9px] text-text-muted" title="Broker export neobsahuje nákupní cenu — doplň ji v detailu pozice">
-                  Nákup: <span className="text-warning">doplň</span>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-xs text-text-muted">-</div>
+            <div className="text-xs text-text-muted">—</div>
           )}
         </div>
       </td>
 
-            {columns.size && (
-        <>
-{/* Optimal Size - GAP ANALYSIS */}
-      <td className="py-1.5 px-2.5">
-        {!position.analysis_usable ? (
-          <div className="flex flex-col">
+      {/* Optimální dávka na tento měsíc. */}
+      {columns.size && (
+        <td className="py-1.5 px-2.5">
+          {!position.analysis_usable ? (
             <div className="text-text-muted font-mono text-xs">—</div>
-            <div className="text-[9px] text-text-muted">bez analýzy nepočítám</div>
-          </div>
-        ) : position.action_signal === 'SELL' ? (
-          <div className="flex flex-col">
-            <div className="text-negative font-bold text-xs">SELL</div>
-            <div className="text-[9px] text-negative/80">Score &lt; 5</div>
-          </div>
-        ) : position.optimal_size < 0 ? (
-          // OVERWEIGHT: Show how much to SELL (negative optimal_size)
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1">
-              <span className="text-warning font-bold text-[9px]">TRIM</span>
-              <span className="text-sm font-bold text-warning font-mono">
-                {formatCurrency(Math.abs(position.optimal_size))}
-              </span>
+          ) : position.action_signal === 'SELL' ? (
+            <div className="flex flex-col">
+              <div className="text-negative font-bold text-xs">PRODAT</div>
+              <div className="text-[9px] text-negative/80">Skóre &lt; 5</div>
             </div>
-            <div className="text-[9px] text-warning/80">
-              Nad limit {position.max_allocation_cap.toFixed(1)}%
-            </div>
-          </div>
-        ) : position.optimal_size > 0 ? (
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1">
-              {position.action_signal === 'SNIPER' && <span className="text-warning text-[9px] font-bold">SNIPER</span>}
-              <span className="text-sm font-bold text-positive font-mono">
-                {formatCurrency(position.optimal_size)}
-              </span>
-            </div>
-            <div className="text-[9px] text-text-muted">
-              Gap: {formatCurrency(position.gap_czk)}
-            </div>
-            {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
-              <div className="text-[9px] text-warning font-bold">
-                #{position.allocation_priority} priorita
+          ) : position.optimal_size < 0 ? (
+            // OVERWEIGHT: Show how much to SELL (negative optimal_size)
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <span className="text-warning font-bold text-[9px]">ODEBRAT</span>
+                <span className="text-sm font-bold text-warning font-mono">
+                  {formatCurrency(Math.abs(position.optimal_size))}
+                </span>
               </div>
+              <div className="text-[9px] text-warning/80">
+                Nad limit {position.max_allocation_cap.toFixed(1)}%
+              </div>
+            </div>
+          ) : position.optimal_size > 0 ? (
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                {position.action_signal === 'SNIPER' && <span className="text-warning text-[9px] font-bold">SNIPER</span>}
+                <span className="text-sm font-bold text-positive font-mono">
+                  {formatCurrency(position.optimal_size)}
+                </span>
+              </div>
+              {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
+                <div className="text-[9px] text-warning font-bold">
+                  #{position.allocation_priority} priorita
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              <div className="text-text-muted font-mono text-xs">0 Kč</div>
+              <div className="text-[9px] text-text-muted">
+                {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
+              </div>
+            </div>
+          )}
+        </td>
+      )}
+
+      {/* Nejbližší katalyzátor. */}
+      {columns.catalyst && (
+        <td className="py-1.5 px-2.5">
+          {position.next_catalyst ? (
+            <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
+              {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
+            </div>
+          ) : (
+            // Absent data is not a red flag about the company.
+            <div className="text-[9px] text-text-muted uppercase">—</div>
+          )}
+        </td>
+      )}
+
+      {/* Kde cena leží mezi zelenou a červenou linkou. Není to trend —
+          není v tom směr — a prázdné, když linky nejsou. */}
+      {columns.band && (
+        <td className="py-1.5 px-2.5">
+          <div className="flex flex-col items-center gap-1">
+            {position.trend_status === 'UNKNOWN' ? (
+              <span className="text-[10px] text-text-muted" title="Chybí zelená/červená linka pro tento ticker">
+                —
+              </span>
+            ) : (
+              <>
+                {trendIcon}
+                <span className={`text-[10px] font-medium ${
+                  position.trend_status === 'BULLISH' ? 'text-positive' :
+                  position.trend_status === 'BEARISH' ? 'text-negative' :
+                  'text-text-muted'
+                }`}>
+                  {position.trend_status === 'BULLISH' ? 'U ZELENÉ'
+                    : position.trend_status === 'BEARISH' ? 'U ČERVENÉ'
+                    : 'STŘED'}
+                </span>
+              </>
             )}
           </div>
-        ) : (
-          <div className="flex flex-col">
-            <div className="text-text-muted font-mono text-xs">0 Kč</div>
-            <div className="text-[9px] text-text-muted">
-              {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
+        </td>
+      )}
+
+      {/* Cesta k free ride.
+
+          Tenhle sloupec dřív psal „VE ZTRÁTĚ“, pruh a „−60 % od nákupu“ —
+          tedy potřetí totéž, co vedle stojí jako −60,30 % a −746,53 US$.
+          Zbylo z něj jen to, co P/L neříká: jak daleko je pozice ke
+          zdvojnásobení, po kterém se podle kánonu vybírá vklad. */}
+      {columns.freeride && (
+        <td className="py-1.5 px-2.5">
+          {isFreeRideEligible ? (
+            <div className="flex flex-col">
+              <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
+              <div className="text-[8px] text-warning/70">
+                prodat {sharesToSellForFreeRide} ks
+              </div>
             </div>
-          </div>
-        )}
-      </td>
-
-            {columns.catalyst && (
-        <>
-        </>
-      )}
-
-{/* NEXT CATALYST */}
-      <td className="py-1.5 px-2.5">
-        {position.next_catalyst ? (
-          <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
-            {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
-          </div>
-        ) : (
-          // Absent data is not a red flag about the company.
-          <div className="text-[9px] text-text-muted uppercase">—</div>
-        )}
-      </td>
-
-            {columns.band && (
-        <>
-        </>
-      )}
-
-{/* Where the price sits in the green/red band. Not a trend — it has
-          no direction in it — and blank when there are no lines to sit in. */}
-      <td className="py-1.5 px-2.5">
-        <div className="flex flex-col items-center gap-1">
-          {position.trend_status === 'UNKNOWN' ? (
-            <>
-              <span className="text-[10px] text-text-muted">—</span>
-              <span className="text-[9px] text-text-muted" title="Chybí zelená/červená linka pro tento ticker">
-                bez linek
-              </span>
-            </>
+          ) : position.unrealized_pl_percent != null && position.unrealized_pl_percent > 0 ? (
+            <div className="flex flex-col gap-1">
+              <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-positive/60 transition-all"
+                  style={{ width: `${progressTo150}%` }}
+                />
+              </div>
+              <div className="text-[8px] text-text-muted">
+                {position.unrealized_pl_percent.toFixed(0)} % ze 150 %
+              </div>
+            </div>
           ) : (
-            <>
-              {trendIcon}
-              <span className={`text-[10px] font-medium ${
-                position.trend_status === 'BULLISH' ? 'text-positive' :
-                position.trend_status === 'BEARISH' ? 'text-negative' :
-                'text-text-muted'
-              }`}>
-                {position.trend_status === 'BULLISH' ? 'U ZELENÉ'
-                  : position.trend_status === 'BEARISH' ? 'U ČERVENÉ'
-                  : 'STŘED'}
-              </span>
-            </>
+            <div className="text-[10px] text-text-muted">—</div>
           )}
-        </div>
-      </td>
-        </>
+        </td>
       )}
-
-{/* STRATEGY - Position Health */}
-      <td className="py-1.5 px-2.5">
-        {isFreeRideEligible ? (
-          <div className="flex flex-col">
-            <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
-            <div className="text-[8px] text-warning/70">
-              Sell {sharesToSellForFreeRide} shares
-            </div>
-          </div>
-        ) : position.unrealized_pl_percent == null ? (
-          <div className="flex flex-col">
-            <div className="text-[9px] text-warning uppercase">NEZNÁMÝ STAV</div>
-            <div className="text-[8px] text-text-muted mt-0.5">⚠️ bez nákup. ceny</div>
-          </div>
-        ) : position.unrealized_pl_percent < 0 ? (
-          // This said "GROWING" for every position, including one down 94 %.
-          // Worse, the bar had no lower clamp, so a loss produced a negative
-          // CSS width the browser discarded — and rendered full green.
-          <div className="flex flex-col">
-            <div className="text-[9px] text-negative uppercase">VE ZTRÁTĚ</div>
-            <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden mt-1">
-              <div
-                className="h-full bg-negative/70 transition-all"
-                style={{ width: `${Math.min(100, Math.abs(position.unrealized_pl_percent))}%` }}
-              />
-            </div>
-            <div className="text-[8px] text-text-muted mt-0.5">
-              {position.unrealized_pl_percent.toFixed(0)}% od nákupu
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col">
-            <div className="text-[9px] text-positive uppercase">V ZISKU</div>
-            <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden mt-1">
-              <div
-                className="h-full bg-gradient-to-r from-surface-overlay to-positive transition-all"
-                style={{ width: `${progressTo150}%` }}
-              />
-            </div>
-            <div className="text-[8px] text-text-muted mt-0.5">
-              {position.unrealized_pl_percent.toFixed(0)}% / 150%
-            </div>
-          </div>
-        )}
-      </td>
 
       {/* P/L % — unknown cost basis renders as a prompt, never as 0.00% */}
       <td className="py-1.5 px-2.5 text-right">
@@ -650,7 +656,7 @@ const PortfolioRow: React.FC<{
           </>
         ) : (
           <div className="text-[10px] text-text-muted" title="Doplň nákupní cenu v detailu pozice">
-            — <span className="text-warning">bez ceny</span>
+            bez nákupní ceny
           </div>
         )}
       </td>
@@ -2440,6 +2446,18 @@ function readStoredList<T>(key: string): T[] {
   }
 }
 
+/** Prázdný formulář platby. Stejný tvar pro všech pět knih. */
+const PRAZDNA_PLATBA = {
+  name: '',
+  amount: '',
+  date: '',
+  monthlyPayment: '',
+  creditor: '',
+  accountNumber: '',
+  variableSymbol: '',
+  note: '',
+};
+
 export const InvestmentTerminal: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
@@ -2950,7 +2968,19 @@ export const InvestmentTerminal: React.FC = () => {
     band: displayedPositions.some(
       (p) => p.stock?.green_line != null || p.stock?.red_line != null,
     ),
+    freeride: displayedPositions.some(
+      (p) => p.unrealized_pl_percent != null && p.unrealized_pl_percent > 0,
+    ),
+    analysisNote: displayedPositions.some((p) => p.analysis_usable),
   }), [displayedPositions]);
+
+  /** Kolik sloupců se opravdu kreslí — pro colSpan prázdného řádku. */
+  const columnCount = 5
+    + (columns.score ? 1 : 0)
+    + (columns.size ? 1 : 0)
+    + (columns.catalyst ? 1 : 0)
+    + (columns.band ? 1 : 0)
+    + (columns.freeride ? 1 : 0);
 
   // Filter and sort watchlist
   const displayedWatchlist = useMemo(() => {
@@ -3009,8 +3039,20 @@ export const InvestmentTerminal: React.FC = () => {
     );
   }
 
+  /* ====================================================================
+     SKOŘÁPKA, KTERÁ NESCROLLUJE
+
+     Stránka měla 1 791 px na obrazovce vysoké 1 000. Zkracovat obsah do
+     nekonečna nejde — dřív nebo později se dlouhý seznam nevejde vždycky.
+     Scrolluje proto to, co scrollovat má: tabulka pozic ve svém rámu a
+     podklady ve svém pruhu. Okno samo stojí.
+
+     Prakticky to znamená `h-screen` a `overflow-hidden` tady nahoře a
+     `min-h-0` na každém článku řetězu dolů — bez něj flexbox nedovolí
+     dítěti být menší než jeho obsah a scrollování propadne až na stránku.
+  ==================================================================== */
   return (
-    <div className="flex min-h-screen bg-surface-base text-text-primary">
+    <div className="flex h-screen overflow-hidden bg-surface-base text-text-primary">
 
       {/* Navigace vlevo. Svislé místo je v aplikaci vzácné, vodorovné ne. */}
       <SideRail
@@ -3020,7 +3062,7 @@ export const InvestmentTerminal: React.FC = () => {
         watchlistCount={watchlistStocks.length}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {/* HEADER */}
       {/* ==================================================================
           HLAVIČKA — jeden pruh, ne třetina obrazovky
@@ -3031,7 +3073,7 @@ export const InvestmentTerminal: React.FC = () => {
           a celá věta ve vysvětlivce, rozpad rizika se přesunul do těla
           stránky, kde je na něj místo.
       ================================================================== */}
-      <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface-base/90 backdrop-blur-sm">
+      <header className="shrink-0 border-b border-border-subtle bg-surface-base">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
 
           <div className="flex items-center gap-2.5">
@@ -3244,7 +3286,7 @@ export const InvestmentTerminal: React.FC = () => {
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 px-5 py-4">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3">
 
         {/* Panel nástrojů — jen pro sledované; u pozic sedí uvnitř sloupce. */}
         {activeTab === 'watchlist' && (
@@ -3275,10 +3317,11 @@ export const InvestmentTerminal: React.FC = () => {
             je místo na celou tabulku.
         ============================================================== */}
         {activeTab === 'portfolio' && (
-          <div className="grid gap-3 min-[1480px]:grid-cols-[352px_minmax(0,1fr)]">
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="grid min-h-0 flex-1 gap-3 min-[1480px]:grid-cols-[352px_minmax(0,1fr)]">
 
             {/* Levý sloupec: co dnes dělat a na čem portfolio stojí. */}
-            <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-0.5">
               <DailyActionWidget
                 onExecuteAction={(action) => {
                   const pos = displayedPositions.find((p) => p.ticker === action.ticker);
@@ -3299,7 +3342,7 @@ export const InvestmentTerminal: React.FC = () => {
             </div>
 
             {/* Pravý sloupec: hledání, alokace a pozice. */}
-            <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-h-0 min-w-0 flex-col gap-3">
 
               <div className="flex items-center justify-between gap-3">
                 <div className="relative">
@@ -3440,37 +3483,31 @@ export const InvestmentTerminal: React.FC = () => {
 
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
-        <div className="bg-surface-base/50 rounded-xl border border-border-subtle overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-border-subtle bg-surface-base/50">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <table className="w-full table-fixed">
-            <thead>
-              <tr className="border-b border-border bg-surface-raised/50">
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">Symbol</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">Pokyn</th>
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]">
-                  <div>Váha</div>
-                  <div className="text-[9px] text-text-muted font-normal">Aktuální / Cíl</div>
-                </th>
+            <thead className="sticky top-0 z-10 bg-surface-raised">
+              <tr className="border-b border-border">
+                <Th width="w-[150px]">Symbol</Th>
+                <Th width="w-[108px]">Pokyn</Th>
+                <Th width="w-[96px]" sub="teď / cíl">Váha</Th>
                 {columns.score && (
-                  <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[70px]"><Term id="konvikcniSkore">Skóre</Term></th>
+                  <Th width="w-[62px]" align="center"><Term id="konvikcniSkore">Skóre</Term></Th>
                 )}
-                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]">
-                  <div>Cena</div>
-                  <div className="text-[9px] text-text-muted font-normal">aktuální</div>
-                </th>
-                {columns.size && (
-                  <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[140px]">
-                  <div>Optimální dávka</div>
-                  <div className="text-[9px] text-text-muted font-normal">Tento měsíc</div>
-                </th>
-                )}
-                {columns.catalyst && (
-                  <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Katalyzátor</th>
-                )}
+                <Th width="w-[96px]" align="right">Cena</Th>
+                {columns.size && <Th width="w-[128px]" sub="tento měsíc">Dávka</Th>}
+                {columns.catalyst && <Th width="w-[118px]">Katalyzátor</Th>}
                 {columns.band && (
-                  <th className="text-center py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[100px]" title="Kde leží cena v pásmu mezi zelenou a červenou linkou">Pásmo</th>
+                  <Th width="w-[88px]" align="center" hint="Kde leží cena v pásmu mezi zelenou a červenou linkou">
+                    Pásmo
+                  </Th>
                 )}
-                <th className="text-left py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[120px]">Stav pozice</th>
-                <th className="text-right py-3 px-3 text-xs font-bold text-text-secondary uppercase tracking-wider w-[110px]"><Term id="pl">P/L</Term></th>
+                {columns.freeride && (
+                  <Th width="w-[106px]" hint="Kolik chybí do zdvojnásobení, po kterém se podle kánonu vybírá vklad">
+                    Do free ride
+                  </Th>
+                )}
+                <Th width="w-[108px]" align="right"><Term id="pl">P/L</Term></Th>
               </tr>
             </thead>
             <tbody>
@@ -3484,7 +3521,7 @@ export const InvestmentTerminal: React.FC = () => {
               ))}
               {displayedPositions.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-text-muted">
+                  <td colSpan={columnCount} className="text-center py-12 text-text-muted">
                     {searchQuery
                       ? 'Hledání neodpovídá žádná pozice.'
                       : 'V portfoliu zatím nejsou žádné pozice. Začni importem CSV z DEGIRO.'}
@@ -3494,26 +3531,21 @@ export const InvestmentTerminal: React.FC = () => {
             </tbody>
           </table>
         </div>
+        </div>
         )}
 
             </div>
           </div>
-        )}
 
-        {/* Spodní pás: proč seznam říká, co říká, a co se stane, když se
-            na aplikaci týden nepodíváš. Tři buňky vedle sebe místo tří
-            karet přes celou šířku. */}
-        {activeTab === 'portfolio' && (
-          <div className="mt-3 grid gap-3 lg:grid-cols-3">
-            <MarketGaugeCard />
-            <CashHedgeCard />
-            <AwayModeCard />
+          {/* Podklady jako odrážky. Zavřené zabírají 38 px; otevřená je
+              vždycky jen jedna a scrolluje sama v sobě. */}
+          <ContextPanel />
           </div>
         )}
 
         {/* Watchlist Table */}
         {activeTab === 'watchlist' && (
-          <div className="bg-surface-raised rounded-xl border border-border overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-card border border-border bg-surface-raised">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-surface-overlay">
@@ -3628,646 +3660,102 @@ export const InvestmentTerminal: React.FC = () => {
             Nahradilo dřívější Freedom a Platby: Freedom byla z poloviny
             gamifikace, Platby pětkrát prázdný stav se zelenou fajfkou. */}
         {activeTab === 'cil' && (
-          <GoalPage
-            portfolioValue={familyData.totalValue}
-            monthlyContribution={familyData.monthlyContribution}
-          />
+          <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+            <GoalPage
+              portfolioValue={familyData.totalValue}
+              monthlyContribution={familyData.monthlyContribution}
+            />
+          </div>
         )}
 
-        {/* PLATBY TAB - Debt Management */}
+        {/* ==============================================================
+            PLATBY
+
+            Pět knih, které stály pod sebou přes tři obrazovky, jsou teď
+            odrážky s vlastní měsíční částkou a jedna tabulka pod nimi.
+            Data, formuláře i dialogy zůstávají tady — PaymentsPage jen
+            kreslí, takže se přes ni nedá o nic přijít.
+        ============================================================== */}
         {activeTab === 'splaceni' && (
-          <div className="space-y-6">
-            {/* Společné splácení */}
-            <div className="bg-surface-raised rounded-card p-4 border border-border">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-text-primary">Společné splácení</h2>
-              </div>
-
-              {/* Summary Stats */}
-              <div className="grid grid-cols-4 gap-4 mb-6">
-                <div className="bg-surface-raised/50 rounded-lg p-4">
-                  <div className="text-sm text-text-secondary mb-1">Zbývá uhradit</div>
-                  <div className="text-2xl font-bold text-text-primary">
-                    {formatCurrency(debts.reduce((sum, d) => {
-                      const startDate = new Date(d.date);
-                      const now = new Date();
-                      const monthsPassed = (now.getFullYear() - startDate.getFullYear()) * 12 + 
-                                         (now.getMonth() - startDate.getMonth()) + 1;
-                      const paid = Math.max(0, monthsPassed) * parseFloat(d.monthlyPayment || '0');
-                      const remaining = Math.max(0, parseFloat(d.amount || '0') - paid);
-                      return sum + remaining;
-                    }, 0))}
-                  </div>
-                </div>
-                <div className="bg-surface-raised/50 rounded-lg p-4">
-                  <div className="text-sm text-text-secondary mb-1">Měsíční splátka</div>
-                  <div className="text-2xl font-bold text-text-primary">
-                    {formatCurrency(debts.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
-                  </div>
-                </div>
-                <div className="bg-surface-raised/50 rounded-lg p-4">
-                  <div className="text-sm text-text-secondary mb-1">Celkový dluh</div>
-                  <div className="text-2xl font-bold text-text-primary">
-                    {formatCurrency(debts.reduce((sum, d) => sum + parseFloat(d.amount || '0'), 0))}
-                  </div>
-                </div>
-                <div className="bg-surface-raised/50 rounded-lg p-4">
-                  <div className="text-sm text-text-secondary mb-1">Splaceno</div>
-                  <div className="text-2xl font-bold text-text-primary">
-                    {formatCurrency(debts.reduce((sum, d) => {
-                      const startDate = new Date(d.date);
-                      const now = new Date();
-                      const monthsPassed = Math.max(0, (now.getFullYear() - startDate.getFullYear()) * 12 + 
-                                         (now.getMonth() - startDate.getMonth()) + 1);
-                      const paid = monthsPassed * parseFloat(d.monthlyPayment || '0');
-                      return sum + paid;
-                    }, 0))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Přehled závazků */}
-              <div>
-              
-              {debts.length === 0 ? (
-                /* Empty State */
-                <div className="text-center py-6">
-                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
-                    <Check className="w-10 h-10 text-positive" />
-                  </div>
-                  <h3 className="text-xl font-bold text-text-primary mb-2">
-                    Žádné aktivní závazky
-                  </h3>
-                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
-                    Zatím nemáte evidované žádné dluhy nebo splátky. 
-                    Můžete přidat hypotéku, auto-leasing, studijní půjčku nebo jiný závazek.
-                  </p>
-                  <button 
-                    onClick={() => setShowAddDebtModal(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Přidat závazek
-                  </button>
-                </div>
-              ) : (
-                /* Debts Table */
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
-                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Částka</th>
-                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Zbývá</th>
-                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splaceno</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">1. splátka</th>
-                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Komu</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Informace</th>
-                        <th className="py-3 px-4"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {debts.map((debt) => (
-                        <tr key={debt.id} className="border-b border-border hover:bg-surface-hover transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm">{debt.name}</div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">{debt.amount ? formatCurrency(parseFloat(debt.amount)) : '—'}</div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">
-                              {(() => {
-                                const startDate = new Date(debt.date);
-                                const now = new Date();
-                                const monthsPassed = (now.getFullYear() - startDate.getFullYear()) * 12 + 
-                                                   (now.getMonth() - startDate.getMonth()) + 1;
-                                const paid = Math.max(0, monthsPassed) * parseFloat(debt.monthlyPayment || '0');
-                                const remaining = Math.max(0, parseFloat(debt.amount || '0') - paid);
-                                return formatCurrency(remaining);
-                              })()}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">
-                              {(() => {
-                                const startDate = new Date(debt.date);
-                                const now = new Date();
-                                const monthsPassed = Math.max(0, (now.getFullYear() - startDate.getFullYear()) * 12 + 
-                                                   (now.getMonth() - startDate.getMonth()) + 1);
-                                const paid = monthsPassed * parseFloat(debt.monthlyPayment || '0');
-                                return formatCurrency(paid);
-                              })()}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm">
-                              {new Date(debt.date).toLocaleDateString('cs-CZ')}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(debt.monthlyPayment))}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm">{debt.creditor}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{debt.accountNumber || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{debt.variableSymbol || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm max-w-xs truncate">{debt.note || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => {
-                                setEditingDebtId(debt.id);
-                                setDebtForm({
-                                  name: debt.name,
-                                  amount: debt.amount,
-                                  date: debt.date,
-                                  monthlyPayment: debt.monthlyPayment,
-                                  creditor: debt.creditor,
-                                  accountNumber: debt.accountNumber,
-                                  variableSymbol: debt.variableSymbol,
-                                  note: debt.note
-                                });
-                                setShowAddDebtModal(true);
-                              }}
-                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
-                              title="Upravit závazek"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="mt-4 flex justify-center">
-                    <button 
-                      onClick={() => setShowAddDebtModal(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Přidat další závazek
-                    </button>
-                  </div>
-                </div>
-              )}
-              </div>
-            </div>
-
-            {/* Společné platby */}
-            <div className="bg-surface-raised rounded-card p-4 border border-border">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-text-primary">Společné platby</h2>
-              </div>
-
-              {/* Summary Stats */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-surface-raised/50 rounded-lg p-4">
-                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
-                  <div className="text-2xl font-bold text-text-primary">
-                    {formatCurrency(sharedPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
-                  </div>
-                </div>
-                <div className="bg-surface-raised/50 rounded-lg p-4">
-                  <div className="text-sm text-text-secondary mb-1">Na jednoho</div>
-                  <div className="text-2xl font-bold text-text-primary">
-                    {formatCurrency(sharedPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0) / 2)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Přehled */}
-              <div>
-              
-              {sharedPayments.length === 0 ? (
-                /* Empty State */
-                <div className="text-center py-6">
-                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
-                    <Check className="w-10 h-10 text-positive" />
-                  </div>
-                  <h3 className="text-xl font-bold text-text-primary mb-2">
-                    Žádné aktivní záznamy
-                  </h3>
-                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
-                    Zatím nemáte evidované žádné společné platby. 
-                    Můžete přidat novou položku.
-                  </p>
-                  <button 
-                    onClick={() => setShowAddSharedPaymentsModal(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Přidat položku
-                  </button>
-                </div>
-              ) : (
-                /* Shared Payments Table */
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
-                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Informace</th>
-                        <th className="py-3 px-4"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sharedPayments.map((item) => (
-                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm">{item.name}</div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm max-w-xs truncate">{item.note || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => {
-                                setEditingSharedPaymentsId(item.id);
-                                setSharedPaymentsForm({
-                                  name: item.name,
-                                  amount: item.amount,
-                                  date: item.date,
-                                  monthlyPayment: item.monthlyPayment,
-                                  creditor: item.creditor,
-                                  accountNumber: item.accountNumber,
-                                  variableSymbol: item.variableSymbol,
-                                  note: item.note
-                                });
-                                setShowAddSharedPaymentsModal(true);
-                              }}
-                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
-                              title="Upravit položku"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="mt-4 flex justify-center">
-                    <button 
-                      onClick={() => setShowAddSharedPaymentsModal(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Přidat další položku
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            </div>
-
-            {/* Grid wrapper pro Šetření Míša a Platby Míša vedle sebe */}
-            <div className="grid grid-cols-2 gap-6">
-              {/* Platby Míša */}
-              <div className="bg-surface-raised rounded-card p-4 border border-border">
-                <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-text-primary">Platby Míša</h2>
-                </div>
-
-                {/* Summary Stats */}
-                <div className="grid grid-cols-1 gap-4 mb-6">
-                  <div className="bg-surface-raised/50 rounded-lg p-4">
-                    <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
-                    <div className="text-2xl font-bold text-text-primary">
-                      {formatCurrency(misaPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Přehled */}
-                <div>
-                
-                {misaPayments.length === 0 ? (
-                  /* Empty State */
-                  <div className="text-center py-6">
-                    <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
-                      <Check className="w-10 h-10 text-positive" />
-                    </div>
-                    <h3 className="text-xl font-bold text-text-primary mb-2">
-                      Žádné aktivní záznamy
-                    </h3>
-                    <p className="text-text-secondary mb-6 max-w-md mx-auto">
-                      Zatím nemáte evidované žádné platby Míša. 
-                    Můžete přidat novou položku.
-                  </p>
-                  <button 
-                    onClick={() => setShowAddMisaPaymentsModal(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Přidat položku
-                  </button>
-                </div>
-              ) : (
-                /* Míša Payments Table */
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
-                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
-                        <th className="py-3 px-4"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {misaPayments.map((item) => (
-                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm">{item.name}</div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => {
-                                setEditingMisaPaymentsId(item.id);
-                                setMisaPaymentsForm({
-                                  name: item.name,
-                                  amount: item.amount,
-                                  date: item.date,
-                                  monthlyPayment: item.monthlyPayment,
-                                  creditor: item.creditor,
-                                  accountNumber: item.accountNumber,
-                                  variableSymbol: item.variableSymbol,
-                                  note: item.note
-                                });
-                                setShowAddMisaPaymentsModal(true);
-                              }}
-                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
-                              title="Upravit položku"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="mt-4 flex justify-center">
-                    <button 
-                      onClick={() => setShowAddMisaPaymentsModal(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Přidat další položku
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            </div>
-
-            {/* Šetření Míša */}
-            <div className="bg-surface-raised rounded-card p-4 border border-border">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-text-primary">Šetření Míša</h2>
-              </div>
-
-              {/* Summary Stats */}
-              <div className="grid grid-cols-1 gap-4 mb-6">
-                <div className="bg-surface-raised/50 rounded-lg p-4">
-                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
-                  <div className="text-2xl font-bold text-text-primary">
-                    {formatCurrency(savings.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Přehled */}
-              <div>
-              
-              {savings.length === 0 ? (
-                /* Empty State */
-                <div className="text-center py-6">
-                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
-                    <Check className="w-10 h-10 text-positive" />
-                  </div>
-                  <h3 className="text-xl font-bold text-text-primary mb-2">
-                    Žádné aktivní záznamy
-                  </h3>
-                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
-                    Zatím nemáte evidované žádné šetření. 
-                    Můžete přidat novou položku.
-                  </p>
-                  <button 
-                    onClick={() => setShowAddSavingsModal(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Přidat položku
-                  </button>
-                </div>
-              ) : (
-                /* Savings Table */
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
-                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
-                        <th className="py-3 px-4"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {savings.map((item) => (
-                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm">{item.name}</div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => {
-                                setEditingSavingsId(item.id);
-                                setSavingsForm({
-                                  name: item.name,
-                                  amount: item.amount,
-                                  date: item.date,
-                                  monthlyPayment: item.monthlyPayment,
-                                  creditor: item.creditor,
-                                  accountNumber: item.accountNumber,
-                                  variableSymbol: item.variableSymbol,
-                                  note: item.note
-                                });
-                                setShowAddSavingsModal(true);
-                              }}
-                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
-                              title="Upravit položku"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="mt-4 flex justify-center">
-                    <button 
-                      onClick={() => setShowAddSavingsModal(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Přidat další položku
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            </div>
-            </div> {/* End grid wrapper pro Šetření Míša a Platby Míša */}
-
-            {/* Platby Tom */}
-            <div className="bg-surface-raised rounded-card p-4 border border-border">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-text-primary">Platby Tom</h2>
-              </div>
-
-              {/* Summary Stats */}
-              <div className="grid grid-cols-1 gap-4 mb-6">
-                <div className="bg-surface-raised/50 rounded-lg p-4">
-                  <div className="text-sm text-text-secondary mb-1">Celkem za měsíc</div>
-                  <div className="text-2xl font-bold text-text-primary">
-                    {formatCurrency(tomPayments.reduce((sum, d) => sum + parseFloat(d.monthlyPayment || '0'), 0))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Přehled */}
-              <div>
-              
-              {tomPayments.length === 0 ? (
-                /* Empty State */
-                <div className="text-center py-6">
-                  <div className="w-20 h-20 rounded-full bg-positive/10 flex items-center justify-center mx-auto mb-4">
-                    <Check className="w-10 h-10 text-positive" />
-                  </div>
-                  <h3 className="text-xl font-bold text-text-primary mb-2">
-                    Žádné aktivní záznamy
-                  </h3>
-                  <p className="text-text-secondary mb-6 max-w-md mx-auto">
-                    Zatím nemáte evidované žádné platby Tom. 
-                    Můžete přidat novou položku.
-                  </p>
-                  <button 
-                    onClick={() => setShowAddTomPaymentsModal(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-accent text-text-primary rounded-lg font-bold hover:bg-accent/90 transition-colors mx-auto"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Přidat položku
-                  </button>
-                </div>
-              ) : (
-                /* Tom Payments Table */
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Název</th>
-                        <th className="text-right py-3 px-4 text-base font-bold text-text-primary">Splátka</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">Číslo účtu</th>
-                        <th className="text-left py-3 px-4 text-base font-bold text-text-primary">VS</th>
-                        <th className="py-3 px-4"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tomPayments.map((item) => (
-                        <tr key={item.id} className="border-b border-border hover:bg-surface-hover transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm">{item.name}</div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-text-secondary text-sm">{formatCurrency(parseFloat(item.monthlyPayment))}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{item.accountNumber || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-text-secondary text-sm font-mono">{item.variableSymbol || '-'}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => {
-                                setEditingTomPaymentsId(item.id);
-                                setTomPaymentsForm({
-                                  name: item.name,
-                                  amount: item.amount,
-                                  date: item.date,
-                                  monthlyPayment: item.monthlyPayment,
-                                  creditor: item.creditor,
-                                  accountNumber: item.accountNumber,
-                                  variableSymbol: item.variableSymbol,
-                                  note: item.note
-                                });
-                                setShowAddTomPaymentsModal(true);
-                              }}
-                              className="p-2 hover:bg-accent/10 rounded-lg text-text-muted hover:text-accent transition-colors"
-                              title="Upravit položku"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="mt-4 flex justify-center">
-                    <button 
-                      onClick={() => setShowAddTomPaymentsModal(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-surface-hover text-text-primary rounded-lg font-medium hover:bg-surface-raised transition-colors border border-border"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Přidat další položku
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            </div>
-          </div>
+          <PaymentsPage
+            debts={debts}
+            sharedPayments={sharedPayments}
+            misaPayments={misaPayments}
+            savings={savings}
+            tomPayments={tomPayments}
+            formatCurrency={formatCurrency}
+            onAdd={(ledger) => {
+              /* Rozepsaná úprava se před přidáním zahodí. Bez tohohle
+                 kroku zůstalo `editing…Id` viset po opuštěné úpravě a
+                 „Přidat" tiše přepsalo cizí záznam. */
+              switch (ledger) {
+                case 'debts':
+                  setEditingDebtId(null);
+                  setDebtForm(PRAZDNA_PLATBA);
+                  setShowAddDebtModal(true);
+                  break;
+                case 'shared':
+                  setEditingSharedPaymentsId(null);
+                  setSharedPaymentsForm(PRAZDNA_PLATBA);
+                  setShowAddSharedPaymentsModal(true);
+                  break;
+                case 'misa':
+                  setEditingMisaPaymentsId(null);
+                  setMisaPaymentsForm(PRAZDNA_PLATBA);
+                  setShowAddMisaPaymentsModal(true);
+                  break;
+                case 'savings':
+                  setEditingSavingsId(null);
+                  setSavingsForm(PRAZDNA_PLATBA);
+                  setShowAddSavingsModal(true);
+                  break;
+                case 'tom':
+                  setEditingTomPaymentsId(null);
+                  setTomPaymentsForm(PRAZDNA_PLATBA);
+                  setShowAddTomPaymentsModal(true);
+                  break;
+              }
+            }}
+            onEdit={(ledger, item) => {
+              const form = {
+                name: item.name,
+                amount: item.amount,
+                date: item.date,
+                monthlyPayment: item.monthlyPayment,
+                creditor: item.creditor,
+                accountNumber: item.accountNumber,
+                variableSymbol: item.variableSymbol,
+                note: item.note,
+              };
+              switch (ledger) {
+                case 'debts':
+                  setEditingDebtId(item.id);
+                  setDebtForm(form);
+                  setShowAddDebtModal(true);
+                  break;
+                case 'shared':
+                  setEditingSharedPaymentsId(item.id);
+                  setSharedPaymentsForm(form);
+                  setShowAddSharedPaymentsModal(true);
+                  break;
+                case 'misa':
+                  setEditingMisaPaymentsId(item.id);
+                  setMisaPaymentsForm(form);
+                  setShowAddMisaPaymentsModal(true);
+                  break;
+                case 'savings':
+                  setEditingSavingsId(item.id);
+                  setSavingsForm(form);
+                  setShowAddSavingsModal(true);
+                  break;
+                case 'tom':
+                  setEditingTomPaymentsId(item.id);
+                  setTomPaymentsForm(form);
+                  setShowAddTomPaymentsModal(true);
+                  break;
+              }
+            }}
+          />
         )}
       </main>
 
