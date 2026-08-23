@@ -32,6 +32,7 @@ import Term from './ui/Term';
 import { percent, plural } from '../lib/format';
 import GoalPage from './goal/GoalPage';
 import ThemeToggle from './ui/ThemeToggle';
+import SideRail from './shell/SideRail';
 
 // ============================================================================
 // TYPES
@@ -2925,7 +2926,17 @@ export const InvestmentTerminal: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-surface-base text-text-primary">
+    <div className="flex min-h-screen bg-surface-base text-text-primary">
+
+      {/* Navigace vlevo. Svislé místo je v aplikaci vzácné, vodorovné ne. */}
+      <SideRail
+        active={activeTab}
+        onSelect={setActiveTab}
+        positionCount={familyData.allPositions.length}
+        watchlistCount={watchlistStocks.length}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col">
       {/* HEADER */}
       {/* ==================================================================
           HLAVIČKA — jeden pruh, ne třetina obrazovky
@@ -3129,33 +3140,7 @@ export const InvestmentTerminal: React.FC = () => {
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        {/* Navigace. Tři záložky místo čtyř: Platby byly prázdné
-            a Freedom se sloučil do Cíle. */}
-        <nav className="flex items-center gap-1 mb-5" aria-label="Hlavní navigace">
-          {([
-            { id: 'portfolio', label: 'Portfolio', count: familyData.allPositions.length },
-            { id: 'watchlist', label: 'Sledované', count: watchlistStocks.length },
-            { id: 'cil', label: 'Cíl', count: undefined },
-            { id: 'splaceni', label: 'Platby', count: undefined },
-          ] as const).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={`flex items-center gap-2 rounded-button border px-3.5 py-2 font-mono text-[11px] uppercase tracking-[0.11em] transition-colors ${
-                activeTab === tab.id
-                  ? 'border-border bg-surface-active text-text-primary'
-                  : 'border-transparent text-text-muted hover:bg-surface-hover hover:text-text-primary'
-              }`}
-            >
-              {tab.label}
-              {tab.count !== undefined && (
-                <span className="text-[10px] text-text-muted">{tab.count}</span>
-              )}
-            </button>
-          ))}
-        </nav>
+      <main className="flex-1 px-5 py-4">
 
         {/* Toolbar */}
         {activeTab !== 'cil' && (
@@ -5315,6 +5300,7 @@ export const InvestmentTerminal: React.FC = () => {
           onSubmit={handleNewAnalysis}
         />
       )}
+      </div>
     </div>
   );
 };
