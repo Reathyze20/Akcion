@@ -179,16 +179,49 @@ Pro kanadské firmy by ekvivalentem byl **SEDAR+**; stojí za zvážení jako da
 
 ---
 
-### `[ ]` B17. U zahraničních emitentů čteme obálku, ne obsah
+### `[x]` B17. U zahraničních emitentů čteme obálku, ne obsah
 
 RDCM je jediná pozice se statusem `FOREIGN_PRIVATE_ISSUER`. Její nejnovější 6-K má
 **1 777 znaků** — je to krycí list. Skutečný obsah (tisková zpráva s výsledky) sedí
-v příloze `EX-99.1`, kterou zatím nestahujeme.
+v příloze `EX-99.1`, kterou jsme nestahovali.
 
 Důsledek: průzkum u RDCM nenašel **nic**, a to při 9,9 % podílu v portfoliu. „Nula nálezů"
-tam ale neznamená čistý štít, znamená, že jsme četli obálku.
+tam ale neznamenala čistý štít, znamenala, že jsme četli obálku.
 
-**Hotovo když:** u 6-K se čte příloha, ne wrapper — nebo appka řekne, že obsah nepřečetla.
+**Hotovo (23. 8.):** `SecEdgarClient.fetch_documents` čte manifest podání z
+`-index-headers.html`, takže typ dokumentu určuje SEC, ne odhad z názvu souboru.
+`read_filing` přidává přílohy `EX-99` u wrapper formulářů (6-K, 8-K) a u každého podání,
+jehož hlavní dokument přijde nečekaně tenký. Podání, které opravdu je jen krycí list
+(RDCM 27. 5. 2026), to teď v souhrnu **řekne**.
+
+Ověřeno na živých datech: RDCM 6-K z 12. 8. 2026 vzrostl z 1 777 na 22 443 znaků a
+z nuly nálezů na **šest** — tržby −33,4 % r/r, obrat z provozního zisku 1,7 mil. USD
+do GAAP provozní ztráty 3,8 mil. USD, odkup akcií zatím jen rozhodnutý, ne schválený.
+
+---
+
+### `[x]` B18. Hromadné přeanalyzování má jít z předplatného, ne z API
+
+Předplatné přihlašuje **tebe v klientovi**; backend je proces na serveru a nemá se čím
+přihlásit, takže si nové podání kupuje přes Anthropic API. To je v pořádku — je to jedno
+volání na ticker za čtvrtletí a jinak by se appka sama nikdy neaktualizovala.
+
+Backfill je ale jiný tvar: po každé změně promptu je to desítka dlouhých dokumentů naráz.
+Ten nemá důvod jít přes API, když je stejně otevřená session.
+
+**Hotovo (23. 8.):** `backend/scripts/sec_backfill.py`
+- `export [TICKER ...] [--newest-only]` — stáhne text nepřečtených podání do
+  `.sec_backfill/` (včetně příloh, viz B17). Žádný model, jen EDGAR.
+- `import` — načte ručně napsané souhrny zpět do DB.
+- `status` — co je analyzované, co čeká, co je vyexportované.
+
+Prázdná šablona se **neuloží** — `analysis` zůstane NULL. Kdyby se uložila, „nikdo to
+nečetl" by se v UI změnilo na „přečteno, nic zvláštního".
+
+**Co běží přes API a co ne:** přes API jde jen textová vrstva (varovné signály a výhled
+z podání, deep DD, knowledge synthesis, claim extraction). Všechno číselné — XBRL
+fundamenty, hotovost, burn, runway, trend tržeb, klasifikace Form 4, coverage status,
+kurzy, R/R skóre, semafor — je čistý kód a běží i bez klíče.
 
 ---
 
