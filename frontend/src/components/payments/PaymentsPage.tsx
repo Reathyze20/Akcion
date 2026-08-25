@@ -180,32 +180,42 @@ export const PaymentsPage: React.FC<PaymentsPageProps> = ({
   const showNote = active.items.some((item) => Boolean(item.note));
   const showCreditor = active.kind === 'debt' && active.items.some((item) => Boolean(item.creditor));
 
+  /* Souhrn je odvozené číslo — bez jediné platby v pěti knihách nemá co
+     shrnovat, a pět dlaždic „0,00 Kč" vedle sebe vypadá jako appka, které
+     něco nefunguje, ne jako appka, kterou ještě nikdo nepoužil. Odrážky
+     dole zůstávají vždy: i prázdné jsou to, čím se vybírá, do které knihy
+     jde první záznam. */
+  const hasAnyPayments =
+    debts.length + sharedPayments.length + misaPayments.length + savings.length + tomPayments.length > 0;
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
 
       {/* ------------------------------------------------------------------
           SOUHRN — pět čísel, která platí napříč knihami.
       ------------------------------------------------------------------ */}
-      <div className="grid shrink-0 grid-cols-5 gap-px overflow-hidden rounded-card border border-border bg-border">
-        <SummaryCell
-          label="Měsíčně celkem"
-          value={formatCurrency(summary.everyMonth)}
-          hint="Součet všech pěti knih — kolik každý měsíc odejde z účtů."
-          strong
-        />
-        <SummaryCell
-          label="Zbývá uhradit"
-          value={formatCurrency(summary.remaining)}
-          hint="Ze společného splácení, po odečtení dosud zaplacených splátek."
-        />
-        <SummaryCell label="Celkový dluh" value={formatCurrency(summary.total)} hint="Původní výše všech závazků." />
-        <SummaryCell label="Splaceno" value={formatCurrency(summary.paid)} hint="Splátky × měsíce od první splátky." />
-        <SummaryCell
-          label="Na jednoho"
-          value={formatCurrency(summary.perPerson)}
-          hint="Polovina společných plateb."
-        />
-      </div>
+      {hasAnyPayments && (
+        <div className="grid shrink-0 grid-cols-5 gap-px overflow-hidden rounded-card border border-border bg-border">
+          <SummaryCell
+            label="Měsíčně celkem"
+            value={formatCurrency(summary.everyMonth)}
+            hint="Součet všech pěti knih — kolik každý měsíc odejde z účtů."
+            strong
+          />
+          <SummaryCell
+            label="Zbývá uhradit"
+            value={formatCurrency(summary.remaining)}
+            hint="Ze společného splácení, po odečtení dosud zaplacených splátek."
+          />
+          <SummaryCell label="Celkový dluh" value={formatCurrency(summary.total)} hint="Původní výše všech závazků." />
+          <SummaryCell label="Splaceno" value={formatCurrency(summary.paid)} hint="Splátky × měsíce od první splátky." />
+          <SummaryCell
+            label="Na jednoho"
+            value={formatCurrency(summary.perPerson)}
+            hint="Polovina společných plateb."
+          />
+        </div>
+      )}
 
       {/* ------------------------------------------------------------------
           ODRÁŽKY — jedna na knihu, s vlastní měsíční částkou.
