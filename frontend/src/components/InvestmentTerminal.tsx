@@ -29,7 +29,6 @@ import NotificationBell from './NotificationBell';
 import DailyActionWidget from './DailyActionWidget';
 import DecisionBoard from './DecisionBoard';
 import ClearPortfolioButton from './ClearPortfolioButton';
-import RiskMeter from './RiskMeter';
 import Term from './ui/Term';
 import { percent, plural, verdictName, verdictTone, zoneName, zoneTone } from '../lib/format';
 import GoalPage from './goal/GoalPage';
@@ -207,7 +206,11 @@ const getActionCommand = (
   //  BUY is a verdict whether or not the backend agrees with it.
   hasBand: boolean = false,
   marketAlert: MarketAlert | null = null,
-  isWaitTime: boolean = false
+  isWaitTime: boolean = false,
+  // Čtvrtá brána, stejný důvod jako předchozí tři: Pokyn dřív mlčel o
+  // čtrnáctidenním zákazu nákupu před výsledky (§ backend earnings_lookup.py)
+  // a mohl napsat STRONG BUY na pozici, kterou by brána reálně odmítla.
+  earningsBlackout: boolean = false
 ): { text: string; color: string; bgColor?: string } => {
   // Priority 1: Free Ride at 150%+ — this one is pure arithmetic on the
   // owner's own cost basis, so it holds without any analysis.
@@ -228,6 +231,14 @@ const getActionCommand = (
     return { text: 'HARD EXIT', color: 'text-negative', bgColor: 'bg-negative/20' };
   }
 
+  // Priority 2b: score 4 falls between Hard Exit and every buy-side branch
+  // below — getActionSignal already treats < 5 as SELL for the batch-size
+  // column, but this function had no matching case, so a score-4 row wrote
+  // "ANALYZE" here: a sell opinion presented as no opinion at all.
+  if (score !== null && score < 5) {
+    return { text: 'PRODAT', color: 'text-negative', bgColor: 'bg-negative/10' };
+  }
+
   // Buy Guard veto: anything that would otherwise print a buy-side verdict
   // has to clear the same three gates the backend enforces. Checked once,
   // ahead of STRONG BUY/BUY, so neither can slip past it.
@@ -244,13 +255,22 @@ const getActionCommand = (
   if (wouldBuy && marketAlert !== 'GREEN') {
     return { text: `TRH ${marketAlert}`, color: 'text-warning', bgColor: 'bg-warning/10' };
   }
+  if (wouldBuy && earningsBlackout) {
+    return { text: 'PŘED VÝSLEDKY', color: 'text-warning', bgColor: 'bg-warning/10' };
+  }
 
   // Priority 3: Strong Buy for score >= 8 and underweight
   if (score !== null && score >= 8 && currentWeight < targetWeight) {
     return { text: 'STRONG BUY', color: 'text-positive font-bold' };
   }
 
-  // Priority 4: Hold if at or above target weight
+  // Priority 4: at or above target weight. Strictly over, not just at, was
+  // its own column ("ODEBRAT" + kolik Kč) until that column was cut — the
+  // trim call belongs on the one cell everyone actually reads, the exact
+  // amount stays a click away in the position detail.
+  if (score !== null && score >= 5 && currentWeight > targetWeight) {
+    return { text: 'ODEBRAT', color: 'text-warning', bgColor: 'bg-warning/10' };
+  }
   if (score !== null && score >= 5 && currentWeight >= targetWeight) {
     return { text: 'HOLD', color: 'text-text-muted' };
   }
@@ -374,19 +394,15 @@ const BAND_LABELS_CS: Record<Band, string> = {
 /**
  * Které nepovinné sloupce má smysl kreslit.
  *
- * Deset sloupců, z nichž čtyři jsou u čtrnácti z patnácti řádků prázdné,
- * není tabulka — je to mřížka pomlček. Sloupec, pro který nemá data ani
- * jedna pozice, se proto nevykreslí vůbec a řádek se o jeho výšku zkrátí.
+ * Dávka, katalyzátor, odpočet do výsledků a cesta k free ride měly každé
+ * vlastní sloupec, ale žádný z nich nevedl k jinému rozhodnutí, než už
+ * říká Pokyn (PRODAT/ODEBRAT/PŘED VÝSLEDKY/FREE RIDE) — zbyly tabulce jako
+ * dvanáct sloupců pro dvanáct pozic. Přesná částka a katalyzátor jsou
+ * o klik dál v detailu pozice.
  */
 export interface PositionColumns {
   score: boolean;
-  size: boolean;
-  catalyst: boolean;
   band: boolean;
-  /** Cesta ke zdvojnásobení. Bez známé nákupní ceny se nedá spočítat. */
-  freeride: boolean;
-  /** Odpočet do výsledků. Bez data u kterékoli pozice se sloupec nekreslí. */
-  earnings: boolean;
   /**
    * Sloupec s pokynem.
    *
@@ -507,7 +523,8 @@ const PortfolioRow: React.FC<{
     position.analysis_usable,
     !!position.band,
     marketAlert,
-    isWaitTime
+    isWaitTime,
+    position.earnings?.blackout ?? false
   );
 
   // Check if row should be highlighted (HARD EXIT)
@@ -518,12 +535,6 @@ const PortfolioRow: React.FC<{
 
   // Strategy: Free Ride eligible vs everything else (never without a cost basis)
   const isFreeRideEligible = position.unrealized_pl_percent != null && position.unrealized_pl_percent >= 150;
-  // Clamped at BOTH ends. Without a lower bound a −60 % position produced a
-  // CSS width of "-40%", which browsers discard — so the biggest losses
-  // rendered as a full green bar.
-  const progressTo150 = Math.max(
-    0, Math.min(100, ((position.unrealized_pl_percent ?? 0) / 150) * 100)
-  );
 
   // Calculate shares to sell for Free Ride
   const sharesToSellForFreeRide = useMemo(() => {
@@ -577,7 +588,10 @@ const PortfolioRow: React.FC<{
           jednou nad tabulkou místo patnáctkrát v ní. */}
       <td className="py-1.5 px-2.5">
         {(columns.action || actionCmd.text !== 'DOPLŇ ANALÝZU') && (
-          <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
+          <div
+            className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}
+            title={actionCmd.text === 'PŘED VÝSLEDKY' ? position.earnings?.detail_cs : undefined}
+          >
             {actionCmd.text}
           </div>
         )}
@@ -587,6 +601,14 @@ const PortfolioRow: React.FC<{
         {isWaitTime && (
           <div className="text-[9px] text-warning font-bold mt-0.5" title="Kánon: mrtvé peníze, neinvestovat">
             WAIT TIME
+          </div>
+        )}
+        {/* Kolik kusů prodat při FREE RIDE — dřív žilo jen ve svém vlastním
+            sloupci vedle Pokynu, který totéž slovo už napsal. Číslo bez
+            pokynu vedle sebe patří k němu, ne do dalšího sloupce. */}
+        {isFreeRideEligible && sharesToSellForFreeRide > 0 && (
+          <div className="text-[9px] text-warning/80 mt-0.5">
+            prodat {sharesToSellForFreeRide} ks
           </div>
         )}
       </td>
@@ -660,75 +682,11 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* Optimální dávka na tento měsíc. */}
-      {columns.size && (
-        <td className="py-1.5 px-2.5">
-          {!position.analysis_usable ? (
-            <div className="text-text-muted font-mono text-xs">—</div>
-          ) : position.action_signal === 'SELL' ? (
-            <div className="flex flex-col">
-              <div className="text-negative font-bold text-xs">PRODAT</div>
-              <div className="text-[9px] text-negative/80">Skóre &lt; 5</div>
-            </div>
-          ) : position.optimal_size < 0 ? (
-            // OVERWEIGHT: Show how much to SELL (negative optimal_size)
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1">
-                <span className="text-warning font-bold text-[9px]">ODEBRAT</span>
-                <span className="text-sm font-bold text-warning font-mono">
-                  {formatCurrency(Math.abs(position.optimal_size))}
-                </span>
-              </div>
-              <div className="text-[9px] text-warning/80">
-                Nad limit {position.max_allocation_cap.toFixed(1)}%
-              </div>
-            </div>
-          ) : position.optimal_size > 0 ? (
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1">
-                {position.action_signal === 'SNIPER' && <span className="text-warning text-[9px] font-bold">SNIPER</span>}
-                <span className="text-sm font-bold text-positive font-mono">
-                  {formatCurrency(position.optimal_size)}
-                </span>
-              </div>
-              {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
-                <div className="text-[9px] text-warning font-bold">
-                  #{position.allocation_priority} priorita
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col">
-              <div className="text-text-muted font-mono text-xs">0 Kč</div>
-              <div className="text-[9px] text-text-muted">
-                {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
-              </div>
-            </div>
-          )}
-        </td>
-      )}
-
-      {/* Nejbližší katalyzátor. */}
-      {columns.catalyst && (
-        <td className="py-1.5 px-2.5">
-          {position.next_catalyst ? (
-            <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
-              {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
-            </div>
-          ) : (
-            // Absent data is not a red flag about the company.
-            <div className="text-[9px] text-text-muted uppercase">—</div>
-          )}
-        </td>
-      )}
-
-      {/* Odpočet do výsledků. Uvnitř čtrnácti dnů brána nákup odmítne, tak
-          to buňka zvýrazní — je to důsledek, ne dekorace. */}
-      {columns.earnings && (
-        <td className="py-1.5 px-2.5">
-          <EarningsCell earnings={position.earnings} />
-        </td>
-      )}
+      {/* Dávka, katalyzátor, odpočet do výsledků a cesta k free ride měly
+          každé svůj sloupec — čtyři vedlejší fakta u dvanácti pozic naráz.
+          Pokyn teď nese jejich verdikt přímo (PRODAT/ODEBRAT/PŘED VÝSLEDKY/
+          FREE RIDE + kusy k prodeji), přesnou částku a katalyzátor ukáže
+          klik na řádek v detailu pozice. */}
 
       {/* Pásmo z enginu: kde cena leží vůči tomu, co si firma zaslouží
           (`10 − válce`), ne kde leží v rozpětí. Prázdné, když engine pásmo
@@ -762,37 +720,6 @@ const PortfolioRow: React.FC<{
               )
             ) : null}
           </div>
-        </td>
-      )}
-
-      {/* Cesta k free ride.
-
-          Tenhle sloupec dřív psal „VE ZTRÁTĚ“, pruh a „−60 % od nákupu“ —
-          tedy potřetí totéž, co vedle stojí jako −60,30 % a −746,53 US$.
-          Zbylo z něj jen to, co P/L neříká: jak daleko je pozice ke
-          zdvojnásobení, po kterém se podle kánonu vybírá vklad. */}
-      {columns.freeride && (
-        <td className="py-1.5 px-2.5">
-          {isFreeRideEligible ? (
-            <div className="flex flex-col">
-              <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
-              <div className="text-[8px] text-warning/70">
-                prodat {sharesToSellForFreeRide} ks
-              </div>
-            </div>
-          ) : position.unrealized_pl_percent != null && position.unrealized_pl_percent > 0 ? (
-            <div className="flex flex-col gap-1">
-              <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-positive/60 transition-all"
-                  style={{ width: `${progressTo150}%` }}
-                />
-              </div>
-              <div className="text-[8px] text-text-muted">
-                {position.unrealized_pl_percent.toFixed(0)} % ze 150 %
-              </div>
-            </div>
-          ) : null}
         </td>
       )}
 
@@ -2421,10 +2348,9 @@ export const InvestmentTerminal: React.FC = () => {
   /**
    * Které nepovinné sloupce vůbec nakreslit.
    *
-   * Skóre bylo prázdné u třinácti řádků z patnácti, optimální dávka
-   * a katalyzátor u čtrnácti, pásmo u dvanácti. Čtyřicet procent tabulky
-   * byly pomlčky — a každá z nich přidávala řádku výšku, kvůli které se
-   * portfolio nevešlo na obrazovku.
+   * Dávka, katalyzátor, výsledky a free ride měly každé vlastní sloupec,
+   * ale žádný z nich neříkal nic, co teď nenese Pokyn nebo detail pozice
+   * na klik — zůstaly jen Skóre a Pásmo, obojí přímý vstup do rozhodnutí.
    *
    * Sloupec se ukáže, jakmile pro něj má data aspoň jedna pozice. Nic se
    * neskrývá natrvalo: zmizí přesně to, o čem aplikace nic neví.
@@ -2433,10 +2359,10 @@ export const InvestmentTerminal: React.FC = () => {
     /*
      * Doplňkový sloupec má smysl, až když ho vyplní aspoň pětina řádků.
      *
-     * Pravidlo „stačí jedna pozice" nechalo stát sloupec Katalyzátor s
-     * jediným záznamem ze čtrnácti a Pásmo se třemi — dva svislé pruhy
-     * pomlček přes celou tabulku. Údaj se neztrácí, je v detailu pozice;
-     * jen nedělá sloupec tam, kde ho nemá čím naplnit.
+     * Pravidlo „stačí jedna pozice" nechalo stát sloupec Pásmo se třemi
+     * záznamy ze čtrnácti — svislý pruh pomlček přes celou tabulku. Údaj
+     * se neztrácí, je v detailu pozice; jen nedělá sloupec tam, kde ho
+     * nemá čím naplnit.
      */
     const alesponPetina = (test: (p: EnrichedPosition) => boolean) => {
       const kolik = displayedPositions.filter(test).length;
@@ -2444,18 +2370,12 @@ export const InvestmentTerminal: React.FC = () => {
     };
 
     return {
-      /* Skóre a dávka jsou vlastní výstupy aplikace. Ty se kreslí, jakmile
-         existuje aspoň jeden — na nich se rozhoduje. */
+      /* Skóre je vlastní výstup aplikace. Kreslí se, jakmile existuje
+         aspoň jeden — na něm se rozhoduje. */
       score: displayedPositions.some((p) => p.analysis_usable && p.conviction_score != null),
-      size: displayedPositions.some((p) => (p.optimal_size ?? 0) > 0),
-      catalyst: alesponPetina((p) => Boolean(p.next_catalyst)),
       band: alesponPetina(
         (p) => p.stock?.green_line != null || p.stock?.red_line != null,
       ),
-      freeride: alesponPetina(
-        (p) => p.unrealized_pl_percent != null && p.unrealized_pl_percent > 0,
-      ),
-      earnings: alesponPetina((p) => Boolean(p.earnings)),
       analysisNote: displayedPositions.some((p) => p.analysis_usable),
       action: displayedPositions.some((p) => p.analysis_usable),
     };
@@ -2465,11 +2385,7 @@ export const InvestmentTerminal: React.FC = () => {
       Šest napevno: symbol, pokyn, váha, cena, P/L a sloupec s akcí. */
   const columnCount = 6
     + (columns.score ? 1 : 0)
-    + (columns.size ? 1 : 0)
-    + (columns.catalyst ? 1 : 0)
-    + (columns.band ? 1 : 0)
-    + (columns.freeride ? 1 : 0)
-    + (columns.earnings ? 1 : 0);
+    + (columns.band ? 1 : 0);
 
   // Filter and sort watchlist
   const displayedWatchlist = useMemo(() => {
@@ -2862,7 +2778,10 @@ export const InvestmentTerminal: React.FC = () => {
           <div className="flex min-h-0 flex-1 flex-col gap-3">
           <div className="grid min-h-0 flex-1 gap-3 min-[1480px]:grid-cols-[352px_minmax(0,1fr)]">
 
-            {/* Levý sloupec: co dnes dělat a na čem portfolio stojí. */}
+            {/* Levý sloupec: co dnes dělat. Skladba portfolia (dřív tu stála
+                jako druhá dlaždice pod tímhle) je podklad k otázce „proč",
+                ne k dennímu čtení — přestěhovala se mezi odrážky
+                ContextPanelu, viz „Skladba" tam dole. */}
             <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-0.5">
               <DailyActionWidget
                 onExecuteAction={(action) => {
@@ -2874,13 +2793,6 @@ export const InvestmentTerminal: React.FC = () => {
                   return false;
                 }}
                 onOpenRozpor={() => setActiveTab('rozhodnuti')}
-              />
-              <RiskMeter
-                rocketCount={familyData.rocketCount}
-                anchorCount={familyData.anchorCount}
-                waitTimeCount={familyData.waitTimeCount}
-                unanalyzedCount={familyData.unanalyzedCount}
-                riskScore={familyData.riskScore}
               />
             </div>
 
@@ -2975,31 +2887,21 @@ export const InvestmentTerminal: React.FC = () => {
                 </div>
               </div>
               
-              {/* Top 3 recommendations */}
-              <div className="flex items-center gap-2">
-                {familyData.allPositions
-                  .filter(p => p.optimal_size > 0)
-                  .sort((a, b) => a.allocation_priority - b.allocation_priority)
-                  .slice(0, 3)
-                  .map((pos, i) => (
-                    <div 
-                      key={pos.ticker}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                        i === 0 ? 'bg-positive/20 text-positive border border-positive/50' :
-                        'bg-surface-hover/50 text-text-secondary'
-                      }`}
-                    >
-                      {pos.action_signal === 'SNIPER' && '[S] '}
-                      {pos.ticker}: {formatCurrency(pos.optimal_size)}
-                    </div>
-                  ))
-                }
-                {familyData.allPositions.filter(p => p.action_signal === 'SELL').length > 0 && (
-                  <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-negative/20 text-negative border border-negative/50">
-                    {familyData.allPositions.filter(p => p.action_signal === 'SELL').length}x PRODAT
-                  </div>
-                )}
-              </div>
+              {/* Dřív tu stály tři dlaždice a čtvrtá s počtem PRODAT — totéž,
+                  co tabulka níž říká u každého řádku ve sloupci Pokyn, jen
+                  jinou barvou. Zbyla jediná věta o tom, kam jde další
+                  koruna — to jediné tabulka sama neřekne. */}
+              {(() => {
+                const next = familyData.allPositions
+                  .filter((p) => p.optimal_size > 0)
+                  .sort((a, b) => a.allocation_priority - b.allocation_priority)[0];
+                return next ? (
+                  <p className="text-xs text-text-secondary">
+                    Příští na řadě: <span className="font-bold text-positive">{next.ticker}</span>
+                    {' '}({formatCurrency(next.optimal_size)})
+                  </p>
+                ) : null;
+              })()}
             </div>
           </div>
         )}
@@ -3054,24 +2956,9 @@ export const InvestmentTerminal: React.FC = () => {
                   <Th width="w-[62px]" align="center"><Term id="konvikcniSkore">Skóre</Term></Th>
                 )}
                 <Th width="w-[96px]" align="right">Cena</Th>
-                {columns.size && <Th width="w-[128px]" sub="tento měsíc">Dávka</Th>}
-                {columns.catalyst && <Th width="w-[118px]">Katalyzátor</Th>}
-                {columns.earnings && (
-                  <Th
-                    width="w-[104px]"
-                    hint="Nejbližší výsledky. Uvnitř čtrnácti dnů před nimi brána nákup odmítne. Slovo asi znamená odhad, ne oznámené datum."
-                  >
-                    Výsledky
-                  </Th>
-                )}
                 {columns.band && (
                   <Th width="w-[88px]" align="center" hint="Kde leží cena v pásmu mezi zelenou a červenou linkou">
                     Pásmo
-                  </Th>
-                )}
-                {columns.freeride && (
-                  <Th width="w-[106px]" hint="Kolik chybí do zdvojnásobení, po kterém se podle kánonu vybírá vklad">
-                    Do free ride
                   </Th>
                 )}
                 <Th width="w-[108px]" align="right"><Term id="pl">P/L</Term></Th>
@@ -3109,7 +2996,15 @@ export const InvestmentTerminal: React.FC = () => {
 
           {/* Podklady jako odrážky. Zavřené zabírají 38 px; otevřená je
               vždycky jen jedna a scrolluje sama v sobě. */}
-          <ContextPanel />
+          <ContextPanel
+            riskMeter={{
+              rocketCount: familyData.rocketCount,
+              anchorCount: familyData.anchorCount,
+              waitTimeCount: familyData.waitTimeCount,
+              unanalyzedCount: familyData.unanalyzedCount,
+              riskScore: familyData.riskScore,
+            }}
+          />
           </div>
         )}
 
