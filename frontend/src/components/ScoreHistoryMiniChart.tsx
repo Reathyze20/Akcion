@@ -29,6 +29,7 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
   const [trend, setTrend] = useState<'UP' | 'DOWN' | 'STABLE'>('STABLE');
   const [loading, setLoading] = useState(true);
   const [hasAlert, setHasAlert] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -52,7 +53,11 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
           }
         }
       } catch {
-        // Silently fail - no history available
+        /* Nenačteno není totéž co prázdno. Dřív obojí skončilo stejně —
+           komponenta zmizela — takže rozbitý endpoint vypadal jako ticker
+           bez historie a nikdo se to nedozvěděl. Endpoint byl přitom
+           rozbitý měsíce. */
+        setFailed(true);
       } finally {
         setLoading(false);
       }
@@ -61,8 +66,23 @@ export const ScoreHistoryMiniChart: React.FC<ScoreHistoryMiniChartProps> = ({
     fetchHistory();
   }, [ticker]);
 
+  if (failed) {
+    /* Malé, tiché, ale viditelné: sparkline vedle skóre není místo na
+       chybovou hlášku, ale mlčet o tom, že data nedorazila, taky nejde. */
+    return (
+      <span
+        className="text-[10px] text-text-muted"
+        title="Historii skóre se nepodařilo načíst"
+      >
+        historie ?
+      </span>
+    );
+  }
+
   if (loading || history.length < 2) {
-    return null; // Don't show if no history
+    /* Jeden bod není trend a nula bodů není nic k nakreslení. Ticker, který
+       byl oskórován jednou, tu prostě žádnou křivku nemá. */
+    return null;
   }
 
   // Calculate SVG path for sparkline
