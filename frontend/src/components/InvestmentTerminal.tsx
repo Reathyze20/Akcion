@@ -29,7 +29,7 @@ import DecisionBoard from './DecisionBoard';
 import ClearPortfolioButton from './ClearPortfolioButton';
 import RiskMeter from './RiskMeter';
 import Term from './ui/Term';
-import { percent, plural } from '../lib/format';
+import { percent, plural, verdictName, verdictTone, zoneName, zoneTone } from '../lib/format';
 import GoalPage from './goal/GoalPage';
 import FindsPage from './finds/FindsPage';
 import RevenueModelsPage from './models/RevenueModelsPage';
@@ -1677,13 +1677,8 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-text-secondary">Verdikt</span>
-                <span className={`font-bold px-2 py-0.5 rounded text-sm ${
-                  stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
-                  stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
-                  stock.action_verdict === 'WATCH_LIST' ? 'bg-accent/20 text-accent' :
-                  'bg-surface-hover text-text-secondary'
-                }`}>
-                  {stock.action_verdict || 'N/A'}
+                <span className={`font-bold px-2 py-0.5 rounded text-sm border ${verdictTone(stock.action_verdict).pill}`}>
+                  {verdictName(stock.action_verdict)}
                 </span>
               </div>
               
@@ -1704,14 +1699,8 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
               
               <div className="flex justify-between">
                 <span className="text-text-secondary">Cenové pásmo</span>
-                <span className={`font-bold px-2 py-0.5 rounded text-sm ${
-                  stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
-                  stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
-                  stock.price_zone === 'ACCUMULATE' ? 'bg-accent/20 text-accent' :
-                  stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
-                  'bg-surface-hover text-text-secondary'
-                }`}>
-                  {stock.price_zone || 'N/A'}
+                <span className={`font-bold px-2 py-0.5 rounded text-sm border ${zoneTone(stock.price_zone).pill}`}>
+                  {zoneName(stock.price_zone)}
                 </span>
               </div>
               
@@ -3756,14 +3745,6 @@ export const InvestmentTerminal: React.FC = () => {
                       : 'text-negative'
                     : 'text-text-muted';
                   
-                  const zoneColor = stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
-                                    stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
-                                    stock.price_zone === 'ACCUMULATE' ? 'bg-accent/20 text-accent' :
-                                    stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
-                                    stock.price_zone === 'SELL_ZONE' ? 'bg-warning/20 text-warning' :
-                                    stock.price_zone === 'OVERVALUED' ? 'bg-negative/20 text-negative' :
-                                    'bg-surface-hover text-text-secondary';
-
                   return (
                     <tr 
                       key={stock.id}
@@ -3784,21 +3765,13 @@ export const InvestmentTerminal: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${
-                          stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
-                          stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
-                          stock.action_verdict === 'WATCH_LIST' ? 'bg-accent/20 text-accent' :
-                          stock.action_verdict === 'TRIM' ? 'bg-warning/20 text-warning' :
-                          stock.action_verdict === 'SELL' ? 'bg-negative/20 text-negative' :
-                          stock.action_verdict === 'AVOID' ? 'bg-negative/30 text-negative' :
-                          'bg-surface-hover text-text-secondary'
-                        }`}>
-                          {stock.action_verdict || 'N/A'}
+                        <span className={`px-2 py-1 rounded border text-xs font-bold ${verdictTone(stock.action_verdict).pill}`}>
+                          {verdictName(stock.action_verdict)}
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${zoneColor}`}>
-                          {stock.price_zone || 'N/A'}
+                        <span className={`px-2 py-1 rounded border text-xs font-medium ${zoneTone(stock.price_zone).pill}`}>
+                          {zoneName(stock.price_zone)}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">

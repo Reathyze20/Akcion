@@ -252,3 +252,79 @@ export function bandTone(band: string | null | undefined): {
       };
   }
 }
+
+/**
+ * České názvy cenových pásem ze Sledovaných (`price_zone`).
+ *
+ * Jiný enum než `band` — `price_zone` je DEEP_VALUE/BUY_ZONE/ACCUMULATE/
+ * FAIR_VALUE/SELL_ZONE/OVERVALUED, `band` je POD_ZELENOU/NAKUP/…. Násilné
+ * mapování jednoho na druhý by tvrdilo něco, co appka neměří — proto
+ * samostatná dvojice funkcí, ne převod na `bandName`/`bandTone`.
+ */
+const ZONE_CS: Record<string, string> = {
+  DEEP_VALUE: 'HLUBOKÁ HODNOTA',
+  BUY_ZONE: 'KUPNÍ PÁSMO',
+  ACCUMULATE: 'PŘIKUPOVAT',
+  FAIR_VALUE: 'SPRAVEDLIVÁ CENA',
+  SELL_ZONE: 'PRODEJNÍ PÁSMO',
+  OVERVALUED: 'PŘEHODNOCENO',
+};
+
+export function zoneName(zone: string | null | undefined): string {
+  if (!zone) return 'MIMO METODIKU';
+  return ZONE_CS[zone.toUpperCase()] ?? zone;
+}
+
+/** Chybějící/neznámé pásmo zůstává šedé ze stejného důvodu jako u `bandTone()`. */
+export function zoneTone(zone: string | null | undefined): { text: string; pill: string } {
+  switch ((zone ?? '').toUpperCase()) {
+    case 'DEEP_VALUE':
+    case 'BUY_ZONE':
+      return { text: 'text-positive', pill: 'bg-positive-bg text-positive border-positive-border' };
+    case 'ACCUMULATE':
+      return { text: 'text-accent', pill: 'bg-accent-bg text-accent border-accent-border' };
+    case 'FAIR_VALUE':
+    case 'SELL_ZONE':
+      return { text: 'text-warning', pill: 'bg-warning-bg text-warning border-warning-border' };
+    case 'OVERVALUED':
+      return { text: 'text-negative', pill: 'bg-negative-bg text-negative border-negative-border' };
+    default:
+      return { text: 'text-text-muted', pill: 'bg-surface-active text-text-muted border-border-subtle' };
+  }
+}
+
+/**
+ * České názvy verdiktu ze Sledovaných (`action_verdict`) — třetí, opět jiný
+ * enum (BUY_NOW/ACCUMULATE/WATCH_LIST/TRIM/SELL/AVOID), stejný důvod pro
+ * samostatnou dvojici funkcí jako u `zoneName`/`zoneTone`.
+ */
+const VERDICT_CS: Record<string, string> = {
+  BUY_NOW: 'KOUPIT TEĎ',
+  ACCUMULATE: 'PŘIKUPOVAT',
+  WATCH_LIST: 'SLEDOVAT',
+  TRIM: 'ODEBRAT',
+  SELL: 'PRODAT',
+  AVOID: 'VYHNOUT SE',
+};
+
+export function verdictName(verdict: string | null | undefined): string {
+  if (!verdict) return 'MIMO METODIKU';
+  return VERDICT_CS[verdict.toUpperCase()] ?? verdict;
+}
+
+export function verdictTone(verdict: string | null | undefined): { text: string; pill: string } {
+  switch ((verdict ?? '').toUpperCase()) {
+    case 'BUY_NOW':
+    case 'ACCUMULATE':
+      return { text: 'text-positive', pill: 'bg-positive-bg text-positive border-positive-border' };
+    case 'WATCH_LIST':
+      return { text: 'text-accent', pill: 'bg-accent-bg text-accent border-accent-border' };
+    case 'TRIM':
+      return { text: 'text-warning', pill: 'bg-warning-bg text-warning border-warning-border' };
+    case 'SELL':
+    case 'AVOID':
+      return { text: 'text-negative', pill: 'bg-negative-bg text-negative border-negative-border' };
+    default:
+      return { text: 'text-text-muted', pill: 'bg-surface-active text-text-muted border-border-subtle' };
+  }
+}
