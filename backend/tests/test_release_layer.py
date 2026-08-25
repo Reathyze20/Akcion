@@ -428,3 +428,126 @@ def test_an_empty_filing_does_not_block_the_release(tmp_path):
 
     assert proposal.layer == LAYER_RELEASE
     assert proposal.cylinders is not None
+
+
+# ==============================================================================
+# Readings only some companies publish
+# ==============================================================================
+
+def test_operating_margin_stands_in_when_there_is_no_gross_margin(tmp_path):
+    """
+    RADCOM publishes only the operating line; the Canadians publish only the
+    gross one. One margin reading either way — adding both would count the same
+    company's margin move twice.
+    """
+    path = _file(
+        tmp_path,
+        [
+            _release(
+                readings={
+                    "revenue_yoy_pct": {
+                        "value": -33.4,
+                        "basis_months": 3,
+                        "quote": "down 33.4%",
+                    },
+                    "operating_margin_pct": {
+                        "value": -31.9,
+                        "prior": 9.9,
+                        "basis_months": 3,
+                        "quote": "(31.9)% of revenue, compared to 9.9%",
+                    },
+                }
+            )
+        ],
+    )
+    proposal = propose_cylinders(_inputs(release_fundamentals.for_ticker("GKPRF", path=path)))
+
+    facts = [e.fact_cs for e in proposal.evidence]
+    assert any("Provozní marže" in f for f in facts)
+    assert not any("Hrubá marže" in f for f in facts)
+
+
+def test_gross_margin_wins_when_both_are_published(tmp_path):
+    path = _file(
+        tmp_path,
+        [
+            _release(
+                readings={
+                    "gross_margin_pct": {
+                        "value": 53.0,
+                        "prior": 49.0,
+                        "basis_months": 3,
+                        "quote": "53% from 49%",
+                    },
+                    "operating_margin_pct": {
+                        "value": 10.0,
+                        "prior": 2.0,
+                        "basis_months": 3,
+                        "quote": "10% from 2%",
+                    },
+                    "bottom_line": {
+                        "value": "PROFIT",
+                        "basis_months": 3,
+                        "quote": "profit",
+                    },
+                }
+            )
+        ],
+    )
+    proposal = propose_cylinders(_inputs(release_fundamentals.for_ticker("GKPRF", path=path)))
+
+    margins = [e for e in proposal.evidence if "marže" in e.fact_cs]
+    assert len(margins) == 1
+    assert "Hrubá marže" in margins[0].fact_cs
+
+
+def test_a_fortress_balance_sheet_offsets_a_bad_quarter(tmp_path):
+    """
+    A collapsed quarter at a company holding no debt and a hundred million in
+    cash is a different fact from the same quarter at one financed by a lender.
+    The reading is a comparison, so it survives an unnamed currency.
+    """
+    def build(balance):
+        readings = {
+            "revenue_yoy_pct": {
+                "value": -33.4,
+                "basis_months": 3,
+                "quote": "down 33.4%",
+            },
+            "bottom_line": {"value": "LOSS", "basis_months": 3, "quote": "net loss"},
+        }
+        if balance:
+            readings["balance"] = {
+                "value": balance,
+                "basis_months": 3,
+                "quote": "cash of $109.7 million and no debt",
+            }
+        return _file(tmp_path, [_release(currency=None, readings=readings)])
+
+    without = propose_cylinders(
+        _inputs(release_fundamentals.for_ticker("GKPRF", path=build(None)))
+    )
+    with_cash = propose_cylinders(
+        _inputs(release_fundamentals.for_ticker("GKPRF", path=build("CASH_EXCEEDS_DEBT")))
+    )
+
+    assert with_cash.cylinders > without.cylinders
+    assert any("Rozvaha" in e.fact_cs for e in with_cash.evidence)
+
+
+def test_an_unknown_word_value_is_refused_rather_than_scored(tmp_path):
+    path = _file(
+        tmp_path,
+        [
+            _release(
+                readings={
+                    "balance": {
+                        "value": "PROBABLY_FINE",
+                        "basis_months": 3,
+                        "quote": "looks alright",
+                    }
+                }
+            )
+        ],
+    )
+    assert release_fundamentals.load_all(path=path)["GKPRF"].readings == {}

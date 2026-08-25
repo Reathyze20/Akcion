@@ -134,7 +134,12 @@ export default function FindDesk({ detail, onChanged }: Props) {
       <div className="rounded-card bg-frame p-4">
         <p className="eyebrow text-frame-muted">Co říká metodika</p>
 
-        <p className="mt-1.5 text-sm text-text-inverse">{m.gate_reason_cs}</p>
+        {/* `text-frame-text`, not `text-inverse` — `text-inverse` flips with
+            the PAGE's theme (white on light, near-black on dark), but this
+            box (`bg-frame`) stays dark in both themes. In dark mode the two
+            near-black tones sat 6-8 RGB steps apart — the gate sentence, the
+            single most important line on the screen, was functionally blank. */}
+        <p className="mt-1.5 text-sm text-frame-text">{m.gate_reason_cs}</p>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-frame-muted">
           <span className="flex items-center gap-1.5">
@@ -193,60 +198,71 @@ export default function FindDesk({ detail, onChanged }: Props) {
 
         {/* 4. co nevíme — deterministické, nad textem od modelu.
             Rozdělené na dva seznamy: jeden seznam třinácti položek se čte jako
-            třináct selhání, přitom většina z nich je „takhle to prostě je". */}
+            třináct selhání, přitom většina z nich je „takhle to prostě je".
+
+            Vedle sebe, ne pod sebou, když existují oba — stejný vzor jako pro
+            a proti níž. Stůl je široký (desk, ne úzký sloupec) a dva krátké
+            seznamy pod sebou zabíraly dvojnásobek výšky, který nikdo nečetl
+            zprava doprázdna. */}
         {(gaps.fixable.length > 0 || gaps.permanent.length > 0) && (
           <div className="sheet p-3">
-            {gaps.fixable.length > 0 && (
-              <>
-                <p className="eyebrow mb-2">Co chybí a jde doplnit</p>
-                <ul className="space-y-1.5">
-                  {gaps.fixable.map((gap) => (
-                    <li
-                      key={gap.id}
-                      className="flex items-start gap-2 text-xs text-text-secondary"
-                    >
-                      <span
-                        className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-warning"
-                        aria-hidden
-                      />
-                      <span>
-                        {gap.text_cs}
-                        <button
-                          type="button"
-                          className="ml-2 text-accent underline underline-offset-2"
-                          onClick={() => void refresh()}
-                          disabled={busy !== null}
-                        >
-                          {gap.fixable_cs}
-                        </button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
+            <div
+              className={
+                gaps.fixable.length > 0 && gaps.permanent.length > 0
+                  ? 'grid gap-x-6 gap-y-3 md:grid-cols-2'
+                  : undefined
+              }
+            >
+              {gaps.fixable.length > 0 && (
+                <div>
+                  <p className="eyebrow mb-2">Co chybí a jde doplnit</p>
+                  <ul className="space-y-1.5">
+                    {gaps.fixable.map((gap) => (
+                      <li
+                        key={gap.id}
+                        className="flex items-start gap-2 text-xs text-text-secondary"
+                      >
+                        <span
+                          className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-warning"
+                          aria-hidden
+                        />
+                        <span>
+                          {gap.text_cs}
+                          <button
+                            type="button"
+                            className="ml-2 text-accent underline underline-offset-2"
+                            onClick={() => void refresh()}
+                            disabled={busy !== null}
+                          >
+                            {gap.fixable_cs}
+                          </button>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-            {gaps.permanent.length > 0 && (
-              <>
-                <p className={`eyebrow mb-2 ${gaps.fixable.length > 0 ? 'mt-3' : ''}`}>
-                  Co se nedozvíme
-                </p>
-                <ul className="space-y-1.5">
-                  {gaps.permanent.map((gap) => (
-                    <li
-                      key={gap.id}
-                      className="flex items-start gap-2 text-xs text-text-secondary"
-                    >
-                      <span
-                        className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-text-muted"
-                        aria-hidden
-                      />
-                      <span>{gap.text_cs}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
+              {gaps.permanent.length > 0 && (
+                <div>
+                  <p className="eyebrow mb-2">Co se nedozvíme</p>
+                  <ul className="space-y-1.5">
+                    {gaps.permanent.map((gap) => (
+                      <li
+                        key={gap.id}
+                        className="flex items-start gap-2 text-xs text-text-secondary"
+                      >
+                        <span
+                          className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-text-muted"
+                          aria-hidden
+                        />
+                        <span>{gap.text_cs}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

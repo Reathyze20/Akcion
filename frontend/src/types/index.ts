@@ -21,6 +21,8 @@ export interface Stock {
   speaker: string;
   sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | null;
   conviction_score: number | null;
+  /** Nejbližší výsledky. null = datum nezná žádná úroveň. */
+  earnings?: EarningsInfo | null;
   price_target: string | null;
   time_horizon: string | null;
   edge: string | null; // Information Arbitrage
@@ -168,6 +170,28 @@ export interface Portfolio {
   total_value?: number;
 }
 
+/**
+ * Kdy firma příště vykáže výsledky, a jak dobře se to ví.
+ *
+ * `confirmed` je pole, které se nesmí ztratit. Oznámené datum a vzorec, který
+ * si aplikace odvodila z historie zveřejňování, jsou obojí použitelné a nejsou
+ * totéž tvrzení. `label_cs` ten rozdíl nese rovnou ve slovech („za 78 dní"
+ * proti „asi za 98 dní"), takže ho buňka nemůže zahodit.
+ */
+export interface EarningsInfo {
+  next_date: string;
+  window_end: string | null;
+  days: number;
+  confirmed: boolean;
+  source: string;
+  /** Krátký text do buňky. */
+  label_cs: string;
+  /** Datum, kvalita a důvod — do tooltipu. */
+  detail_cs: string;
+  /** Uvnitř čtrnácti dnů, ve kterých brána odmítá nákupy. */
+  blackout: boolean;
+}
+
 export interface Position {
   id: number;
   portfolio_id: number;
@@ -197,6 +221,14 @@ export interface Position {
   unrealized_pl: number | null;
   unrealized_pl_percent: number | null;
   currency?: string;
+  /** Nejbližší výsledky. null = datum nezná žádná úroveň, buňka kreslí pomlčku. */
+  earnings?: EarningsInfo | null;
+  /**
+   * CRITICAL/HIGH nález z vlastního SEC výkazu firmy (going concern,
+   * neúčinné kontroly, restatement...). Dřív viditelné jen po otevření
+   * detailu pozice (`SecFilingsCard`) — tohle je totéž, na řádku.
+   */
+  sec_material_finding?: boolean;
   created_at: string;
   updated_at: string;
 }

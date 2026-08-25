@@ -18,6 +18,28 @@ from pydantic import BaseModel, Field, computed_field
 from app.core.tickers import canonical_ticker as to_canonical
 
 
+class EarningsInfo(BaseModel):
+    """
+    When this company reports next, and how well that is known.
+
+    Sent on both the holdings table and the watchlist so the countdown reads
+    identically in each. `confirmed` is the field that must never be dropped:
+    an announced date and a pattern this app worked out are both actionable and
+    are not the same claim, and `label_cs` already carries the difference in
+    words ("za 78 dní" against "asi za 98 dní") so a cell cannot lose it.
+    """
+
+    next_date: date
+    window_end: date | None = None
+    days: int
+    confirmed: bool
+    source: str
+    label_cs: str
+    detail_cs: str
+    #: Inside the fourteen days the Buy Guard refuses purchases in.
+    blackout: bool
+
+
 class StockAnalysisResult(BaseModel):
     """Individual stock analysis result from AI - Trading focused."""
     
@@ -62,6 +84,9 @@ class StockResponse(BaseModel):
     price_target: str | None = None
     time_horizon: str | None = None
     edge: str | None = None
+    #: Next earnings and the countdown to it. None means no date from any
+    #: tier — which the table shows as a dash, not as "no earnings coming".
+    earnings: EarningsInfo | None = None
     catalysts: str | None = None
     risks: str | None = None
     raw_notes: str | None = None

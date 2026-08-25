@@ -38,7 +38,7 @@ from app.core.sources import verdict_stance
 from app.core.tickers import canonical_ticker
 from app.services.asset_class_caps import apply_cap as apply_asset_cap
 from app.services.currency import CurrencyError, currency_mismatch
-from app.schemas.daily_actions import ActionItem, DailyActionResponse
+from app.schemas.daily_actions import ActionItem, ConcentrationOut, DailyActionResponse
 from app.trading.gomes_logic import (
     GomesGatekeeper,
     Trigger,
@@ -313,6 +313,27 @@ def _by_company(analyses: Iterable[AnalysisInput]) -> dict[str, AnalysisInput]:
         ):
             picked[key] = analysis
     return picked
+
+
+def _concentration_out(concentration) -> ConcentrationOut | None:
+    """
+    The same reading `Reading.warnings_cs()` already renders as prose, kept as
+    numbers so a screen can show it every day, not just past a threshold.
+
+    None when there is nothing to show: no reading was computed, or no
+    position had a knowable CZK value. Zero would claim a portfolio with zero
+    exposure; the honest answer here is that there is nothing to report.
+    """
+    if concentration is None or not concentration.total_czk:
+        return None
+    return ConcentrationOut(
+        total_czk=round(concentration.total_czk, 2),
+        material_pct=round(concentration.material_pct, 1),
+        unassessed_pct=round(concentration.unassessed_pct, 1),
+        upper_bound_pct=round(concentration.upper_bound_pct, 1),
+        material_tickers=list(concentration.material_tickers),
+        unassessed_tickers=list(concentration.unassessed_tickers),
+    )
 
 
 def generate_daily_actions(
@@ -788,6 +809,7 @@ def generate_daily_actions(
         # company and must not report an action the cap merely hid.
         all_actions=candidates,
         warnings=warnings,
+        concentration=_concentration_out(concentration),
         generated_at=now,
     )
 

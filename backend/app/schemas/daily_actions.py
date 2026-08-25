@@ -55,6 +55,27 @@ class ActionItem(BaseModel):
     invalidated_if: str = ""
 
 
+class ConcentrationOut(BaseModel):
+    """
+    The portfolio-level reading from `app/services/concentration.py`, structured
+    for the screen rather than folded into a sentence.
+
+    Added 2026-08-25: the numbers already reached the user, but only as text
+    inside `warnings` — true whenever a threshold was crossed, silent otherwise.
+    A screen cannot show a trend from a sentence that only appears sometimes;
+    this is the same reading, kept as numbers so a persistent tile can show it
+    every day, above and below the threshold alike.
+    """
+
+    total_czk: float
+    material_pct: float
+    unassessed_pct: float
+    #: The worst case: known-bad plus everything nobody can assess.
+    upper_bound_pct: float
+    material_tickers: list[str] = Field(default_factory=list)
+    unassessed_tickers: list[str] = Field(default_factory=list)
+
+
 class DailyActionResponse(BaseModel):
     """
     The whole daily decision in one payload.
@@ -70,6 +91,9 @@ class DailyActionResponse(BaseModel):
     available_cash_czk: float
     status: str  # "HOLD_HOLD_HOLD" ("Nic. Drž.") | "ACTION_REQUIRED"
     actions: list[ActionItem] = Field(default_factory=list)
+    #: None when the reading could not be made (see `concentration_lookup`) or
+    #: when no position had a knowable value — absent, not a reassuring zero.
+    concentration: ConcentrationOut | None = None
     #: Every action the engine produced, ranked, WITHOUT the display cap.
     #:
     #: `actions` is capped at three on purpose — the daily list answers "what do

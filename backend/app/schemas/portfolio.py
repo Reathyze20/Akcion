@@ -20,6 +20,7 @@ from app.core.tickers import canonical_ticker as to_canonical
 from app.services.currency import currency_mismatch
 
 from ..models.portfolio import BrokerType, MarketStatusEnum
+from app.schemas.responses import EarningsInfo
 
 
 # ==============================================================================
@@ -186,6 +187,14 @@ class PositionResponse(PositionBase):
     unrealized_pl_percent: float | None = None
     created_at: datetime
     updated_at: datetime
+    #: Next earnings and the countdown to it, same shape and same wording as
+    #: the watchlist uses. None means no date from any tier.
+    earnings: EarningsInfo | None = None
+    #: A CRITICAL or HIGH finding from the company's own SEC filing (going
+    #: concern, controls not effective, restatement...). Computed on read from
+    #: `sec_findings`, same source `SecFilingsCard` reads in the position
+    #: detail — this is what lets the holdings row show it without a click.
+    sec_material_finding: bool = False
 
     model_config = {
         "from_attributes": True,

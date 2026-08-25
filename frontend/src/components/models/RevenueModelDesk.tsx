@@ -119,7 +119,10 @@ export default function RevenueModelDesk({ model }: Props) {
       {model.notes && (
         <div className="rounded-card bg-frame p-4">
           <p className="eyebrow text-frame-muted">Poznámky z dokumentu</p>
-          <p className="mt-1.5 whitespace-pre-line text-sm text-text-inverse">{model.notes}</p>
+          {/* `text-frame-text`, not `text-inverse` — see FindDesk.tsx for why:
+              `text-inverse` tracks the page theme, but this box stays dark in
+              both themes, so in dark mode the text nearly matched the box. */}
+          <p className="mt-1.5 whitespace-pre-line text-sm text-frame-text">{model.notes}</p>
         </div>
       )}
 

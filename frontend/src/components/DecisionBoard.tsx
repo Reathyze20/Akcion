@@ -143,7 +143,10 @@ const PriceChart: React.FC<{
             }
             tickLine={false}
             axisLine={{ stroke: CHART_GRID }}
-            minTickGap={28}
+            // 180 denních svící při 28 px vyrobilo přes dvacet nalepených
+            // popisků — čitelné jako šum, ne jako osa. 64 px drží rozestup,
+            // kde se dá skutečně přečíst, na jaký měsíc se dívám.
+            minTickGap={64}
             /* Poslední den nese i popisek „teď" — bez místa napravo od
                něj by se text o pravý okraj grafu uřízl. */
             padding={{ left: 4, right: 34 }}
@@ -290,6 +293,12 @@ const BandScale: React.FC<{ score: number | null; deserved: number | null; tone:
 }) => {
   if (score === null) return null;
   const clamp = (v: number) => Math.max(0, Math.min(100, v * 10));
+  // The label reads at a position; it has to sit at that position. `flex
+  // justify-between` used to put "zaslouží X" at the row's visual center no
+  // matter what X was — for a deserved score of 7 the word sat at 50 % while
+  // its own tick, drawn correctly below, sat at 70 %. Clamped narrower than
+  // the tick itself only so the text doesn't clip under "drahé"/"levné".
+  const labelLeft = deserved !== null ? Math.min(90, Math.max(10, clamp(deserved))) : null;
 
   return (
     <div className="mt-1.5">
@@ -306,10 +315,17 @@ const BandScale: React.FC<{ score: number | null; deserved: number | null; tone:
           style={{ left: `calc(${clamp(score)}% - 2px)` }}
         />
       </div>
-      <div className="flex justify-between text-[10px] text-text-muted mt-0.5 tabular-nums">
-        <span>drahé</span>
-        {deserved !== null && <span>zaslouží {deserved.toLocaleString('cs-CZ')}</span>}
-        <span>levné</span>
+      <div className="relative h-3 text-[10px] text-text-muted mt-0.5 tabular-nums">
+        <span className="absolute left-0">drahé</span>
+        {labelLeft !== null && (
+          <span
+            className="absolute -translate-x-1/2 whitespace-nowrap"
+            style={{ left: `${labelLeft}%` }}
+          >
+            zaslouží {deserved!.toLocaleString('cs-CZ')}
+          </span>
+        )}
+        <span className="absolute right-0">levné</span>
       </div>
     </div>
   );
@@ -427,7 +443,7 @@ const ListRow: React.FC<{ card: BoardCard; active: boolean; onSelect: () => void
       }`}
     >
       <span
-        className={`shrink-0 rounded border px-1 py-0.5 text-[9px] font-semibold ${tone.pill}`}
+        className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded border px-1 py-0.5 text-[9px] font-semibold min-w-[84px] text-center ${tone.pill}`}
       >
         {bandName(card.band)}
       </span>

@@ -31,6 +31,9 @@ from ..models.portfolio import (
     InvestmentLog,
     InvestmentLogType,
 )
+from app.schemas.responses import EarningsInfo
+from app.services.earnings_lookup import badges as earnings_badges
+
 from ..schemas.portfolio import (
     CSVUploadResponse,
     TradeRequest,
@@ -46,6 +49,7 @@ from ..schemas.portfolio import (
     PriceRefreshRequest,
     PriceRefreshResponse,
 )
+from ..services.concentration_lookup import bulk_material_findings
 from ..services.currency import CurrencyError, CurrencyService
 from ..services.importer import BrokerCSVParser, validate_position_data
 from ..services import market_catalyst
@@ -185,13 +189,27 @@ def get_portfolio_summary(
             if last_update is None or pos.last_price_update > last_update:
                 last_update = pos.last_price_update
     
+    # The earnings countdown, one query for the whole table. Attached here
+    # rather than computed per row so the holdings view and the watchlist ask
+    # the calendar the same question and get the same wording back.
+    countdowns = earnings_badges(db, [p.ticker for p in positions])
+    material_findings = bulk_material_findings(db, [p.ticker for p in positions])
+    position_rows = []
+    for pos in positions:
+        row = PositionResponse.model_validate(pos)
+        found = countdowns.get(pos.ticker)
+        if found is not None:
+            row.earnings = EarningsInfo(**found.as_dict())
+        row.sec_material_finding = material_findings.get(pos.ticker, False)
+        position_rows.append(row)
+
     return {
         "portfolio": {
             **portfolio.__dict__,
             "position_count": len(positions),
             "total_value": total_market_value_czk  # Market value only, cash separate
         },
-        "positions": positions,
+        "positions": position_rows,
         "total_cost_basis": total_cost_basis_czk,
         "total_market_value": total_market_value_czk,
         "total_unrealized_pl": total_unrealized_pl_czk,

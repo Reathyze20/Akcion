@@ -22,7 +22,8 @@ from sqlalchemy.orm import Session
 from ..database.connection import get_db
 from ..database.repositories import StockRepository
 from ..models.stock import Stock
-from ..schemas.responses import StockPortfolioResponse, StockResponse
+from ..schemas.responses import EarningsInfo, StockPortfolioResponse, StockResponse
+from ..services.earnings_lookup import badges as earnings_badges
 from ..services.market_data import MarketDataService
 from ..services.score_journal import SOURCE_MANUAL, record_score, trusted_price
 from ..core.sources import InvestmentSource
@@ -202,6 +203,9 @@ async def get_stocks(
             stocks = [s for s in stocks if s.speaker and speaker.lower() in s.speaker.lower()]
         
         # Convert to response models and fill missing price lines from canonical Gomes source
+        # One calendar read for the whole list, not one per row.
+        countdowns = earnings_badges(db, [s.ticker for s in stocks])
+
         stock_responses = []
         for stock in stocks:
             resp = StockResponse.model_validate(stock)
@@ -211,6 +215,9 @@ async def get_stocks(
                     resp.green_line = lines["green_line"]
                     resp.red_line = lines["red_line"]
                     resp.grey_line = lines["grey_line"]
+            found = countdowns.get(stock.ticker)
+            if found is not None:
+                resp.earnings = EarningsInfo(**found.as_dict())
             stock_responses.append(resp)
         
         filters_applied = {}

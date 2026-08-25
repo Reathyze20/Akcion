@@ -36,6 +36,7 @@ three-month one is how growth becomes collapse.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from functools import lru_cache
@@ -53,6 +54,16 @@ DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "company_releases.
 PROFIT = "PROFIT"
 LOSS = "LOSS"
 
+#: Balance-sheet states. Comparisons rather than amounts, so they survive a
+#: release that never names its currency.
+CASH_EXCEEDS_DEBT = "CASH_EXCEEDS_DEBT"
+DEBT_EXCEEDS_CASH = "DEBT_EXCEEDS_CASH"
+BALANCED = "BALANCED"
+
+_WORD_VALUES = frozenset(
+    {PROFIT, LOSS, CASH_EXCEEDS_DEBT, DEBT_EXCEEDS_CASH, BALANCED}
+)
+
 
 @dataclass(frozen=True)
 class Reading:
@@ -62,6 +73,29 @@ class Reading:
     basis_months: int
     quote: str
     prior: float | None = None
+
+
+@dataclass(frozen=True)
+class Publication:
+    """
+    A day, or only a month, on which the company actually published a report.
+
+    The distinction is the point. Gatekeeper's own IR page dates its statements
+    to the month it uploaded them and no further; Kuya's press releases carry
+    the day in the URL. An estimate built on the first must say "December", not
+    "15 December" — precision nobody has is the failure mode this app keeps
+    finding.
+    """
+
+    label: str
+    year: int
+    month: int
+    #: None when the source only knew the month.
+    day: int | None = None
+
+    @property
+    def exact(self) -> bool:
+        return self.day is not None
 
 
 @dataclass(frozen=True)
@@ -84,6 +118,10 @@ class Release:
     readings: dict[str, Reading]
     context: tuple[str, ...] = ()
     absent: tuple[str, ...] = ()
+    #: When this company has actually published results before. Used to say
+    #: when the next one is due for companies no provider covers.
+    publications: tuple[Publication, ...] = ()
+    publications_note: str = ""
 
     @property
     def has_anything(self) -> bool:
@@ -122,7 +160,7 @@ def _reading(name: str, raw: Any, *, ticker: str) -> Reading | None:
     if value is None:
         return None
     if isinstance(value, str):
-        if value.upper() not in (PROFIT, LOSS):
+        if value.upper() not in _WORD_VALUES:
             logger.warning(
                 "company_releases: {} {} má neznámou hodnotu {!r}", ticker, name, value
             )
@@ -151,6 +189,24 @@ def _reading(name: str, raw: Any, *, ticker: str) -> Reading | None:
         prior = None
 
     return Reading(value=value, basis_months=basis, quote=quote, prior=prior)
+
+
+def _publication(raw: Any) -> Publication | None:
+    """One past publication, at whatever precision the source actually had."""
+    if not isinstance(raw, dict):
+        return None
+    text = str(raw.get("published") or "").strip()
+    match = re.fullmatch(r"(\d{4})-(\d{2})(?:-(\d{2}))?", text)
+    if match is None:
+        logger.warning("company_releases: datum zveřejnění {!r} nerozumím", text)
+        return None
+    year, month, day = match.groups()
+    return Publication(
+        label=str(raw.get("label") or ""),
+        year=int(year),
+        month=int(month),
+        day=int(day) if day else None,
+    )
 
 
 def _release(raw: dict[str, Any]) -> Release | None:
@@ -185,6 +241,15 @@ def _release(raw: dict[str, Any]) -> Release | None:
         readings=readings,
         context=tuple(raw.get("context") or ()),
         absent=tuple(raw.get("absent") or ()),
+        publications=tuple(
+            p
+            for p in (
+                _publication(item)
+                for item in ((raw.get("publication_history") or {}).get("publications") or [])
+            )
+            if p is not None
+        ),
+        publications_note=str((raw.get("publication_history") or {}).get("note") or ""),
     )
 
 

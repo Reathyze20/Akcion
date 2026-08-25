@@ -43,6 +43,7 @@ from .base import Base
 #: Where a date came from, in descending order of trust.
 SOURCE_YAHOO = "YAHOO"          # announced or inferred by the data provider
 SOURCE_SEC_CADENCE = "SEC_CADENCE"  # our own arithmetic on past filing dates
+SOURCE_RELEASE_CADENCE = "RELEASE_CADENCE"  # the company's own publishing pattern
 
 
 class EarningsDate(Base):

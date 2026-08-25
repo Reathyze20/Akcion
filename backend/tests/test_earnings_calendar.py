@@ -134,10 +134,16 @@ def test_a_company_nobody_covers_is_recorded_as_unknown(db, monkeypatch):
     """
     Recorded rather than left stale. A date from three months ago is worse than
     no date, because it looks like an answer.
+
+    Deliberately a ticker nothing in the app knows. This used to name KUYAF,
+    and then KUYAF's own publishing history was recorded in
+    `app/data/company_releases.json` and it stopped being a company nobody
+    covers — the rule was fine, the example had moved. A test of "we know
+    nothing" must not be able to be falsified by learning something.
     """
     provider(monkeypatch, None)
 
-    [row] = ec.refresh(db, ["KUYAF"], now=NOW)
+    [row] = ec.refresh(db, ["NOSUCHCO"], now=NOW)
     db.flush()
 
     assert row.next_date is None

@@ -192,6 +192,55 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
         </button>
       </div>
 
+      {/*
+        Skladba portfolia — `app/services/concentration.py`. Dřív se tahle
+        stejná čísla objevila jen jako věta v `warnings`, a jen když
+        překročila práh (40 % s nálezem, 50 % neposouzeno) — pod prahem
+        appka mlčela úplně a nešlo vidět, jestli se to blíží. Trvalá dlaždice,
+        aby byl vidět trend, ne jen okamžik, kdy je to už zle.
+      */}
+      {data.concentration && (
+        <div className="mx-5 mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-surface-raised/40 px-3 py-2 text-[11.5px]">
+          <span className="font-semibold uppercase tracking-wider text-text-muted">
+            Skladba portfolia
+          </span>
+          <span
+            className={
+              data.concentration.material_pct > 40
+                ? 'font-bold text-negative'
+                : data.concentration.material_pct > 25
+                  ? 'font-bold text-warning'
+                  : 'text-text-secondary'
+            }
+            title={
+              data.concentration.material_tickers.length > 0
+                ? `Materiální nález: ${data.concentration.material_tickers.join(', ')}`
+                : undefined
+            }
+          >
+            S nálezem: {data.concentration.material_pct.toFixed(1)} %
+          </span>
+          {data.concentration.unassessed_pct > 0 && (
+            <span
+              className={
+                data.concentration.unassessed_pct > 50
+                  ? 'font-bold text-warning'
+                  : 'text-text-secondary'
+              }
+              title={`Nikdo nevidí výkazy: ${data.concentration.unassessed_tickers.join(', ')}`}
+            >
+              Neposouzeno: {data.concentration.unassessed_pct.toFixed(1)} %
+            </span>
+          )}
+          {data.concentration.unassessed_pct > 0 && (
+            <span className="text-text-muted">
+              — problém je někde mezi {data.concentration.material_pct.toFixed(1)} % a{' '}
+              {data.concentration.upper_bound_pct.toFixed(1)} %
+            </span>
+          )}
+        </div>
+      )}
+
       {isHold ? (
         /* State A: Nic. Drž. — the correct answer most days */
         /* Klid je správná odpověď většinu dní, ale nezaslouží si třetinu

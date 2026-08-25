@@ -139,6 +139,11 @@ SOURCE_ANALYST: Final[str] = "GOMES"
 SOURCE_FILING: Final[str] = "SEC_TEXT"
 SOURCE_RELEASE: Final[str] = "RELEASE"
 
+#: Balance-sheet states a release may assert. A comparison, never an amount —
+#: which is what keeps it usable when the company never says which dollar.
+BALANCE_CASH_EXCEEDS_DEBT: Final[str] = "CASH_EXCEEDS_DEBT"
+BALANCE_DEBT_EXCEEDS_CASH: Final[str] = "DEBT_EXCEEDS_CASH"
+
 
 # ==============================================================================
 # Czech number and date formatting
@@ -733,7 +738,16 @@ def _from_release(release: Any, unknowns: list[str]) -> list[Evidence]:
             "absolutních čísel ji nepočítám"
         )
 
+    # Gross margin if the company published one, operating margin if it did
+    # not. Never both: they measure different things and adding them would
+    # count one company's margin move twice. RADCOM reports only the operating
+    # line, the Canadians only the gross one.
     margin = release.readings.get("gross_margin_pct")
+    margin_word = "Hrubá marže"
+    if margin is None or margin.prior is None:
+        margin = release.readings.get("operating_margin_pct")
+        margin_word = "Provozní marže"
+
     if margin is not None and margin.prior is not None:
         now, before = float(margin.value), float(margin.prior)
         delta_pp = now - before
@@ -747,7 +761,7 @@ def _from_release(release: Any, unknowns: list[str]) -> list[Evidence]:
             Evidence(
                 delta=delta,
                 fact_cs=(
-                    f"Hrubá marže {_n(now)} %, meziročně "
+                    f"{margin_word} {_n(now)} %, meziročně "
                     f"{'+' if delta_pp >= 0 else ''}{_n(delta_pp)} p.b. "
                     f"({label}, {margin.basis_months} měs., údaj firmy)"
                 ),
@@ -771,6 +785,30 @@ def _from_release(release: Any, unknowns: list[str]) -> list[Evidence]:
                     f"({label}, {bottom.basis_months} měs., údaj firmy — "
                     f"není to cash flow)"
                 ),
+                source=SOURCE_RELEASE,
+                as_of=period,
+            )
+        )
+
+    # Cash against debt, when the release states both. Currency-neutral like
+    # everything else here, because it is a comparison of two amounts in the
+    # same currency rather than an amount. The same reading the Yahoo layer
+    # already makes, and the reason it matters: a bad quarter at a company
+    # holding no debt and years of cash is a different fact from the same
+    # quarter at one financed by a lender.
+    balance = release.readings.get("balance")
+    if balance is not None:
+        state = str(balance.value).upper()
+        if state == BALANCE_CASH_EXCEEDS_DEBT:
+            delta, word = 1, "víc hotovosti než dluhu"
+        elif state == BALANCE_DEBT_EXCEEDS_CASH:
+            delta, word = -1, "dluh výrazně převyšuje hotovost"
+        else:
+            delta, word = 0, "hotovost a dluh zhruba vyrovnané"
+        out.append(
+            Evidence(
+                delta=delta,
+                fact_cs=f"Rozvaha: {word} ({label}, údaj firmy)",
                 source=SOURCE_RELEASE,
                 as_of=period,
             )

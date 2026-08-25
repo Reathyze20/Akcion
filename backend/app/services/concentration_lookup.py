@@ -72,6 +72,48 @@ def _has_material_finding(db: Session, symbols: tuple[str, ...]) -> bool:
     ) is not None
 
 
+def bulk_material_findings(db: Session, tickers: list[str]) -> dict[str, bool]:
+    """
+    Whether each of `tickers` carries a CRITICAL/HIGH finding — one query for
+    the whole holdings list, not one per row.
+
+    Added 2026-08-25: the holdings table showed no sign of a material finding
+    anywhere on the row itself — it was one click away, in the position detail's
+    `SecFilingsCard`, invisible until opened. This is what a per-row badge reads.
+    Canonical-ticker aware for the same reason the rest of this module is: a
+    Canadian listing's finding is filed under the US OTC symbol the analysis
+    names, not the symbol on the broker statement.
+
+    Never raises, same rule as `portfolio_concentration`: this decorates the
+    holdings row and must not be able to take the whole view down with it. A
+    lookup failure means every ticker reads as False — no badge, not a wrong
+    one — which is the same honest-absence choice the rest of this app makes.
+    """
+    symbols_by_ticker = {t: (variants_of(t) or (t.upper(),)) for t in tickers}
+    flat_symbols = {sym for symbols in symbols_by_ticker.values() for sym in symbols}
+    if not flat_symbols:
+        return {t: False for t in tickers}
+
+    try:
+        hit_symbols = {
+            row[0]
+            for row in db.query(SecFinding.ticker)
+            .filter(SecFinding.ticker.in_(flat_symbols))
+            .filter(SecFinding.severity.in_((SEVERITY_CRITICAL, SEVERITY_HIGH)))
+            .distinct()
+            .all()
+        }
+    except Exception:  # noqa: BLE001 — see docstring
+        logger.exception("SEC nálezy pro portfolio se nepodařilo načíst")
+        db.rollback()  # leave the session usable for whatever the caller does next
+        return {t: False for t in tickers}
+
+    return {
+        t: any(sym in hit_symbols for sym in symbols)
+        for t, symbols in symbols_by_ticker.items()
+    }
+
+
 def _assessed(db: Session, symbols: tuple[str, ...]) -> bool:
     """
     Whether anyone can read this company's filings at all.

@@ -43,7 +43,13 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.tickers import canonical_ticker, variants_of
-from app.models.earnings import SOURCE_SEC_CADENCE, SOURCE_YAHOO, EarningsDate
+from app.models.earnings import (
+    SOURCE_RELEASE_CADENCE,
+    SOURCE_SEC_CADENCE,
+    SOURCE_YAHOO,
+    EarningsDate,
+)
+from app.services import release_fundamentals
 from app.models.sec import SecFiling
 
 #: A quarter, as the reporting calendar actually spaces them.
@@ -56,6 +62,16 @@ REFRESH_AFTER = timedelta(days=3)
 #: Beyond this, a cadence estimate has drifted too far from the filing it was
 #: derived from to mean anything.
 MAX_ESTIMATE_AGE_DAYS = 200
+
+#: A company does not report again a fortnight after it last reported. Without
+#: this the pattern below would answer with the anniversary of a report that
+#: has already been published — Kuya put out Q2 on 17 August 2026 and last
+#: year's Q2 landed on 2 September, so the naive answer is two weeks away and
+#: wrong.
+MIN_GAP_AFTER_LAST_PUBLICATION_DAYS = 60
+
+#: Fewer publications than this is not a pattern, it is a coincidence.
+MIN_PUBLICATIONS_FOR_PATTERN = 3
 
 
 @dataclass(frozen=True)
@@ -152,6 +168,102 @@ def estimate_from_filings(db: Session, ticker: str, *, today: date) -> Guess | N
     )
 
 
+def estimate_from_release_history(ticker: str, *, today: date) -> Guess | None:
+    """
+    When the company itself has published results before, and when that is due
+    to come round again.
+
+    For the holdings no provider covers and EDGAR cannot see, this is the only
+    tier left — and it is better than it sounds, because a small issuer's
+    reporting calendar is remarkably stable. Gatekeeper has posted its quarters
+    in January, April, July and December every year since 2019.
+
+    Deliberately not a median gap between publications. Gatekeeper's fourth
+    quarter takes five months and its other three take three, so an average
+    would put the annual report in October and the blackout in the wrong place
+    entirely. The pattern that actually holds is the month of the year.
+
+    Precision is never invented. Gatekeeper's IR page dates its statements to
+    the month, so the answer is a whole month wide; Kuya's press releases carry
+    the day, so the window is a fortnight.
+    """
+    release = release_fundamentals.for_ticker(ticker)
+    if release is None or len(release.publications) < MIN_PUBLICATIONS_FOR_PATTERN:
+        return None
+
+    latest = max(release.publications, key=lambda p: (p.year, p.month, p.day or 1))
+    earliest_sensible = max(
+        today,
+        date(latest.year, latest.month, latest.day or 1)
+        + timedelta(days=MIN_GAP_AFTER_LAST_PUBLICATION_DAYS),
+    )
+
+    # Every publication's anniversary, in this year and the next, kept only if
+    # it lands after the company could plausibly report again.
+    candidates: list[tuple[date, "release_fundamentals.Publication"]] = []
+    for pub in release.publications:
+        for year in (earliest_sensible.year, earliest_sensible.year + 1):
+            try:
+                when = date(year, pub.month, pub.day or 1)
+            except ValueError:  # 29 February in a non-leap year
+                continue
+            if when > earliest_sensible:
+                candidates.append((when, pub))
+    if not candidates:
+        return None
+
+    when, pub = min(candidates, key=lambda c: c[0])
+
+    if pub.exact:
+        window_end = when + timedelta(days=14)
+        precision = f"loni {when.day}. {when.month}."
+    else:
+        # Only the month is known, so the whole month is the answer.
+        next_month = date(when.year + when.month // 12, when.month % 12 + 1, 1)
+        window_end = next_month - timedelta(days=1)
+        precision = f"v měsíci {when.month}/{when.year}."
+
+    years = sorted({p.year for p in release.publications})
+    count = len(release.publications)
+    # Czech counts a small number differently from a large one, and this string
+    # is read by the owner rather than parsed.
+    word = "zprávy" if count < 5 else "zpráv"
+    return Guess(
+        next_date=when,
+        window_end=window_end,
+        confirmed=False,
+        source=SOURCE_RELEASE_CADENCE,
+        note=(
+            f"Odhad z vlastní historie zveřejňování firmy ({count} {word}, "
+            f"{years[0]}–{years[-1]}) — výsledky vycházely {precision} "
+            f"Není to oznámené datum."
+        ),
+    )
+
+
+def _first_future(today: date, *tiers) -> "Guess | None":
+    """
+    The best tier that answers with a date that has not already happened.
+
+    This module's own rule, applied to every tier instead of only to the
+    cadence estimate: "a date from three months ago is worse than none, because
+    it looks like an answer." The provider breaks it — for four watchlist names
+    it kept returning last quarter's print, weeks after the fact — and a stale
+    date is worse here than elsewhere, because it silently hides the real one
+    behind something that reads like knowledge.
+
+    A window still open counts as future: the company has not reported yet.
+    """
+    for tier in tiers:
+        guess = tier()
+        if guess is None:
+            continue
+        latest = guess.window_end or guess.next_date
+        if latest >= today:
+            return guess
+    return None
+
+
 def refresh(
     db: Session,
     tickers: Iterable[str],
@@ -180,8 +292,11 @@ def refresh(
             if moment - fetched < REFRESH_AFTER:
                 continue
 
-        guess = fetch_from_provider(symbol) or estimate_from_filings(
-            db, symbol, today=today
+        guess = _first_future(
+            today,
+            lambda: fetch_from_provider(symbol),
+            lambda: estimate_from_filings(db, symbol, today=today),
+            lambda: estimate_from_release_history(symbol, today=today),
         )
 
         if row is None:
@@ -195,7 +310,10 @@ def refresh(
             row.window_end = None
             row.confirmed = False
             row.source = SOURCE_YAHOO
-            row.note = "Datum výsledků nezná ani poskytovatel, ani kadence podání"
+            row.note = (
+                "Datum výsledků nezná poskytovatel, kadence podání ani vlastní "
+                "historie zveřejňování firmy"
+            )
         else:
             row.next_date = guess.next_date
             row.window_end = guess.window_end

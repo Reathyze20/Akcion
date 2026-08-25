@@ -9,6 +9,7 @@ podoby. Slouží jako paměť mezi sezeními: co kdo o kterém tickeru řekl, ja
 | Soubor | Období | Témata |
 |---|---|---|
 | [2026-08-18_19.md](2026-08-18_19.md) | 18.–19. 8. 2026 | DBOX (model FY27, Q4 slate, Cinemark), IDN (wealth management PR), Elite Call notes |
+| [2026-08-25.md](2026-08-25.md) | 25. 8. 2026 | GKPRF/Gatekeeper (Genetec/MTA integrace, tři buckety byznysu ~300M, MDC ARR škálování, Doug Diamond o možné akvizici) — video ověřeno plným přepisem |
 
 ## Pravidla groomování
 
