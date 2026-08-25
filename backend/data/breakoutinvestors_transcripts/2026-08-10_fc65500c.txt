@@ -1,0 +1,87 @@
+# Breakout Investors Elite Call - 8.10.26
+# datum: 2026-08-10 | autor: Josh E | post: fc65500c-8c5e-4748-a08c-11ae77ad2e9b
+# url: https://www.breakoutinvestors.com/feed/fc65500c-8c5e-4748-a08c-11ae77ad2e9b
+# tickery: DBOXF, AISP, KUYAF, OPTX, LCFY, PESI, IRIX
+# zdroj: ručně vložený text stránky (Elite, přihlášen uživatel), ne surový audio přepis
+
+D-Box Quarterly Report and Expansion
+Brad led a discussion on D-Box's upcoming quarterly report, highlighting expectations for seat revenue, the company's new earnings call format, and ongoing expansion opportunities, with input from Robert and references to Cinemark's growth.
+
+Quarterly Report Expectations: Brad explained that D-Box will release its quarterly report, management commentary, financials, and a slideshow after market close, followed by an earnings call the next morning, marking a new approach for the company.
+
+Revenue and Seat Growth Analysis: Brad compared Cinemark's 50% year-over-year increase in D-Box seat revenue to D-Box's own expected performance, estimating a more modest increase to around 5 million seats due to fewer additions outside Cinemark.
+
+Recurring Revenue Focus: Brad noted D-Box's strategic shift toward recurring revenue and less emphasis on hardware sales, suggesting this could lead to long-term undervaluation and stability for investors.
+
+Expansion Opportunities: Brad discussed the significant room for D-Box to expand within Cinemark and internationally, citing the limited current penetration and potential for further seat installations if ROI remains favorable.
+
+Kuya Mining Updates and Mill Closure
+Bryan provided updates on Kuya Mining, including limited spending plans, tailings and cobalt prospects, government funding speculation, and progress on mill closure and ramp contractor selection, referencing conversations with David.
+
+Spending and Focus: Bryan reported that Kuya's spending will remain limited, with only a few hundred thousand dollars per quarter, and that the company is not renewing its focus despite promising press release details.
+
+Tailings and Cobalt Prospects: Bryan relayed David's excitement about higher silver content in tailings and the critical value of cobalt, noting potential government funding support for accessing these minerals.
+
+Mill Closure Progress: Bryan confirmed, based on David's assurances, that the mill closure is proceeding slowly due to the counterparty's pace, with no disputes or changes in deal terms.
+
+Ramp Contractor Selection: Bryan stated that Kuya has selected a contractor to begin ramp work, though this is happening later than anticipated, affecting production forecasts and share price expectations.
+
+Geodrill Financial Performance and Challenges
+Bryan and Mark (via chat) discussed Geodrill's record revenues, margin challenges in Chile, tax burden, and asset value, with input from Matt and Brad, highlighting operational concerns and potential for asset sale.
+
+Revenue and Margin Analysis: Bryan noted Geodrill's best quarter with record revenues but expressed disappointment with gross margins at 16%, below the desired 20% range, especially in Chile.
+
+Operational Streamlining Concerns: Bryan raised concerns about the company's use of "streamline operations" language, suggesting potential operational difficulties and the need for further insight from Mark.
+
+Tax Burden and Asset Value: Bryan highlighted Geodrill's unusual effective tax rate exceeding 100%, with a $3.4 million pre-tax income and $3.6 million tax burden, and emphasized the high street value of the company's drills compared to book value.
+
+Asset Sale Cycle: Bryan and Mark discussed the potential for selling assets during the current cycle, noting that better operational results could improve selling prices.
+
+PESI Position Closure and Hanford Project Uncertainties
+Bryan, Aaron, Steven, and Jerry discussed the rationale for closing the PESI position, uncertainties around Hanford project timelines, profitability, valuation, and cash flow, with detailed Q&A on government approvals and revenue assumptions.
+
+Position Closure Rationale: Bryan and Aaron explained the decision to close the PESI position due to a sharp stock run-up, extended project timelines, and doubts about profitability by 2028, despite DOE advocacy.
+
+Hanford Project Delays and Approvals: Steven asked about Washington state's urgency and DOE delays; Bryan clarified that the Department of Ecology has only approved low activity waste in the 200 West area, with objections from stakeholder groups and slow progress at the vitrification plant.
+
+Valuation and Revenue Assumptions: Aaron and Jerry discussed the difficulty in justifying a $400 million valuation, referencing fluctuating per-gallon grouting rates, share dilution, and unreliable company estimates, with skepticism about sustained high revenue over more than five to ten years.
+
+Cash Flow and Capital Raises: Steven, Bryan, and Aaron reviewed recent capital raises, noting $21 million raised in May and $26 million on the balance sheet, suggesting improved working capital and short-term financial stability.
+
+Iridex (IRIX) Pre-Earnings Update and Boardroom Dynamics
+Aaron provided a brief update on Iridex ahead of earnings, noting boardroom drama, CEO performance, undervaluation, and risks from shareholder antagonism, with Brad requesting the update.
+
+Boardroom Drama Impact: Aaron stated that recent boardroom issues have not affected Iridex's core business, and the new CEO is perceived as managing well, though shareholder antagonism remains a risk.
+
+Earnings Outlook and Valuation: Aaron predicted a decent second quarter print and potential stock rebound, viewing the current price as undervalued but cautioning about risks from ongoing shareholder disputes.
+
+Locafy (LCFY) Update and Speculation
+Bryan briefly addressed the Locafy update, noting Gavin's interest in discussions and Josh's speculation about potential developments, but confirmed no substantive news to share.
+
+Current Status: Bryan reported that Gavin is keen to talk, but there is no concrete information or developments to share at this time, and any speculation is not actionable.
+
+Airship AI (AISP) and DefSec AI Security and Government Contracts
+Robert discussed AISP's transition from AI infrastructure to physical security devices, recent contract wins, revenue and margin trends, and DefSec's hiring and product development, with Steven asking about federal order expectations.
+
+AI Security Device Expansion: Robert described AISP's growth in AI-powered security devices for high-profile events like the Super Bowl and World Cup, noting increased traction and the removal of government contract blocks.
+
+Revenue and Margin Trends: Robert reported a recent quarter of $4 million in software revenue with 75% margins, expecting future quarters to include more hardware and compressed margins but higher overall revenue.
+
+Government Contract Dynamics: Robert explained that AISP's contract flow is subject to government inefficiencies, resulting in flurries of orders rather than steady monthly contracts, and anticipated solid quarters based on CEO commentary.
+
+DefSec Hiring and Product Development: Robert noted DefSec's ongoing hiring for Canadian defense software engineers and contractors, with upcoming updates expected on their Bliss product for laser targeting and anti-laser applications.
+
+Federal Order Expectations: Steven asked about potential federal orders; Robert estimated a possible $10 million in Smart Wall and related contracts, with additional smaller confidential orders, and promised to share financial estimates based on last year's results.
+
+OPTX Earnings and Photonics Industry Trends
+Robert provided a quick review of OPTX's earnings, highlighting revenue growth, margin targets, product expansion, and industry momentum in photonics, with Brad and others discussing implications for defense and communications.
+
+Earnings Performance: Robert reported OPTX's earnings at $8.3 million, just below guidance, representing a 26% year-over-year gain, with most revenue from communications satellites rather than defense.
+
+Product and Margin Expansion: Robert explained OPTX's move from component manufacturing to full mechanical optical assemblies, targeting higher margins of 40% by next year, and noted similar strategies by competitors like LightPath.
+
+Financial Stability: Robert stated that OPTX has improved liquidity, with $14 million in cash and $7 million paid off in revolving credit, now operating profitably above break-even.
+
+Photonics Industry Momentum: Robert observed growing momentum in the photonics sector, driven by demand for "eyes" in space, medical instruments, and defense, and predicted continued industry growth supported by NDA mandates.
+
+Customer Expansion: Robert highlighted OPTX's increasing product lines with major customers, such as Amazon, and rapid escalation in supply chain relationships, especially for complex assemblies like steering antennas and Eagle Eye products.

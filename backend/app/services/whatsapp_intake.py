@@ -38,6 +38,24 @@ _TIMESTAMP_LINE = re.compile(r"^\s*(?P<edited>Upraveno)?\s*(?P<h>\d{1,2}):(?P<m>
 _DATE_NUMERIC = re.compile(r"^\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\s*$")
 _URL = re.compile(r"https?://\S+")
 
+# The OTHER paste shape. WhatsApp's "export chat" writes one header per
+# message on the same line as the text:
+#
+#     [1:24, 24. 8. 2026] +1 (203) 942-7647: DFSC CEO and CFO meeting...
+#
+# The screen-copy parser below cannot see these, because after phone numbers
+# are stripped what remains is `[1:24, 24. 8. 2026] : text` with no speaker at
+# all. That is the correct outcome and not a bug to route around: in this shape
+# the author IS the phone number, and the phone number must not survive
+# contact with storage. Attribution therefore has to come from the person
+# pasting — `parse_export_format(..., attributed_to=...)` — the same way a
+# cylinder count needs a human to agree to it.
+_EXPORT_HEADER = re.compile(
+    r"^\s*\[\s*(?P<h>\d{1,2}):(?P<m>\d{2})\s*,\s*"
+    r"(?P<d>\d{1,2})\.\s*(?P<mo>\d{1,2})\.\s*(?P<y>\d{4})\s*\]\s*"
+    r"(?P<speaker>[^:]*?)\s*:\s*(?P<text>.*)$"
+)
+
 _WEEKDAYS_CS = {
     "pondělí": 0, "úterý": 1, "středa": 2, "čtvrtek": 3,
     "pátek": 4, "sobota": 5, "neděle": 6,
@@ -149,6 +167,128 @@ def _is_reaction_line(line: str) -> bool:
         return True
     # No letters and no digits -> emoji only.
     return not any(ch.isalnum() for ch in s)
+
+
+def parse_export_format(
+    raw: str,
+    *,
+    attribute: dict[str, str] | None = None,
+) -> list[ParsedMessage]:
+    """
+    Parse WhatsApp's "export chat" shape, where each header shares a line with
+    its text: `[1:24, 24. 8. 2026] +1 (203) 942-7647: the message`.
+
+    Authors become slots, and a human names the slots
+    -------------------------------------------------
+    In this shape the speaker field IS the phone number, and phone numbers do
+    not survive contact with storage. But they still distinguish one person
+    from another, so each distinct author is assigned a slot letter in order of
+    first appearance — A, B, C — and the number itself is dropped inside this
+    function without ever being returned or written anywhere.
+
+    `attribute` maps a slot to a real name: `{"A": "Robert Mock"}`. Messages in
+    an unnamed slot come back with `speaker=""` and are carried no further.
+
+    Why not just attribute the whole paste to one person
+    ----------------------------------------------------
+    Because a paste is usually a thread, not a block. The note that prompted
+    this arrived with six replies from four other members, including a question
+    ("So this was conducted right before the latest raise, correct?") that a
+    blanket attribution would have recorded as the analyst's own words. Since
+    `source_key` decides how large a position may get, putting somebody else's
+    question in a named analyst's mouth is a position size built on a
+    misattribution.
+
+    Guessing the name from the text was available and was rejected. A later
+    message said "This is great @~Robert Mock !!", which names somebody who
+    might be the author of the message above, or of any message, or of none.
+    """
+    attribute = {k.strip().upper(): v for k, v in (attribute or {}).items()}
+
+    #: Raw speaker -> slot letter. Lives only for this call; the keys are phone
+    #: numbers and are never returned, logged or stored.
+    slots: dict[str, str] = {}
+
+    def slot_for(rawspeaker: str) -> str:
+        key = rawspeaker.strip()
+        if key not in slots:
+            slots[key] = chr(ord("A") + len(slots)) if len(slots) < 26 else "?"
+        return slots[key]
+
+    messages: list[ParsedMessage] = []
+    pending: dict | None = None
+    body: list[str] = []
+
+    def close() -> None:
+        nonlocal pending
+        if pending is None:
+            return
+        joined = '\n'.join([pending["text"], *body])
+        full = strip_phone_numbers(joined).strip()
+        if full:
+            messages.append(
+                ParsedMessage(
+                    speaker=attribute.get(pending["slot"], ""),
+                    text=collapse_duplicated_text(full),
+                    sent_on=pending["sent_on"],
+                    sent_at=pending["sent_at"],
+                    links=_URL.findall(full),
+                )
+            )
+        pending = None
+        body.clear()
+
+    for line in raw.splitlines():
+        header = _EXPORT_HEADER.match(line)
+        if header is None:
+            # A continuation line. Blank lines are kept: a numbered list broken
+            # by one is a single note, not two.
+            if pending is not None:
+                body.append(line)
+            continue
+
+        close()
+        pending = {
+            "slot": slot_for(header.group("speaker")),
+            "text": header.group("text"),
+            "sent_on": date(
+                int(header.group("y")), int(header.group("mo")), int(header.group("d"))
+            ),
+            "sent_at": time(int(header.group("h")), int(header.group("m"))),
+        }
+
+    close()
+    return messages
+
+
+def export_format_slots(raw: str) -> list[tuple[str, int, str]]:
+    """
+    Who is in this paste, as slots, so a person can say which one to trust.
+
+    Returns `(slot, message_count, first_words)` per distinct author, ordered
+    by first appearance. The phone numbers that distinguish them are used to
+    group and then dropped — what comes back carries no identifier at all,
+    only enough of the opening text for a human to recognise who is who.
+    """
+    seen: dict[str, list] = {}
+    order: list[str] = []
+    pending_key: str | None = None
+
+    for line in raw.splitlines():
+        header = _EXPORT_HEADER.match(line)
+        if header is None:
+            continue
+        key = header.group("speaker").strip()
+        if key not in seen:
+            seen[key] = [0, strip_phone_numbers(header.group("text")).strip()[:60]]
+            order.append(key)
+        seen[key][0] += 1
+        pending_key = key
+
+    del pending_key
+    return [
+        (chr(ord("A") + i), seen[k][0], seen[k][1]) for i, k in enumerate(order)
+    ]
 
 
 def parse_export(raw: str, *, pasted_on: date) -> list[ParsedMessage]:

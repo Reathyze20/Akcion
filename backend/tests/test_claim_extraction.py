@@ -194,11 +194,42 @@ def test_gomes_is_recognised_inside_the_group_chat():
     assert resolve_source_key("Money Mark Gomes", SourceType.WHATSAPP_GROUP) == "GOMES"
 
 
-def test_other_group_members_are_breakout_investors():
+def test_an_unlisted_group_member_counts_toward_nothing():
+    """
+    Changed on 2026-08-23, and the change is the point.
+
+    Every speaker in the group used to map to BREAKOUT_INVESTORS — around a
+    hundred and thirty people, any one of whom then carried the authority of
+    the research desk. `source_key` is what `evaluate_dual_source_buy` reads to
+    decide two sources agree, and agreement doubles the allowed position size
+    from 7 % to 15 %.
+
+    An unlisted speaker keeps their name on the record and counts toward
+    nothing. That is the correct treatment of a crowd, not a judgement about
+    anyone in it.
+    """
+    assert resolve_source_key("Brad Steveson", SourceType.WHATSAPP_GROUP) == "OTHER"
+
+
+def test_a_rostered_analyst_counts_as_their_source():
+    """
+    The other half. An analyst writing under his own name used to fall to OTHER
+    and be stored and silently unused; the roster is what says otherwise.
+    """
+    roster = {"brad steveson": "BREAKOUT_INVESTORS"}
     assert (
-        resolve_source_key("Brad Steveson", SourceType.WHATSAPP_GROUP)
+        resolve_source_key("Brad Steveson", SourceType.WHATSAPP_GROUP, roster)
         == "BREAKOUT_INVESTORS"
     )
+
+
+def test_the_roster_outranks_the_keyword_fallback():
+    """
+    A name containing "breakout" that the owner has assigned elsewhere goes
+    where he assigned it. Substring matching is the thing being replaced.
+    """
+    roster = {"breakout bob": "GOMES"}
+    assert resolve_source_key("Breakout Bob", SourceType.WHATSAPP_GROUP, roster) == "GOMES"
 
 
 def test_gomes_video_is_gomes_regardless_of_speaker_label():

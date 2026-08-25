@@ -1,0 +1,64 @@
+# Breakout Investors Elite Call - 7.27.26
+# datum: 2026-07-27 | autor: Josh E | post: 60e21682-04eb-4f69-afa3-536cefb86d6b
+# url: https://www.breakoutinvestors.com/feed/60e21682-04eb-4f69-afa3-536cefb86d6b
+# tickery: RDCM, OPTX, CXDO, IDN, AISP, DFSC
+# zdroj: ručně vložený text stránky (Elite, přihlášen uživatel), ne surový audio přepis
+
+Kuya Mining Operational Update
+Bryan provided a detailed update on Kuya Mining's production guidance, contractor changes, and mill acquisition progress, with Josh and other participants discussing expectations for production targets and financial results.
+
+Production Guidance and Progress: Bryan explained that Kuya Mining's recent silver equivalent ounces guidance was consistent with expectations, noting improvements in June but expressing skepticism about reaching the 350 tons per day target in the near term. He emphasized that the company is taking a deliberate approach due to a strong balance sheet, allowing for careful contractor selection and compliance with legal requirements.
+
+Contractor Changes and Exploration: Bryan reported that Kuya replaced its underground development contractor due to paperwork and insurance issues, but highlighted positive news that the company will operate three drills for exploration instead of two, which he views as a positive development.
+
+Mill Acquisition Status: Bryan shared that the mill acquisition, expected to close soon, has faced delays but no significant negotiation issues. He relayed from discussions with management that the deal remains on track and is considered imminent.
+
+Financial Results and Inventory: Bryan noted that Kuya's quarterly loss is expected to increase due to higher inventory levels at quarter end, explaining that more material was mined than delivered to the mill, which will impact reported costs and losses.
+
+Management Guidance and Expectations: In response to Josh's question, Bryan clarified that management has effectively softened their tone on production targets through their latest guidance, indicating that the 350 tons per day goal is not immediately achievable.
+
+OPTX and Peer Company Analysis
+Robert led a discussion on OPTX's business outlook, order pipeline, and management credibility, with Matt, Martin, and others comparing OPTX to peer companies and debating the implications of recent capital raises and management communication.
+
+Business Outlook and Orders: Robert described OPTX's continued receipt of medical and defense orders, highlighting the potential for a significant Eagle Eye order and the company's alignment with Anduril for advanced optical systems. He noted that defense and AI infrastructure stocks have been under pressure but may present buying opportunities.
+
+Capital Raise and Management Communication: Matt questioned Robert about a previous assurance that OPTX would not raise capital, which was later contradicted by the company's actions. Robert explained that management had stated there were no plans to raise at the time, but circumstances changed, and additional cash from warrant exercises may have delayed the need for a raise.
+
+Peer Comparison (Precision Optics Corp): Matt introduced Precision Optics Corp (POCI) as a close peer to OPTX, noting similarities in product lines, customer base, and growth trajectory. The group discussed the value of studying peer companies to understand industry challenges and growth patterns.
+
+Co-Packaged Optics and Industry Involvement: In response to Martin's question, Robert confirmed that OPTX's leadership is involved in organizations related to co-packaged optics and that the company is developing products such as nano cameras, indicating technical capability in this area.
+
+Market Dynamics and Low Visibility: Robert explained that companies like OPTX and DefSec, due to their low visibility and small size, are subject to sharp price movements from single buyers or sellers, but maintained that the underlying business fundamentals remain strong.
+
+Platform Power Rankings and Portfolio Feature Enhancements
+Josh, Bryan, and Martin discussed ongoing and upcoming changes to the platform's power rankings, the introduction of a model portfolio feature, and the importance of position sizing and risk communication for both experienced and novice investors.
+
+Power Rankings Update Process: Josh announced that updates to the power rankings algorithm are underway, with a focus on improving accuracy, timeliness, and risk assessment. Participants are encouraged to hold each other accountable for keeping rankings current and to publicly flag outdated information.
+
+Position Sizing and Risk Communication: Martin raised concerns about the lack of clarity around position sizing and risk levels in the rankings. Bryan and Josh explained that the new system will place greater emphasis on position sizing and risk, and that users should interpret rankings relative to each other and to their own risk profiles.
+
+Model Portfolio Feature Rollout: Josh introduced the new model portfolio feature, which reflects consensus and speculative picks from the Breakout Investors group. He explained how picks are categorized, how users can cross-reference individual rankings, and the process for adding and communicating new portfolio entries.
+
+Educational Needs for Novice Investors: Matt, Martin, and Charlie discussed the need for clearer guidance and educational resources for less experienced investors, particularly regarding position sizing, risk, and the unique challenges of micro cap investing. Josh committed to developing a 'Micro Cap Investing 101' guide and providing more explicit context and ranges for position sizes.
+
+Transparency and Consensus in Portfolio Decisions: Josh and Bryan clarified that portfolio additions are based on group consensus and are communicated transparently, with the intention of reflecting the collective view rather than individual preferences. Picks are categorized as consensus or speculative based on risk and group agreement.
+
+Educational Content and Community Support Initiatives
+Participants including Bart, Josh, Matt, and Bryan discussed the need for more educational content on micro cap investing, financial modeling, and research processes, with commitments to create resources and foster a supportive learning environment.
+
+Request for Educational Material: Bart and Martin expressed a desire for more educational resources on micro cap investing, including how to identify, research, and evaluate small cap stocks. Josh agreed and suggested creating dedicated sessions, recorded content, and written guides to address these needs.
+
+Financial Modeling and DCF Analysis: Bart inquired about the use of discounted cash flow (DCF) analysis among the group. Matt and Josh explained that while DCF is a valuable tool, it is challenging to apply accurately to micro caps due to uncertain assumptions. They noted that some members, like Mark, use DCFs selectively, and Brad's detailed models are available as examples.
+
+Community Collaboration and Support: Josh emphasized that the Breakout Investors community serves as a collaborative network for research and support, encouraging members to share ideas and co-research stocks of interest. He highlighted the value of leveraging the group's collective expertise.
+
+Encouragement for Questions and Participation: Josh reassured newer members that all questions are welcome, regardless of experience level, and encouraged active participation and repeated inquiries to foster learning and engagement within the community.
+
+New Portfolio Picks and Rationale
+Josh announced the addition of six new stocks to the model portfolio, explaining the rationale for each pick and the process for communicating these decisions to the group.
+
+List of New Portfolio Picks: Josh listed OPTX, Radcom (RDCM), IDN, AISP, TSSI, and CXDO as new additions to the model portfolio, specifying that entries are made at the day's closing or opening prices for transparency.
+
+Rationale for Each Pick: He explained that each pick was selected based on group consensus, recent price movements, and research activity, with some picks being re-entered after previous closures due to favorable price levels and outlook.
+
+Communication and Feedback Process: Josh stated that updates on portfolio changes will be communicated in the Elite WhatsApp room and that members are encouraged to provide feedback or ask questions about the picks and the new feature.
