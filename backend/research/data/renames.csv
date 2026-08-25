@@ -1,0 +1,36 @@
+# Mrtve symboly z listu a co se s nimi stalo.
+#
+# ZAMERNE NENI v app/core/tickers.py. Ta tabulka je o soubeznych dvojich
+# listinzich a canonical_ticker() je symetricka, necasova ekvivalence: KUYA.V
+# a KUYAF jsou tataz firma dnes. Prejmenovani neni ani symetricke, ani necasove
+# -- USAT se stal CTLP k urcitemu datu, a radek USAT z roku 2015 neni pozice
+# CTLP z roku 2026. Pridat to tam by udelalo same_company("USAT","CTLP") pravdive
+# DNES, slilo by dva nesouvisejici radky do jedne polozky v zebricku, a
+# variants_of("CTLP") by pri kazdem obnoveni posilalo mrtvy symbol na Yahoo.
+#
+# Cte se JEDNOSMERNE: dotaz na CTLP najde i radky USAT, dotaz na USAT si nikdy
+# nerekne, ze je CTLP.
+#
+# new_ticker PRAZDNE je kladne tvrzeni: nastupnicka rada neexistuje, firma je
+# pryc. To je neco jineho nez symbol, ktery v tomhle souboru vubec neni --
+# tam nikdo nehledal, a zebricek to hlasi jako RENAMED_UNRESOLVED.
+#
+# kind  RENAME         firma se prejmenovala, rada pokracuje pod novym symbolem
+#       ACQUIRED       koupena, rada konci
+#       DEAD           bankrot nebo vyrazeni, rada konci
+#       SYMBOL_REUSED  symbol prevzala JINA firma; historie pod nim NENI tato
+#                      firma a nesmi se pouzit
+old_ticker,new_ticker,effective_date,kind,evidence
+USAT,CTLP,2021-04-19,RENAME,"USA Technologies se prejmenovala na Cantaloupe Inc; v listu jsou oba symboly"
+FB,META,2022-06-09,RENAME,"Facebook se prejmenoval na Meta Platforms"
+MRNA,,2017-01-01,SYMBOL_REUSED,"V roce 2017 byl MRNA ticker Marina Biotech; Moderna ho prevzala pri IPO v prosinci 2018. Historie pod MRNA NENI tato firma."
+HIVE,,2019-08-01,SYMBOL_REUSED,"Aerohive Networks koupena Extreme Networks 2019; HIVE dnes nese HIVE Digital Technologies"
+ATAI,,2019-04-01,SYMBOL_REUSED,"ATA Inc se stala ATA Creativity Global (AACG); ATAI dnes nese ATAI Life Sciences"
+BETR,,2018-01-31,SYMBOL_REUSED,"Amplify Snack Brands koupena Hershey 2018; BETR dnes nese Better Home & Finance"
+SES,,2019-12-01,SYMBOL_REUSED,"Synthesis Energy Systems; SES dnes nese SES AI Corporation"
+DTEA,DTEAF,2021-06-08,RENAME,"DAVIDsTEA po delistingu z NASDAQ obchoduje na OTC jako DTEAF; Yahoo drzi historii jen pod DTEAF"
+CTLP,,2025-01-01,ACQUIRED,"Cantaloupe koupena; Yahoo nevraci historii pod CTLP ani period=max -- rada je pryc, ne nedohledana"
+QIPT,,2025-12-15,ACQUIRED,"Quipt Home Medical koupena (poznamka na radku 214); Yahoo nevraci historii pod QIPT ani QIPT.TO"
+MOGO,,2025-01-01,DEAD,"Yahoo nevraci historii pod MOGO, MOGO.TO ani MOGO.V"
+OSSIF,,2025-01-01,DEAD,"OneSoft Solutions; Yahoo nevraci historii pod OSSIF ani OSS.V"
+VWTR,,2022-05-23,ACQUIRED,"Vidler Water Resources koupena D.R. Horton 2022; Yahoo historii nedrzi"
