@@ -175,7 +175,11 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
   const isHold = data.status === 'HOLD_HOLD_HOLD';
 
   return (
-    <div className="bg-surface-raised rounded-card border border-border overflow-hidden">
+    // shrink-0: bez něj flexbox rodiče (overflow-y-auto ve sloupci vlevo)
+    // tuhle kartu při nedostatku místa zmenšil na pár pixelů místo aby
+    // scrolloval kolem ní — `overflow-hidden` tady ruší automatické
+    // minimum výšky flex položky, takže se seznam pokynů ztratil skoro celý.
+    <div className="bg-surface-raised rounded-card border border-border overflow-hidden shrink-0">
       {/*
         Semafor a volná hotovost se dřív opakovaly i tady — semafor už trvale
         stojí v levém sloupci (SideRail) a hotovost v horní liště appky
