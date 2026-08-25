@@ -46,6 +46,7 @@ interface EnrichedPosition {
   shares_count: number;
   avg_cost: number | null;  // null = buy price unknown, user must fill in
   current_price: number | null;
+  cost_basis?: number | null;
   currency?: string;
   currency_confirmed?: boolean;
   currency_conflict?: string | null;
@@ -665,7 +666,7 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                       <MetricCard
                         label="Počet akcií"
                         value={displayShares}
@@ -681,6 +682,10 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                       <MetricCard
                         label="Hodnota pozice"
                         value={currentPrice && displayShares != null ? formatCurrency(displayShares * currentPrice, position.currency) : null}
+                      />
+                      <MetricCard
+                        label="Vloženo celkem"
+                        value={position.cost_basis != null ? formatCurrency(position.cost_basis, position.currency) : null}
                       />
                     </div>
                   )}

@@ -45,7 +45,7 @@ from .routes import cash_hedge  # BOXX/RWM jako reálné instrumenty
 from .routes import breakout  # Watchlist Breakout Investors — konvikce a cíl
 from .routes import finds  # Vlastní nálezy — spis a vysvětlení
 from .routes import revenue_models  # Analytikovy modely tržeb vs. realita
-# from .routes import intake  # VYPNUTO 24. 8. 2026 — viz app.include_router níž
+from .routes import intake
 from .routes import dev_utils  # Development utilities (DISABLE IN PRODUCTION!)
 
 # Import alert scheduler
@@ -146,21 +146,13 @@ app.include_router(cash_hedge.router)  # Cash a hedge v kusech, ne v procentech
 app.include_router(breakout.router)  # Druhý zdroj: ukazuje se, neposlouchá se
 app.include_router(finds.router)  # Vlastní nálezy: co pro a co proti, s citací
 app.include_router(revenue_models.router)  # Modely tržeb od analytiků vs. realita
-# VYPNUTO 24. 8. 2026. `routes/intake.py` importuje `StockLifecycle`
-# z `models.trading`, kde nic takového není — model je `StockLifecycleModel`
-# v `models.gomes`. Protože main.py ten modul importuje, neimportovala se
-# CELÁ aplikace a backend vůbec nenastartoval.
-#
-# Vypnuto místo opravy schválně: ten soubor nepíše jen špatný název. Zapisuje
-# `lifecycle_phase` přímo z Gemini Flash extrakce s natvrdo zapsanou
-# `confidence_score=0.8` a do sloupců, které na modelu neexistují
-# (`current_stage`, `stage_entered_date`, `stage_rationale`). Tím by obešel
-# `lifecycle_intake.confirm()` — ráčnu i lidské potvrzení — a sám si
-# autorizoval vstup do brány, která pouští nákupy. To je táž vada jako
-# `_generate_mock_analysis`; oprava importu by ji rozjela, ne odstranila.
-#
-# Zapnout až bude fáze chodit přes návrh k potvrzení, ne přes přímý zápis.
-# app.include_router(intake.router)  # Rychlý Gemini Flash intake nového obsahu
+# Zapnuto 25. 8. 2026 — bylo vypnuto od 24. 8., protože `routes/intake.py`
+# psal `lifecycle_phase` přímo na sloupce, které na modelu neexistovaly, a
+# obcházel `lifecycle_intake.confirm()` (ráčnu i lidské potvrzení). `/commit`
+# teď fázi zapisuje přes `lifecycle_intake.propose()`/`confirm()`, stejnou
+# cestou jako `propose_lifecycle.py --confirm` — člověk už schválil návrh na
+# obrazovce (`POST /analyze`) dřív, než sem vůbec dorazí.
+app.include_router(intake.router)  # Rychlý Gemini Flash intake nového obsahu
 
 if settings.debug:
     app.include_router(dev_utils.router)  # Raw SQL execution — DEBUG only, never in production

@@ -1941,6 +1941,138 @@ def confirm_cylinders(
 
 
 # ============================================================================
+# LIFECYCLE PHASE — proposal, and the confirmation that turns it into stage
+# ============================================================================
+# The rubric's phase reading (GREAT_FIND/WAIT_TIME/GOLD_MINE) gates the Buy
+# Guard the same way cylinders do — WAIT_TIME refuses outright. Until now the
+# only way to confirm it was `scripts/propose_lifecycle.py --confirm`, a CLI.
+# This route exposes the same service (`lifecycle_intake.propose/confirm`) so
+# a phase can be reviewed and agreed to from the screen, not just the shell.
+
+
+class LifecycleSignalItem(BaseModel):
+    towards: str
+    weight: int
+    fact_cs: str
+    source: str
+    as_of: Optional[date] = None
+
+
+class LifecycleProposalResponse(BaseModel):
+    ticker: str
+    phase: Optional[str] = None
+    effective_phase: Optional[str] = None
+    ratcheted_to: Optional[str] = None
+    rough_patch: bool = False
+    ratchet_note_cs: str = ""
+    confidence: Optional[str] = None
+    layer: str = ""
+    signals: List[LifecycleSignalItem] = Field(default_factory=list)
+    unknowns: List[str] = Field(default_factory=list)
+    #: What is on record now, so the screen can show "proposed GOLD_MINE,
+    #: confirmed WAIT_TIME" instead of only ever showing the vote.
+    confirmed_phase: Optional[str] = None
+    phase_reached: Optional[str] = None
+    confirmed_at: Optional[str] = None
+    confirmed_by: Optional[str] = None
+
+
+class ConfirmLifecycleRequest(BaseModel):
+    phase: str = Field(..., description="GREAT_FIND | WAIT_TIME | GOLD_MINE | UNKNOWN")
+    confirmed_by: str = Field(..., min_length=1, max_length=100)
+
+
+def _lifecycle_response(db: Session, ticker: str, proposal) -> LifecycleProposalResponse:
+    from app.models.gomes import StockLifecycleModel
+    from app.core.tickers import canonical_ticker
+
+    row = (
+        db.query(StockLifecycleModel)
+        .filter(StockLifecycleModel.ticker == (canonical_ticker(ticker) or ticker.upper()))
+        .order_by(desc(StockLifecycleModel.detected_at))
+        .first()
+    )
+    signals = (row.phase_signals or {}) if row is not None else {}
+    return LifecycleProposalResponse(
+        ticker=proposal.ticker,
+        phase=proposal.phase,
+        effective_phase=proposal.effective_phase,
+        ratcheted_to=proposal.ratcheted_to,
+        rough_patch=proposal.rough_patch,
+        ratchet_note_cs=proposal.ratchet_note_cs,
+        confidence=proposal.confidence,
+        layer=proposal.layer,
+        signals=[
+            LifecycleSignalItem(
+                towards=s.towards, weight=s.weight, fact_cs=s.fact_cs,
+                source=s.source, as_of=s.as_of,
+            )
+            for s in proposal.signals
+        ],
+        unknowns=proposal.unknowns,
+        confirmed_phase=row.phase if row is not None else None,
+        phase_reached=row.phase_reached if row is not None else None,
+        confirmed_at=signals.get("phase_confirmed_at"),
+        confirmed_by=signals.get("phase_confirmed_by"),
+    )
+
+
+@router.get("/lifecycle/{ticker}", response_model=LifecycleProposalResponse)
+def get_lifecycle_proposal(ticker: str, db: Session = Depends(get_db)):
+    """
+    What the rubric makes of this company's stage, and what is on record.
+
+    Reads only what the database and cached fundamentals already hold — no
+    live SEC/Yahoo call, so the screen never waits on somebody else's server.
+    `scripts/propose_lifecycle.py` is what pulls fresh filings.
+    """
+    from app.services.lifecycle_intake import propose
+
+    try:
+        proposal = propose(db, ticker)
+    except Exception as e:
+        logger.exception("Lifecycle proposal failed for %s", ticker)
+        raise HTTPException(status_code=500, detail=f"Návrh fáze cyklu selhal: {e}")
+
+    return _lifecycle_response(db, ticker, proposal)
+
+
+@router.post("/lifecycle/{ticker}", response_model=LifecycleProposalResponse)
+def confirm_lifecycle(
+    ticker: str,
+    request: ConfirmLifecycleRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Record a lifecycle stage the owner agrees to.
+
+    The ratchet (§V1) is unconditional here, unlike cylinders' `override`: a
+    Gold Mine reading never demotes and there is no escape hatch to bypass
+    it. A business stage does not get a do-over the way a quarterly quality
+    estimate does.
+    """
+    from app.services.lifecycle_intake import confirm, propose
+
+    try:
+        proposal = propose(db, ticker)
+        confirm(
+            db, ticker, request.phase,
+            confirmed_by=request.confirmed_by,
+            proposal=proposal,
+        )
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        logger.exception("Lifecycle confirmation failed for %s", ticker)
+        raise HTTPException(status_code=500, detail=f"Potvrzení fáze cyklu selhalo: {e}")
+
+    return _lifecycle_response(db, ticker, proposal)
+
+
+# ============================================================================
 # THE LADDER — every holding, its band, and the two prices that change it
 # ============================================================================
 

@@ -14,10 +14,15 @@ from sqlalchemy.orm import Session
 
 from ..database.connection import get_db
 from ..models.stock import Stock
-from ..models.trading import StockLifecycle
 from ..core.sources import InvestmentSource
+from ..services import lifecycle_intake
 from ..services.gomes_intake_flash import IntakeAnalysisResult, analyze_intake_content
 from ..services.score_journal import SOURCE_MANUAL, record_score
+
+#: This app has one user; every lifecycle confirmation on record already
+#: carries this name (IMPLEMENTATION_PLAN.md §30-31). No separate identity
+#: field on the intake form for a single-owner app.
+CONFIRMED_BY = "Tomas"
 
 logger = logging.getLogger(__name__)
 
@@ -109,35 +114,38 @@ async def commit_intake(
         if data.summary_cz:
             stock.thesis = data.summary_cz
 
-        # 2. Aktualizace životního cyklu
-        if data.lifecycle_phase and data.lifecycle_phase != "UNKNOWN":
-            lifecycle = (
-                db.query(StockLifecycle)
-                .filter(StockLifecycle.ticker == data.ticker)
-                .first()
-            )
-            if not lifecycle:
-                lifecycle = StockLifecycle(
-                    ticker=data.ticker,
-                    current_stage=data.lifecycle_phase,
-                    stage_entered_date=datetime.utcnow(),
-                    confidence_score=0.8,
-                    stage_rationale=data.summary_cz
-                )
-                db.add(lifecycle)
-            else:
-                lifecycle.current_stage = data.lifecycle_phase
-                lifecycle.stage_rationale = data.summary_cz
-                lifecycle.stage_entered_date = datetime.utcnow()
-
-        # 3. Záznam do score deníku, pokud bylo zadáno skóre
+        # 2. Záznam do score deníku, pokud bylo zadáno skóre. Musí proběhnout
+        # PŘED čímkoli, co se dotáže DB (krok 3 níž) — SQLAlchemy autoflush by
+        # jinak zapsal `stock.conviction_score` beze deníku a `before_flush`
+        # bezpečnostní síť by k němu dopsala duplicitní 'unattributed' řádek
+        # (stejné pravidlo jako v `intelligence_gomes.py`: "Journal this
+        # scoring event before the flush"). `record_score` navíc nemá
+        # `rationale` parametr — dřívější volání by tu padlo na TypeError.
         if data.conviction_score is not None:
             record_score(
                 db,
                 ticker=data.ticker,
                 score=data.conviction_score,
                 source=SOURCE_MANUAL,
-                rationale=data.summary_cz
+                stock=stock,
+                action_signal=data.recommended_action,
+            )
+
+        # 3. Aktualizace fáze cyklu — přes potvrzovací bránu, ne přímým zápisem.
+        # Gemini Flash návrh je na obrazovce vždy vidět dřív, než sem vůbec
+        # dorazí (POST /analyze), takže tohle je lidmi-schválený vstup do
+        # `lifecycle_intake.confirm()`, stejná cesta jako `propose_lifecycle.py
+        # --confirm`. Zachovává ráčnu (Gold Mine se nikdy nedegraduje) a
+        # zapisuje evidenci do phase_signals místo natvrdo `confidence_score=0.8`
+        # na sloupce, které na modelu neexistovaly (IMPLEMENTATION_PLAN.md §32).
+        if data.lifecycle_phase and data.lifecycle_phase != "UNKNOWN":
+            proposal = lifecycle_intake.propose(db, data.ticker)
+            lifecycle_intake.confirm(
+                db,
+                data.ticker,
+                data.lifecycle_phase,
+                confirmed_by=CONFIRMED_BY,
+                proposal=proposal,
             )
 
         db.commit()

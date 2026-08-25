@@ -201,6 +201,12 @@ export interface Position {
   updated_at: string;
 }
 
+export interface UnconvertiblePosition {
+  ticker: string;
+  currency: string;
+  reason: string;
+}
+
 export interface PortfolioSummary {
   portfolio: Portfolio;
   positions: Position[];
@@ -211,6 +217,8 @@ export interface PortfolioSummary {
   total_value: number; // total_market_value + cash_balance
   cash_balance: number;
   last_price_update: string | null;
+  /** Non-empty means the totals above are incomplete — a currency this app cannot rate. */
+  unconvertible_positions: UnconvertiblePosition[];
 }
 
 export interface EnrichedStock extends Stock {

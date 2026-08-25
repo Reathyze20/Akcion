@@ -3004,6 +3004,14 @@ export const InvestmentTerminal: React.FC = () => {
     };
   }, [portfolios, stocks, exchangeRates, bandByTicker]);
 
+  // Pozice, jejichž měnu appka neumí přepočítat na koruny — součty výš je
+  // tiše vynechávají. Prázdné dnes pro všech dvanáct pozic; existuje kvůli
+  // incidentu, kdy neznámá měna spadla na výchozí kurz USD a ocenila
+  // izraelskou pozici na 3,3násobek skutečné hodnoty.
+  const unconvertiblePositions = useMemo(() => {
+    return portfolios.flatMap((p) => p.unconvertible_positions);
+  }, [portfolios]);
+
   // Které firmy držíme — kanonicky, ne podle zápisu tickeru. Bez toho se
   // KUYAF ukazovalo mezi sledovanými, přestože KUYA.V je v portfoliu.
   const ownedTickers = useMemo(() => {
@@ -3654,6 +3662,13 @@ export const InvestmentTerminal: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {activeTab === 'portfolio' && unconvertiblePositions.length > 0 && (
+                <div className="shrink-0 rounded-card border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning">
+                  Součty výš nepočítají {unconvertiblePositions.length === 1 ? 'jednu pozici' : `${unconvertiblePositions.length} pozice`} —
+                  appka nezná kurz pro {unconvertiblePositions.map((u) => u.ticker).join(', ')}.
+                </div>
+              )}
 
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (

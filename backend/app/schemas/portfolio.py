@@ -345,9 +345,22 @@ class MatchAnalysisResponse(BaseModel):
 # Portfolio Summary Schemas
 # ==============================================================================
 
+class UnconvertiblePosition(BaseModel):
+    """
+    A holding excluded from the totals above because its currency has no
+    known CZK rate. The old code let an unrateable currency fall through to
+    a default of the USD rate, which once valued an ILS holding at 3.3x its
+    worth — this is the warning that incident was meant to leave on screen.
+    """
+
+    ticker: str
+    currency: str
+    reason: str
+
+
 class PortfolioSummaryResponse(BaseModel):
     """Schema for portfolio summary with all positions and totals."""
-    
+
     portfolio: PortfolioResponse
     positions: list[PositionResponse]
     total_cost_basis: float
@@ -356,3 +369,6 @@ class PortfolioSummaryResponse(BaseModel):
     total_unrealized_pl_percent: float
     cash_balance: float = 0.0
     last_price_update: datetime | None
+    #: Non-empty means the totals above are incomplete, and by how much is
+    #: not knowable — the screen must say so, not present a partial sum as whole.
+    unconvertible_positions: list[UnconvertiblePosition] = Field(default_factory=list)
