@@ -396,6 +396,32 @@ class SecEdgarClient:
             return None, None
         return str(entry["cik_str"]).zfill(10), entry.get("title")
 
+
+    def _sec_filing_twin(self, ticker: str) -> tuple[str, str | None, str] | None:
+        """
+        The same company's US listing, when it files with the SEC.
+
+        Only the curated map in `tickers.py` is consulted — never a suffix
+        strip. The difference matters: `variants_of("IMP.V")` returns `ITMSF`
+        because somebody checked that they are one company, whereas dropping
+        ".V" off `GSI.V` would produce `GSI`, which is a different business
+        altogether.
+
+        Returns `(cik, company name, symbol)` or None.
+        """
+        from app.core.tickers import variants_of
+
+        for symbol in variants_of(ticker) or ():
+            if symbol.upper() == ticker.upper() or self._foreign_exchange(symbol):
+                continue
+            try:
+                cik, name = self.resolve_cik(symbol)
+            except SecError:
+                return None  # the registry is down; do not record a verdict
+            if cik:
+                return cik, name, symbol.upper()
+        return None
+
     # ------------------------------------------------------------------
     # Filings
     # ------------------------------------------------------------------
@@ -431,10 +457,31 @@ class SecEdgarClient:
                 ),
             )
 
-        # A foreign exchange suffix settles it without a lookup, and stops the
-        # base symbol being matched against an unrelated US company.
+        # A foreign exchange suffix means the base symbol must never be looked
+        # up: stripping ".V" off GSI.V and asking for GSI matches an unrelated
+        # US company. But the CURATED cross-listing map in `tickers.py` is not
+        # a suffix strip — it is a hand-checked statement that two symbols are
+        # one company, and some of those US listings do file with the SEC.
+        #
+        # ITMSF is the case that exposed this: Intermap Technologies files
+        # under CIK 0001285170, and the app had it recorded as NOT_AN_SEC_FILER
+        # because only `IMP.V` was ever asked about. One of the twelve holdings
+        # sat in the unassessable pile with audited filings available.
         exchange = self._foreign_exchange(ticker)
         if exchange is not None:
+            twin = self._sec_filing_twin(ticker)
+            if twin is not None:
+                cik, name, symbol = twin
+                return TickerCoverage(
+                    ticker=ticker,
+                    status=CoverageStatus.COVERED,
+                    cik=cik,
+                    company_name=name,
+                    note=(
+                        f"{ticker} je listovaný na {exchange}, ale tatáž firma "
+                        f"podává u SEC pod {symbol}."
+                    ),
+                )
             return TickerCoverage(
                 ticker=ticker,
                 status=CoverageStatus.NOT_AN_SEC_FILER,

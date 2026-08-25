@@ -26,7 +26,10 @@ made in a lifetime:
   own trend, and a price-versus-trend channel is structurally blind to it.
 
 So this is one input, not the answer, and it says so in every response it
-produces. It never writes the semafor — `suggested_alert` is a suggestion the
+produces. It never writes the semafor itself — `suggested_alert` is what
+`app/services/market_watch.py` reads, and that module may only ever tighten the
+setting, never loosen it: this measure misses the 2007 top entirely, so it has
+not earned the right to sound an all-clear. What follows is a suggestion the
 user accepts or ignores, because a gauge that silently sets the field would be
 the same manufactured confidence in a new place. It also refuses to answer at
 all rather than guess: too little history, or no history, returns a stated gap.
@@ -83,21 +86,49 @@ class ChannelPosition(str, Enum):
     AT_LOWER_LINE = "AT_LOWER_LINE"      # generational opportunity
 
 
-#: What the canon does at each chart position. `AT_UPPER_LINE` suggests ORANGE
-#: and not RED on purpose: the canon calls RED twice in a lifetime and one of
-#: those two times this gauge cannot see at all, so proposing it from valuation
-#: alone would be claiming a certainty the measure has not earned.
+#: What the canon does at each chart position.
+#:
+#: The range is {GREEN, YELLOW} and cannot be anything else. This used to map
+#: `AT_UPPER_LINE` to ORANGE, and GOMES_VIDEO_ADDENDUM.md §V3 says why that was
+#: wrong at the level of what the three grades MEAN. Gomes separates them by
+#: what he KNOWS, not by how dear the market is:
+#:
+#:   YELLOW  "I don't know what's going to cause the market to drop, but
+#:            something's going to, because the market's too expensive right
+#:            now. Most of my alerts are going to be yellow."
+#:   ORANGE  COVID. "I knew it was bad. I just didn't know HOW bad, because
+#:            frankly I'm not a biologist."  -> a named cause, unknown size.
+#:   RED     "when I know exactly what's happening, why it's happening, and how
+#:            severe it is."  -> a named cause, known to be severe. Twice in
+#:            thirty years.
+#:
+#: A z-score does not know what is happening in the world. It can only ever
+#: report the YELLOW condition — expensive, cause unknown — so that is the most
+#: it is allowed to say. ORANGE and RED are reached through
+#: `app/services/market_catalyst.py`, which requires somebody to name the cause.
+#:
+#: This is a tightening of what the gauge may claim, not a loosening of the
+#: semafor: an expensive market still raises the alert to YELLOW on its own,
+#: which is exactly the grade Gomes says most of his alerts are.
 POSITION_ALERT: Final[dict[ChannelPosition, str]] = {
-    ChannelPosition.AT_UPPER_LINE: "ORANGE",
+    ChannelPosition.AT_UPPER_LINE: "YELLOW",
     ChannelPosition.EXPENSIVE: "YELLOW",
     ChannelPosition.ABOVE_TREND: "GREEN",
     ChannelPosition.BELOW_GREY: "GREEN",
     ChannelPosition.AT_LOWER_LINE: "GREEN",
 }
 
+#: The most the valuation measure may ever propose. Asserted rather than
+#: trusted: a future edit to the table above must not quietly hand the gauge
+#: back the power to declare a catastrophe it cannot see.
+GAUGE_MAX_ALERT: Final[str] = "YELLOW"
+assert set(POSITION_ALERT.values()) <= {"GREEN", GAUGE_MAX_ALERT}
+
 POSITION_CS: Final[dict[ChannelPosition, str]] = {
     ChannelPosition.AT_UPPER_LINE: (
-        "U horní linie 40letého grafu — podle kánonu výborný čas brát zisky."
+        "U horní linie 40letého grafu — podle kánonu výborný čas brát zisky. "
+        "Samotná drahota je žlutá: oranžovou a červenou nedělá cena, ale "
+        "pojmenovaná příčina (§V3)."
     ),
     ChannelPosition.EXPENSIVE: (
         "Nad trendem, ale ne u horní linie — drahý trh, ne extrém."
@@ -120,7 +151,13 @@ BLIND_SPOT_CS: Final[str] = (
     "březen 2000 jsou dvě nejvyšší hodnoty za celých 41 let). Polovinu roku "
     "2007 nevidí vůbec — červen 2007 vychází na +0,58, tedy 78. percentil, "
     "úplně obyčejný měsíc. Vrchol 2007 stál na úvěrech a ziscích, které se "
-    "chystaly zmizet, a to z ceny proti trendu poznat nejde."
+    "chystaly zmizet, a to z ceny proti trendu poznat nejde. "
+    "Proti jedenácti datovaným Gomesovým zásahům do trhu z let 2016-2022 "
+    "souhlasí ve třech, a ve všech třech jen tím, že řekne „není draho“ ve "
+    "chvíli, kdy hedge zavíral. Ani jedno z šesti otevření hedge nenajde: tři "
+    "z nich (2021 a 2022) leží v horní pětině kanálu, těsně pod hranicí, ale "
+    "zbylá tři kolem středu — a mezi nimi 14. 2. 2020, dva týdny před covidovým "
+    "propadem. Tam ukazatel netrefuje o kousek, tam nesouhlasí."
 )
 
 
@@ -165,14 +202,38 @@ class Series:
 # The channel
 # ==============================================================================
 
-def fit(points: list[tuple[date, float]]) -> Reading:
+def fit(
+    points: list[tuple[date, float]], *, as_of: date | None = None
+) -> Reading:
     """
     Fit the long-term log trend and place the newest point on it.
 
     Raises GaugeError when there is not enough history, or when a close is
     non-positive — a log of zero is not a valuation, it is a data fault, and
     silently dropping it would move the trend without saying so.
+
+    `as_of` reads the chart as it stood on a past date: the series is truncated
+    to points dated on or before it, and everything below then operates on the
+    truncated series. Two properties of that, because both are easy to break in
+    the direction that flatters the answer:
+
+    * The trend is REFITTED on the shorter series, never sliced out of the full
+      fit. A reading dated 2016 must not know 2026's slope.
+    * `MIN_YEARS` still applies and must not be softened for it. Against a
+      series starting in 1985 that means any `as_of` before roughly 2015 raises
+      instead of answering, which is the correct answer: thirty years is what
+      makes this a long-term chart rather than one regime's trend.
+
+    The returned `Reading.as_of` is the last MONTHLY close at or before the
+    requested date, not the date requested. The input is a monthly series and
+    the reading cannot be more precise than its input.
+
+    Without `as_of` the behaviour is exactly what it was: fit everything, report
+    the newest point.
     """
+    if as_of is not None:
+        points = [point for point in points if point[0] <= as_of]
+
     if len(points) < MIN_YEARS * MONTHS_PER_YEAR:
         raise GaugeError(
             f"Mám jen {len(points) / MONTHS_PER_YEAR:.1f} roku historie "
@@ -283,8 +344,8 @@ def agreement_cs(reading: Reading, current_alert: str | None) -> str:
         )
     return (
         f"Semafor je nastavený na {alert_cs(current)}, ale {span} graf "
-        f"odpovídá stupni {alert_cs(reading.suggested_alert)}. Rozhodni sám — "
-        f"přepínat ho automaticky nebudu."
+        f"odpovídá stupni {alert_cs(reading.suggested_alert)}. Zvolnit ho může "
+        f"jen člověk; přitvrdit si aplikace smí sama."
     )
 
 

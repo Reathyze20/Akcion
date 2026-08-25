@@ -179,28 +179,44 @@ class TestRefusals:
 # ==============================================================================
 
 class TestSuggestionNotVerdict:
-    def test_the_upper_line_suggests_orange_not_red(self):
+    def test_the_upper_line_suggests_yellow_and_no_further(self):
         """
-        RED is twice in a lifetime and one of those twice this gauge cannot
-        see. Proposing it from valuation alone would claim a certainty the
-        measure has not earned.
+        Expensive is yellow, and only yellow.
+
+        Orange and red are not made by price but by a named cause (§V3), and
+        this gauge measures price. It used to propose ORANGE at the upper line
+        — a claim about why the market is where it is, from a measure that can
+        only see where. RED is twice in a lifetime and one of those twice the
+        gauge admits it cannot see at all.
         """
         assert classify(3.0) is ChannelPosition.AT_UPPER_LINE
-        from app.services.market_gauge import POSITION_ALERT
+        from app.services.market_gauge import GAUGE_MAX_ALERT, POSITION_ALERT
 
-        assert POSITION_ALERT[ChannelPosition.AT_UPPER_LINE] == "ORANGE"
-        assert "RED" not in set(POSITION_ALERT.values())
+        assert POSITION_ALERT[ChannelPosition.AT_UPPER_LINE] == GAUGE_MAX_ALERT
+        assert GAUGE_MAX_ALERT == "YELLOW"
+        assert set(POSITION_ALERT.values()) <= {"GREEN", "YELLOW"}
 
     def test_agreement_is_reported_when_they_match(self, series):
         assert "sedí" in agreement_cs(fit(series), "YELLOW")
 
-    def test_disagreement_is_reported_and_left_to_the_user(self, series):
-        # Oba stupně musí být ve větě vidět — nastavený i navržený. Česky:
-        # hodnota z databáze („GREEN") do věty pro čtenáře nepatří.
+    def test_disagreement_names_both_levels_and_who_may_change_them(self, series):
+        """
+        Both levels have to appear — the one set and the one suggested — and in
+        Czech: a database value ("GREEN") has no business in a sentence for a
+        reader.
+
+        The last assertion is the rule that changed on 2026-08-23. The gauge
+        used to promise it would never switch anything; it now says the switch
+        has a direction. Tightening is the app's to do, because a semafor left
+        stale for fourteen days disarms the whole engine exactly during the
+        weeks nobody is at the keyboard. Loosening stays a human act, because
+        this measure misses the 2007 top entirely and has not earned the right
+        to sound an all-clear.
+        """
         text = agreement_cs(fit(series), "GREEN")
         assert "zelená" in text and "žlutá" in text
         assert "GREEN" not in text and "YELLOW" not in text
-        assert "automaticky" in text
+        assert "Zvolnit ho může jen člověk" in text
 
     def test_an_unset_semafor_is_not_treated_as_agreement(self, series):
         """
