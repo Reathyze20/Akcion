@@ -149,7 +149,9 @@ def _portfolio_value(db: Session) -> tuple[float, list[str]]:
     total = sum(p.cash_balance or 0.0 for p in db.query(Portfolio).all())
     gaps: list[str] = []
 
-    for position in db.query(Position).all():
+    # Prodané pozice ven: mají nula kusů, takže by spadly do větve
+    # „bez ceny" níž a každý uzavřený obchod by se hlásil jako mezera.
+    for position in db.query(Position).filter(Position.shares_count > 0).all():
         shares = position.shares_count or 0.0
         if not position.current_price or not shares:
             gaps.append(

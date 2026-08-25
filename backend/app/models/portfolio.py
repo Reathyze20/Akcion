@@ -17,13 +17,17 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     Column,
+    Date,
     DateTime,
     Enum as SQLEnum,
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
+    Text,
 )
 from sqlalchemy.orm import relationship, Mapped
 
@@ -88,8 +92,11 @@ class Portfolio(Base):
     monthly_contribution = Column(
         Float,
         nullable=False,
-        default=20000.0,
-        doc="Monthly contribution amount in CZK for allocation planning"
+        # Nula, ne dvacet tisíc. Výchozí hodnota sloupce se jinak tváří jako
+        # vklad, který nikdo nezadal — a rozpočet, ze kterého aplikace
+        # doporučuje nákupy, se s každým novým portfoliem tiše zvedl.
+        default=0.0,
+        doc="Monthly contribution in CZK. Zero until a human sets one."
     )
     created_at = Column(
         DateTime,
@@ -169,6 +176,22 @@ class Position(Base):
         nullable=False,
         default="USD",
         doc="Currency code (USD, EUR, HKD, etc.)"
+    )
+    currency_confirmed = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        doc=(
+            "The owner has confirmed this currency against his broker. "
+            "A ticker's suffix names an exchange and an exchange has one "
+            "currency, so `currency_mismatch` warns when the two disagree — "
+            "but IMP.V and KUYA.V are held on a European line while the "
+            "ticker is the Canadian one the Gomes tracker uses, and there the "
+            "currency is right and the suffix is a nickname. Only the owner "
+            "knows which side is wrong, so this records his answer instead of "
+            "the app guessing."
+        ),
     )
     current_price = Column(
         Float,
@@ -280,6 +303,39 @@ class MarketStatus(Base):
         doc="Optional explanation or quote from analyst"
     )
 
+    # ------------------------------------------------------------------
+    # The identified cause behind an ORANGE or RED.
+    #
+    # GOMES_VIDEO_ADDENDUM.md §V3: the grades are not four levels of expensive.
+    # YELLOW is "too expensive, cause unknown"; ORANGE is a named cause of
+    # unknown size (COVID); RED is a named cause known to be severe (twice in
+    # thirty years). A valuation measure can only ever report the first, so the
+    # other two need somebody to write down what is happening.
+    #
+    # It is also the only handle this app has on DE-escalation. Nothing here
+    # ever lowers the semafor — `market_watch` tightens and never loosens, by
+    # design — so an ORANGE set during a scare and forgotten would keep the Buy
+    # Guard refusing every purchase indefinitely, silently, because a refusal
+    # looks exactly like caution working. A dated cause can be shown as stale
+    # and questioned.
+    # ------------------------------------------------------------------
+    catalyst_description = Column(
+        Text,
+        nullable=True,
+        doc="What is happening. Required for ORANGE/RED to be supported.",
+    )
+    catalyst_identified_at = Column(
+        DateTime,
+        nullable=True,
+        doc="When it was recorded. Age is what makes a forgotten alert visible.",
+    )
+    catalyst_severity_known = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        doc="False = ORANGE ('I didn't know how bad'). True = RED ('I know how severe').",
+    )
+
     def __repr__(self) -> str:
         return f"<MarketStatus(status={self.status.value})>"
 
@@ -328,6 +384,19 @@ class InvestmentLog(Base):
         nullable=True,
         doc="Stock ticker (for BUY/SELL)"
     )
+    trade_date = Column(
+        Date,
+        nullable=True,
+        doc=(
+            "When the trade actually happened at the broker. NULL for rows "
+            "written before this column existed — and NULL means unknown, so "
+            "readers fall back to created_at rather than to today. "
+            "`created_at` is when the row was TYPED IN, and the two differ "
+            "whenever an old sale is recorded late: three leftover rows closed "
+            "on 2026-08-23 read as three trades that week and set off the "
+            "over-trading brake."
+        ),
+    )
     amount = Column(
         Float,
         nullable=True,
@@ -357,6 +426,45 @@ class InvestmentLog(Base):
         String(3),
         nullable=True,
         doc="ISO code for price/amount/cost_basis/realized_pl on this row"
+    )
+    # ------------------------------------------------------------------
+    # The valuation this trade was made at.
+    #
+    # `price` and `cost_basis` say what was paid; these say what it was WORTH
+    # at the time, on the canon's own 0-10 scale. The distinction is what makes
+    # the 3-point rule (GOMES_METHODOLOGY_CANON.md §5) computable: that rule
+    # fires on a 3-point move FROM ENTRY, and price alone cannot express it
+    # because the analyst moves the lines underneath the price.
+    #
+    # NULL throughout means the lines were not known when the trade was
+    # recorded. The rule then stays silent for that position — it does not fall
+    # back to a score derived from today's band, which would date a move to a
+    # starting point that never existed.
+    # ------------------------------------------------------------------
+    rr_score_at_entry = Column(
+        Numeric(6, 3),
+        nullable=True,
+        doc="Logarithmic R/R score when the trade happened. NULL = lines unknown; the 3-point rule then stays silent."
+    )
+    green_line_at_entry = Column(
+        Numeric(12, 4),
+        nullable=True,
+        doc="Green Line behind rr_score_at_entry, kept so the score survives a later re-banding"
+    )
+    red_line_at_entry = Column(
+        Numeric(12, 4),
+        nullable=True,
+        doc="Red Line behind rr_score_at_entry"
+    )
+    cylinders_at_entry = Column(
+        Integer,
+        nullable=True,
+        doc="Operational health 0-10 at the time — what the position was judged to deserve when opened"
+    )
+    line_currency = Column(
+        String(3),
+        nullable=True,
+        doc="Currency of the entry lines, which need not be the currency of `price`"
     )
     emotion_tag = Column(
         String(100),
