@@ -78,6 +78,9 @@ from .analyze_ticker import AnalyzeTickerState
 # A standing owner instruction the phase gate cannot see (ECOR, SMSI)
 from .owner_intent import OwnerIntentModel
 
+# Cached gomes_fit.fit_candidate() result, read by find_dossier's FIT layer
+from .gomes_fit_cache import GomesFitCache
+
 # Trading models (imported separately to avoid circular imports)
 # from .trading import OHLCVData, ActiveWatchlist, MLPrediction, TradingSignal
 
@@ -184,6 +187,8 @@ __all__ = [
     "AnalyzeTickerState",
     # owner intent (ECOR, SMSI)
     "OwnerIntentModel",
+    # gomes_fit cache
+    "GomesFitCache",
     # Breakout Investors watchlist
     "BreakoutWatchEntry",
     "BreakoutWatchChange",

@@ -49,6 +49,7 @@ from app.core.tickers import canonical_ticker, variants_of
 from app.models.analysis import AnalystTranscript, TickerMention
 from app.models.breakout import BreakoutWatchEntry
 from app.models.gomes import StockLifecycleModel
+from app.models.gomes_fit_cache import GomesFitCache
 from app.models.portfolio import MarketStatus
 from app.models.sec import SecCoverage
 from app.models.sec_finding import SecFinding
@@ -68,6 +69,10 @@ LAYER_FUNDAMENTY = "FUNDAMENTY"
 LAYER_METODIKA = "METODIKA"
 LAYER_VLASTNI = "VLASTNI"
 LAYER_TRH = "TRH"
+#: Shoda tvaru vstupu s Markovými dřívějšími nákupy — srovnání, ne teze.
+#: Viz app/services/gomes_fit.py, jehož vlastní pravidlo "nikdy verdikt"
+#: platí i tady: fakta z týhle vrstvy nesmí nést slovo kup/prodej.
+LAYER_FIT = "FIT"
 
 #: Prefix, který smí nést jen mezera. Na tomhle stojí kontrola ve vysvětlovači.
 GAP_PREFIX = "MEZ"
@@ -197,6 +202,15 @@ _PREFIX = {
     LAYER_METODIKA: "METOD",
     LAYER_VLASTNI: "VLAST",
     LAYER_TRH: "TRH",
+    LAYER_FIT: "FIT",
+}
+
+#: Czech phrase for each gomes_fit bucket, folded into one Fact sentence per
+#: outlier feature. Never "levné"/"drahé" — those are verdicts; this is what
+#: the bucket actually measures, a position in Mark's own entry history.
+_FIT_BUCKET_CS = {
+    "MIMO": "leží mimo rozsah",
+    "NA_OKRAJI": "leží na okraji rozsahu",
 }
 
 
@@ -477,6 +491,98 @@ def _has_market_data(yahoo: dict[str, Any] | None) -> bool:
 
 def _millions(value: Any) -> str:
     return cz_num(float(value) / 1e6, 1)
+
+
+def _gomes_fit_layer(
+    db: Session, symbols: tuple[str, ...], ids: _Ids
+) -> tuple[list[Fact], list[Gap]]:
+    """
+    Whether this candidate's chart shape resembles Mark's own entries.
+
+    Reads only `gomes_fit_cache`, written by `enrich()` — `fit_candidate()`
+    needs a live bar fetch this function's caller (`build()`) is not allowed
+    to make. Absent cache is a Gap pointing at `enrich()`, same shape as the
+    fundamentals layer's SEC-coverage Gap above.
+
+    Every sentence here is a position in Mark's entry history, never a
+    verdict — see gomes_fit.py's own CAVEAT_CS and module docstring. A
+    feature outside his range is worth knowing; it is not "expensive".
+    """
+    facts: list[Fact] = []
+    gaps: list[Gap] = []
+
+    row = None
+    try:
+        row = (
+            db.query(GomesFitCache)
+            .filter(GomesFitCache.ticker.in_(symbols))
+            .first()
+        )
+    except Exception:  # noqa: BLE001 — cache je doplněk, ne podmínka spisu
+        logger.warning("Čtení gomes_fit_cache pro %s selhalo", symbols, exc_info=True)
+
+    if row is None:
+        gaps.append(
+            Gap(
+                id=ids.next(GAP_PREFIX),
+                layer=LAYER_FIT,
+                text_cs=(
+                    "Ještě jsme neporovnali tenhle tvar vstupu s Markovými "
+                    "dřívějšími nákupy."
+                ),
+                fixable_cs="Doplnit data",
+            )
+        )
+        return facts, gaps
+
+    fits = row.fits_json or []
+    outliers = [f for f in fits if f["bucket"] in _FIT_BUCKET_CS]
+
+    if outliers:
+        for f in outliers:
+            facts.append(
+                Fact(
+                    id=ids.next(_PREFIX[LAYER_FIT]),
+                    layer=LAYER_FIT,
+                    text_cs=(
+                        f"{f['label_cs']} {_FIT_BUCKET_CS[f['bucket']]} "
+                        f"Markových {f['of']} dřívějších vstupů "
+                        f"({f['below']} z nich bylo níž)."
+                    ),
+                    source="srovnání s Markovými vstupy",
+                    as_of=row.as_of,
+                    direction=DIR_NEUTRAL,
+                )
+            )
+    elif fits:
+        facts.append(
+            Fact(
+                id=ids.next(_PREFIX[LAYER_FIT]),
+                layer=LAYER_FIT,
+                text_cs=(
+                    f"Všech {len(fits)} spočítaných vstupů leží v typickém "
+                    f"rozsahu Markových dřívějších nákupů."
+                ),
+                source="srovnání s Markovými vstupy",
+                as_of=row.as_of,
+                direction=DIR_NEUTRAL,
+            )
+        )
+
+    uncomputable = row.uncomputable_json or []
+    if uncomputable:
+        gaps.append(
+            Gap(
+                id=ids.next(GAP_PREFIX),
+                layer=LAYER_FIT,
+                text_cs=(
+                    "Nešlo spočítat: " + ", ".join(uncomputable) + "."
+                ),
+                fixable_cs=None,
+            )
+        )
+
+    return facts, gaps
 
 
 def _fundamentals_layer(
@@ -1091,6 +1197,7 @@ def build(
         _gomes_layer(db, symbols, ids, today),
         _breakout_layer(db, symbols, ids),
         _fundamentals_layer(db, symbols, yahoo, fundamentals, finnhub, ids, today),
+        _gomes_fit_layer(db, symbols, ids),
     ):
         facts += layer_facts
         gaps += layer_gaps
@@ -1335,5 +1442,18 @@ def enrich(db: Session, ticker: str) -> Enriched:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Finnhub pro %s selhal", symbol, exc_info=True)
             out.errors_cs.append(f"Finnhub se nepodařilo načíst: {exc}")
+
+    # Shoda s Markovými vstupy — cachuje se tady, ne se čte živě: fit_candidate()
+    # potřebuje stažení cenových sloupců a semafor trhu, oboje skutečná síť, na
+    # kterou build()'s FIT vrstva sahat nesmí. Zápis jde přes gomes_fit_cache.py,
+    # ne přímo odsud — tenhle soubor nesmí nikdy sám volat db.add/db.commit.
+    try:
+        from app.services import gomes_fit_cache
+
+        gomes_fit_cache.refresh(db, symbol)
+        out.notes_cs.append("Shoda s Markovými vstupy spočítána.")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("gomes_fit pro %s selhal", symbol, exc_info=True)
+        out.errors_cs.append(f"Shodu s Markovými vstupy se nepodařilo spočítat: {exc}")
 
     return out
