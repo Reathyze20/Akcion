@@ -34,8 +34,7 @@ from .schemas import (
 
 # Import new routes
 from .routes import portfolio, gap_analysis, trading, intelligence, gomes, analysis, stocks
-from .routes import intelligence_gomes, master_signal, notifications
-from .routes import investment  # Investment Intelligence
+from .routes import intelligence_gomes, notifications
 from .routes import daily_actions  # Path 1: "Co mám dnes udělat?"
 from .routes import currency  # Currency exchange rates
 from .routes import yahoo_finance  # Yahoo Finance Smart Cache
@@ -43,6 +42,10 @@ from .routes import sec  # SEC EDGAR — 10-K, 10-Q, Form 4
 from .routes import away  # Away mode — jedna zpráva místo šumu
 from .routes import market_gauge  # Semafor z 40letého grafu S&P
 from .routes import cash_hedge  # BOXX/RWM jako reálné instrumenty
+from .routes import breakout  # Watchlist Breakout Investors — konvikce a cíl
+from .routes import finds  # Vlastní nálezy — spis a vysvětlení
+from .routes import revenue_models  # Analytikovy modely tržeb vs. realita
+# from .routes import intake  # VYPNUTO 24. 8. 2026 — viz app.include_router níž
 from .routes import dev_utils  # Development utilities (DISABLE IN PRODUCTION!)
 
 # Import alert scheduler
@@ -132,10 +135,7 @@ app.include_router(trading.router)
 app.include_router(intelligence.router)
 app.include_router(gomes.router)
 app.include_router(intelligence_gomes.router)
-app.include_router(master_signal.router)
-app.include_router(master_signal.action_router)
 app.include_router(notifications.router)
-app.include_router(investment.router)  # Investment Intelligence
 app.include_router(daily_actions.router)  # Daily Action list ("Nic. Drž.")
 app.include_router(currency.router)  # Currency exchange rates
 app.include_router(yahoo_finance.router)  # Yahoo Finance Smart Cache
@@ -143,6 +143,24 @@ app.include_router(sec.router)  # SEC EDGAR — výsledky, výhledy, insideři
 app.include_router(away.router)  # Away mode — jedna zpráva místo šumu
 app.include_router(market_gauge.router)  # Asistovaný odhad semaforu
 app.include_router(cash_hedge.router)  # Cash a hedge v kusech, ne v procentech
+app.include_router(breakout.router)  # Druhý zdroj: ukazuje se, neposlouchá se
+app.include_router(finds.router)  # Vlastní nálezy: co pro a co proti, s citací
+app.include_router(revenue_models.router)  # Modely tržeb od analytiků vs. realita
+# VYPNUTO 24. 8. 2026. `routes/intake.py` importuje `StockLifecycle`
+# z `models.trading`, kde nic takového není — model je `StockLifecycleModel`
+# v `models.gomes`. Protože main.py ten modul importuje, neimportovala se
+# CELÁ aplikace a backend vůbec nenastartoval.
+#
+# Vypnuto místo opravy schválně: ten soubor nepíše jen špatný název. Zapisuje
+# `lifecycle_phase` přímo z Gemini Flash extrakce s natvrdo zapsanou
+# `confidence_score=0.8` a do sloupců, které na modelu neexistují
+# (`current_stage`, `stage_entered_date`, `stage_rationale`). Tím by obešel
+# `lifecycle_intake.confirm()` — ráčnu i lidské potvrzení — a sám si
+# autorizoval vstup do brány, která pouští nákupy. To je táž vada jako
+# `_generate_mock_analysis`; oprava importu by ji rozjela, ne odstranila.
+#
+# Zapnout až bude fáze chodit přes návrh k potvrzení, ne přes přímý zápis.
+# app.include_router(intake.router)  # Rychlý Gemini Flash intake nového obsahu
 
 if settings.debug:
     app.include_router(dev_utils.router)  # Raw SQL execution — DEBUG only, never in production

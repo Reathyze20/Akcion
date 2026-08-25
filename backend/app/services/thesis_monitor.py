@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from loguru import logger
 
 from app.models.stock import Stock
-from app.models.gomes import GomesAlert, GomesScoreHistory
+from app.models.gomes import GomesAlert
 
 
 class ThesisDriftLevel(str, Enum):

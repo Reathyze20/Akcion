@@ -28,7 +28,6 @@ from app.schemas.gomes import (
     GomesStockItem,
     GomesStocksListResponse,
     GomesVerdictResponse,
-    ImageLinesImportResponse,
     LifecyclePhaseResponse,
     MarketAlertResponse,
     PositionSizeResponse,
@@ -39,6 +38,7 @@ from app.schemas.gomes import (
     WatchlistScanResponse,
 )
 from app.services.gomes_intelligence import GomesIntelligenceService
+from app.services.score_journal import SOURCE_TICKER_ANALYSIS, record_score
 from app.models.stock import Stock
 from app.trading.gomes_logic import (
     MarketAlert,
@@ -354,27 +354,6 @@ def set_price_lines(
             is_overvalued=lines.is_overvalued,
             price_zone=price_zone,
             source=lines.source
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/price-lines/import-images", response_model=ImageLinesImportResponse)
-def import_price_lines_from_images(db: Session = Depends(get_db)):
-    """
-    Import price lines from screenshot images.
-    
-    Loads pre-extracted lines from img/ folder screenshots.
-    """
-    try:
-        service = GomesIntelligenceService(db)
-        results = service.load_price_lines_from_images()
-        
-        return ImageLinesImportResponse(
-            imported_count=len(results),
-            tickers=[r.ticker for r in results],
-            message=f"Successfully imported {len(results)} price lines from images"
         )
         
     except Exception as e:
@@ -943,7 +922,22 @@ async def analyze_ticker_from_transcript(
         
         stock.max_allocation_cap = data.get("max_allocation_cap", 10.0)
         stock.last_updated = datetime.utcnow()
-        
+
+        # Journal this scoring event before the flush, so the before_flush
+        # safety net sees it and does not add a duplicate `unattributed` row.
+        # No price is attached: a quote cannot be fetched here without
+        # YahooFinanceCache committing this half-written transaction, and the
+        # evaluator resolves a better baseline anyway — the actual close on
+        # the day the score was issued.
+        record_score(
+            db,
+            ticker=stock.ticker,
+            score=conviction_score,
+            source=SOURCE_TICKER_ANALYSIS,
+            stock=stock,
+            action_signal=recommendation,
+        )
+
         db.commit()
         db.refresh(stock)
         

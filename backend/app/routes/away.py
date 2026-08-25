@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
+from app.models.portfolio import MarketStatus
 from app.routes.daily_actions import load_daily_action_inputs
 from app.services.away_mode import (
     MAX_ACTIONABLE_AGE,
@@ -28,6 +29,8 @@ from app.services.away_mode import (
 )
 from app.services.away_runner import _naive, get_state, run_cycle
 from app.services.currency import CurrencyService
+from app.services import market_catalyst
+from app.services.tracker_sync import unnotified_line_moves
 from app.services.daily_actions import generate_daily_actions
 
 router = APIRouter(prefix="/api/away", tags=["away"])
@@ -151,7 +154,7 @@ def preview(db: Session = Depends(get_db)) -> AwayPreview:
     before trusting them with a week of silence.
     """
     try:
-        result = _cycle(db, send=False)
+        result = run_away_cycle(db, send=False)
     except Exception as e:
         logger.exception("Away preview failed")
         raise HTTPException(status_code=500, detail=f"Away preview failed: {e}")
@@ -167,7 +170,7 @@ def preview(db: Session = Depends(get_db)) -> AwayPreview:
     )
 
 
-def _cycle(db: Session, *, send: bool, notify=None, now: datetime | None = None):
+def run_away_cycle(db: Session, *, send: bool, notify=None, now: datetime | None = None):
     """Build today's actions, add away stops, and run one away-mode pass."""
     (
         market_alert,
@@ -178,6 +181,14 @@ def _cycle(db: Session, *, send: bool, notify=None, now: datetime | None = None)
     ) = load_daily_action_inputs(db)
 
     now = now or datetime.utcnow()
+
+    # Asked against the SET semafor, never the escalated one. Away mode raises
+    # the grade on purpose and explains itself in `escalation_note`; running the
+    # catalyst check over that would report the app's own deliberate escalation
+    # as an unexplained one, every single day of an absence.
+    alert_note = market_catalyst.note_for(
+        market_alert, db.query(MarketStatus).first(), now=now
+    )
 
     # The escalation happens here, not in the engine: the canon's blocked-tier
     # table is used unchanged, just against a semafor one step further toward
@@ -190,6 +201,7 @@ def _cycle(db: Session, *, send: bool, notify=None, now: datetime | None = None)
         cash_czk=cash_czk,
         fx_rate_to_czk=CurrencyService.get_rate_to_czk,
         now=now,
+        alert_note=alert_note,
     )
 
     note = escalation_note(market_alert)
@@ -206,6 +218,10 @@ def _cycle(db: Session, *, send: bool, notify=None, now: datetime | None = None)
         send=send,
         notify=notify,
         notes=_blind_spots(daily.warnings),
+        # The one thing worth waking somebody for even with nothing to do
+        # about it: the analyst moved a band, so every limit price left sitting
+        # at the broker was worked out against a chart since redrawn.
+        source_moves=[c.detail_cs for c in unnotified_line_moves(db, now=now)],
     )
 
 
@@ -245,3 +261,7 @@ def _blind_spots(warnings: list[str]) -> list[str]:
                 break
     ranked.sort(key=lambda pair: pair[0])
     return [warning for _, warning in ranked[:MAX_BLIND_SPOTS]]
+
+
+#: The name this had while the away route was its only caller.
+_cycle = run_away_cycle

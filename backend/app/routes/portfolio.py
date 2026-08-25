@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..database.connection import get_db
@@ -47,6 +48,7 @@ from ..schemas.portfolio import (
 )
 from ..services.currency import CurrencyError, CurrencyService
 from ..services.importer import BrokerCSVParser, validate_position_data
+from ..services import market_catalyst
 from ..services.market_data import MarketDataService
 from ..services.portfolio_reconciliation import PortfolioReconciliationService
 
@@ -67,11 +69,20 @@ def get_portfolios(
     if owner:
         query = query.filter(Portfolio.owner == owner)
     
-    portfolios = query.all()
+    # Explicit order, not whatever the planner returns. The frontend picks a
+    # default with portfolios[0]; with two owners in the table an unordered
+    # query makes "whose portfolio is this" depend on the query plan.
+    portfolios = query.order_by(Portfolio.id).all()
     
     result = []
     for portfolio in portfolios:
-        positions = db.query(Position).filter(Position.portfolio_id == portfolio.id).all()
+        # Stejné pravidlo jako v get_portfolio_summary: prodaná pozice se
+        # nepočítá mezi držené.
+        positions = (
+            db.query(Position)
+            .filter(Position.portfolio_id == portfolio.id, Position.shares_count > 0)
+            .all()
+        )
         valid_values = [
             pos.market_value for pos in positions 
             if not math.isnan(pos.market_value) and not math.isinf(pos.market_value)
@@ -82,7 +93,9 @@ def get_portfolios(
             **portfolio.__dict__,
             "position_count": len(positions),
             "total_value": total_value,
-            "monthly_contribution": portfolio.monthly_contribution or 20000.0,
+            # Bez `or 20000.0`: nula je odpověď („tenhle účet nepřispívá"),
+            # ne chybějící údaj, který se má čím doplnit.
+            "monthly_contribution": portfolio.monthly_contribution,
         })
     
     return result
@@ -117,8 +130,17 @@ def get_portfolio_summary(
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
     
-    positions = db.query(Position).filter(Position.portfolio_id == portfolio_id).all()
-    
+    # Zero shares means the position is closed, not held. The row stays in the
+    # database — `record_trade` zeroes `shares_count` rather than deleting, so
+    # `avg_cost` and the ledger link survive — but a holdings view must not
+    # list something nobody owns. Without this a sold position lingers at 0 %
+    # weight and keeps inflating the position count.
+    positions = (
+        db.query(Position)
+        .filter(Position.portfolio_id == portfolio_id, Position.shares_count > 0)
+        .all()
+    )
+
     # Calculate summary stats with currency conversion to CZK
     total_cost_basis_czk = 0.0
     total_market_value_czk = 0.0
@@ -813,6 +835,56 @@ def update_position(
     return db_position
 
 
+def _band_at_trade(db: Session, ticker: str | None) -> dict:
+    """
+    The valuation in force for `ticker` right now, for stamping onto a trade.
+
+    Read at the moment of the trade rather than looked up later, because the
+    analyst moves the Green and Red Lines and a score re-derived next year
+    would be measured against a band that did not exist when the money moved.
+    That stamped score is what makes the canon's 3-point rule (§5) computable
+    at all.
+
+    Returns whatever is known and nothing else. An absent band yields an empty
+    dict, the ledger columns stay NULL, and the 3-point rule stays silent for
+    that position — which is the correct outcome, not a gap to paper over.
+    """
+    from ..core.sources import InvestmentSource
+    from ..core.tickers import variants_of
+    from ..models.gomes import StockLifecycleModel
+    from ..models.stock import Stock
+
+    symbols = variants_of(ticker)
+    if not symbols:
+        return {}
+
+    stock = (
+        db.query(Stock)
+        .filter(Stock.ticker.in_(symbols))
+        .filter(Stock.source_key == InvestmentSource.GOMES.value)
+        .filter(Stock.green_line.isnot(None))
+        .order_by(desc(Stock.created_at))
+        .first()
+    )
+
+    lifecycle = (
+        db.query(StockLifecycleModel)
+        .filter(StockLifecycleModel.ticker.in_(symbols))
+        .filter(StockLifecycleModel.valid_until.is_(None))
+        .order_by(desc(StockLifecycleModel.detected_at))
+        .first()
+    )
+
+    return {
+        "green_line": stock.green_line if stock else None,
+        "red_line": stock.red_line if stock else None,
+        # The tracker quotes the US OTC listing, so a band is in dollars even
+        # when the position is held on a Canadian exchange.
+        "line_currency": "USD" if stock else None,
+        "cylinders": lifecycle.cylinders_count if lifecycle else None,
+    }
+
+
 @router.post("/positions/{position_id}/trade", response_model=TradeResponse)
 def record_position_trade(
     position_id: int,
@@ -832,6 +904,9 @@ def record_position_trade(
     """
     from ..services.trade_ledger import TradeError, TradeSide, record_trade
 
+    position_row = db.query(Position).filter(Position.id == position_id).first()
+    band = _band_at_trade(db, position_row.ticker if position_row else None)
+
     try:
         position, log, outcome = record_trade(
             db,
@@ -841,6 +916,11 @@ def record_position_trade(
             price=trade.price,
             emotion_tag=trade.emotion_tag,
             note=trade.note,
+            trade_date=trade.trade_date,
+            green_line=band.get("green_line"),
+            red_line=band.get("red_line"),
+            cylinders=band.get("cylinders"),
+            line_currency=band.get("line_currency"),
         )
     except LookupError:
         raise HTTPException(status_code=404, detail="Position not found")
@@ -915,6 +995,27 @@ def delete_all_positions(
     return {"success": True, "message": f"Deleted {deleted_count} positions", "deleted_count": deleted_count}
 
 
+def _with_catalyst(status: MarketStatus) -> MarketStatusResponse:
+    """
+    The semafor plus whether the grade it stands on is backed by anything.
+
+    §V3. ORANGE and RED are claims about an identified cause. The verdict is
+    computed on read rather than stored, because the interesting part is its
+    AGE: a cause recorded during a scare and never revisited keeps the Buy
+    Guard refusing every purchase, and nothing in this app lowers the semafor
+    on its own. Reading it fresh each time is what makes that visible.
+    """
+    out = MarketStatusResponse.model_validate(status)
+    verdict = market_catalyst.check(
+        status.status.value if status.status else None,
+        market_catalyst.of_row(status),
+    )
+    out.catalyst_supported = verdict.supported
+    out.catalyst_stale = verdict.stale
+    out.catalyst_message_cs = verdict.message_cs or None
+    return out
+
+
 @router.get("/market-status", response_model=MarketStatusResponse)
 def get_market_status(db: Session = Depends(get_db)):
     """Get current market status (Traffic Light)"""
@@ -927,7 +1028,7 @@ def get_market_status(db: Session = Depends(get_db)):
         db.commit()
         db.refresh(status)
     
-    return status
+    return _with_catalyst(status)
 
 
 @router.get("/owners", response_model=List[str])
@@ -949,14 +1050,44 @@ def update_market_status(
         status = MarketStatus()
         db.add(status)
     
+    # §V3. ORANGE and RED say a cause has been identified, so one has to be
+    # named. Refused rather than defaulted: an escalation nobody can justify
+    # sells most of a portfolio (ORANGE targets 25/35/40), and — worse — it is
+    # never undone, because nothing in this app lowers the semafor by itself.
+    level = update.status.value if hasattr(update.status, "value") else str(update.status)
+    if level in market_catalyst.NEEDS_CAUSE and not (
+        update.catalyst_description or status.catalyst_description
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Stupeň {level} znamená pojmenovanou příčinu, ne jen drahý trh. "
+                f"Napiš, co se děje (catalyst_description). Samotná drahota je žlutá."
+            ),
+        )
+
     status.status = update.status
     if update.note:
         status.note = update.note
-    
+
+    if update.catalyst_description:
+        # Re-dated only when the text changes. A cause restated in the same
+        # words is the same cause, and restamping it would reset the age that
+        # is the only thing making a forgotten alert visible.
+        if update.catalyst_description != status.catalyst_description:
+            status.catalyst_description = update.catalyst_description
+            status.catalyst_identified_at = datetime.utcnow()
+        status.catalyst_severity_known = bool(update.catalyst_severity_known)
+    elif level not in market_catalyst.NEEDS_CAUSE:
+        # Back to GREEN or YELLOW: the cause is over and is cleared with it.
+        status.catalyst_description = None
+        status.catalyst_identified_at = None
+        status.catalyst_severity_known = False
+
     db.commit()
     db.refresh(status)
     
-    return status
+    return _with_catalyst(status)
 
 
 # ============================================================================
@@ -1036,7 +1167,7 @@ def family_audit(db: Session = Depends(get_db)):
     
     try:
         # Get all portfolios grouped by owner
-        portfolios = db.query(Portfolio).all()
+        portfolios = db.query(Portfolio).order_by(Portfolio.id).all()
         
         if len(portfolios) < 2:
             return {

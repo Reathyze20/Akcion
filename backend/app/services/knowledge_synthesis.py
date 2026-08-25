@@ -33,7 +33,8 @@ from sqlalchemy import desc
 from app.config.settings import Settings
 from app.services.llm import complete_json
 from app.models.stock import Stock
-from app.models.score_history import ConvictionScoreHistory, ThesisDriftAlert
+from app.models.score_history import ThesisDriftAlert
+from app.services.score_journal import record_score
 from app.models.trading import ActiveWatchlist
 
 
@@ -591,16 +592,16 @@ Respond in JSON:
         source: str
     ) -> None:
         """Record score change in history."""
-        history = ConvictionScoreHistory(
+        # Through score_journal, so the before_flush safety net recognises the
+        # event as already journaled and does not duplicate it.
+        record_score(
+            self.db,
             ticker=ticker,
+            score=score,
+            source=source,
             stock_id=stock_id,
-            conviction_score=score,
             thesis_status=thesis_status,
-            analysis_source=source,
-            recorded_at=datetime.utcnow(),
         )
-        
-        self.db.add(history)
     
     # =========================================================================
     # HELPER METHODS

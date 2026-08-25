@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.models.portfolio import Portfolio, Position
 from app.models.stock import Stock
+from app.services.currency import CurrencyError, CurrencyService
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class FamilyGap:
     owner_with_position: str
     owner_weight_pct: float
     missing_owner: str
-    priority: str  # HIGH, MEDIUM, LOW
+    priority: str  # HIGH / MEDIUM = doporučení, UNKNOWN = jen rozdíl bez skóre
     message: str
 
 
@@ -95,8 +96,45 @@ class KellyAllocatorService:
     MAX_POSITION_WEIGHT = 0.15  # Max 15% of portfolio in single stock
     MIN_INVESTMENT_CZK = 1000  # Min investment (fee overhead)
     
-    # Default exchange rate (should be fetched dynamically)
+    #: Only ever a last resort, and never for valuing a position.
+    #:
+    #: Until 2026-08-23 this rate was applied to EVERY currency when computing
+    #: the portfolio total — so a US holding was valued at the euro rate and a
+    #: Canadian one at nearly double its worth. Every weight, every gap and
+    #: every cap in this file was measured against that number, while
+    #: `detect_family_gaps` a few hundred lines below used the real rates. The
+    #: same portfolio had two different totals depending on which function you
+    #: asked.
+    #:
+    #: What is left is the presentation of an amount in the account's own
+    #: currency, where a missing rate would otherwise mean showing nothing.
     CZK_EUR_RATE = 25.0
+
+    def _eur_rate(self) -> float:
+        """The live CZK/EUR rate, falling back to the stale constant."""
+        try:
+            return CurrencyService.get_rate_to_czk("EUR")
+        except CurrencyError:
+            logger.warning("Kurz EUR není k dispozici — počítám se starým %s", self.CZK_EUR_RATE)
+            return self.CZK_EUR_RATE
+
+    def _position_value_czk(self, position) -> float | None:
+        """
+        One position in CZK, at its own currency's rate.
+
+        None when the rate is unknown, and the caller must then leave the
+        position out rather than price it in somebody else's money — the same
+        rule `detect_family_gaps` has always followed.
+        """
+        price = position.current_price or position.avg_cost
+        if price is None or not position.shares_count:
+            return None
+        currency = getattr(position, "currency", None) or "USD"
+        try:
+            rate = CurrencyService.get_rate_to_czk(currency)
+        except CurrencyError:
+            return None
+        return price * position.shares_count * rate
     
     def __init__(self, db: Session):
         self.db = db
@@ -126,21 +164,36 @@ class KellyAllocatorService:
         if not portfolio:
             raise ValueError(f"Portfolio {portfolio_id} not found")
         
-        # Convert CZK to EUR
-        additional_eur = additional_cash_czk / self.CZK_EUR_RATE
-        total_available_czk = (available_cash_eur * self.CZK_EUR_RATE) + additional_cash_czk
+        eur_rate = self._eur_rate()
+        additional_eur = additional_cash_czk / eur_rate
+        total_available_czk = (available_cash_eur * eur_rate) + additional_cash_czk
         
-        # Get current positions
+        # Get current positions — held ones only. A closed position has
+        # weight zero, which reads as "far below target" and would produce a
+        # recommendation to buy back what was just sold.
         positions = self.db.query(Position).filter(
-            Position.portfolio_id == portfolio_id
+            Position.portfolio_id == portfolio_id,
+            Position.shares_count > 0,
         ).all()
         
-        # Calculate total portfolio value in CZK
-        # Note: In real scenario, we'd convert each position's currency
-        portfolio_value_czk = sum(
-            (p.current_price or p.avg_cost) * p.shares_count * self.CZK_EUR_RATE
-            for p in positions
-        )
+        # Each position at its OWN currency's rate. A position whose rate is
+        # unknown is left out entirely rather than priced in somebody else's
+        # money: an unknown is not a number, and the total here is what every
+        # weight and every cap below is measured against.
+        position_values = {}
+        unpriced = []
+        for p in positions:
+            value = self._position_value_czk(p)
+            if value is None:
+                unpriced.append(p.ticker)
+            else:
+                position_values[p.ticker] = value
+
+        if unpriced:
+            logger.warning(
+                "Bez kurzu, mimo součet portfolia: %s", ", ".join(sorted(unpriced))
+            )
+        portfolio_value_czk = sum(position_values.values())
         
         # Get stocks with Conviction Scores
         tickers = [p.ticker for p in positions]
@@ -163,7 +216,9 @@ class KellyAllocatorService:
             score = stock_scores.get(ticker)  # None if not analyzed
             
             # Current position value in CZK
-            current_value_czk = (position.current_price or position.avg_cost) * position.shares_count * self.CZK_EUR_RATE
+            current_value_czk = position_values.get(position.ticker)
+            if current_value_czk is None:
+                continue  # no rate -> not in the total, so not in a gap either
             current_weight = current_value_czk / portfolio_value_czk if portfolio_value_czk > 0 else 0
             
             # Target weight from score (0 if score < 5 or None)
@@ -230,7 +285,7 @@ class KellyAllocatorService:
                 conviction_score=int(item['score']),
                 current_weight_pct=round(item['current_weight'] * 100, 1),
                 recommended_weight_pct=round(item['target_weight'] * 100, 1),
-                recommended_amount=round(allocation / self.CZK_EUR_RATE, 2),  # EUR
+                recommended_amount=round(allocation / eur_rate, 2),  # EUR
                 recommended_amount_czk=allocation,
                 priority=i + 1,
                 reasoning=self._get_reasoning(int(item['score']), item['gap_czk'])
@@ -239,7 +294,7 @@ class KellyAllocatorService:
         total_allocated = sum(r.recommended_amount_czk for r in recommendations)
         
         return AllocationPlan(
-            available_capital=total_available_czk / self.CZK_EUR_RATE,
+            available_capital=total_available_czk / eur_rate,
             available_capital_czk=total_available_czk,
             recommendations=recommendations[:5],  # Top 5 recommendations
             total_allocated=total_allocated,
@@ -273,16 +328,33 @@ class KellyAllocatorService:
                 Position.portfolio_id == portfolio_id
             ).all()
             
-            portfolio_value = sum(
-                (p.current_price or p.avg_cost) * p.shares_count 
-                for p in positions
-            )
+            # Přepočet na koruny, ne holý součet cena x kusy.
+            #
+            # Tenhle sloupec drží USD, CAD i EUR vedle sebe. Sečíst je bez
+            # kurzu znamená, že se váhy počítají z čísla, které neexistuje:
+            # kanadská pozice se nafoukne, americká propadne pod tříprocentní
+            # práh a tiše zmizí. Zbytek aplikace to dělá správně
+            # (routes/portfolio.py:139) — tohle místo na to zapomnělo.
+            #
+            # Měnu, na kterou není kurz, radši vynecháme, než abychom ji
+            # ocenili dolarovým kurzem. Neznámé nemá být číslo.
+            values: Dict[str, float] = {}
+            for p in positions:
+                currency = getattr(p, "currency", None) or "USD"
+                try:
+                    rate = CurrencyService.get_rate_to_czk(currency)
+                except CurrencyError:
+                    continue
+                values[p.ticker] = (p.current_price or p.avg_cost or 0) * p.shares_count * rate
+
+            portfolio_value = sum(values.values())
             portfolio_values[owner] = portfolio_value
-            
+
             owner_positions[owner] = {}
             for p in positions:
-                value = (p.current_price or p.avg_cost) * p.shares_count
-                weight = value / portfolio_value if portfolio_value > 0 else 0
+                if p.ticker not in values:
+                    continue
+                weight = values[p.ticker] / portfolio_value if portfolio_value > 0 else 0
                 owner_positions[owner][p.ticker] = (p, weight)
         
         # Find gaps: position in one portfolio but not another
@@ -301,7 +373,15 @@ class KellyAllocatorService:
         for ticker in all_tickers:
             score, company = stock_info.get(ticker, (None, None))
             
-            # Skip low-conviction stocks
+            # Známé nízké skóre se přeskočí: u pozice, kterou sama metodika
+            # nedoporučuje, nemá smysl řešit, že ji druhý nemá.
+            #
+            # Neznámé skóre se ale NEpřeskakuje. „Tom drží DAIO 7,7 %, Míša ne"
+            # je pravda bez ohledu na hodnocení a do přehledu rozdílů patří.
+            # Nesmí z ní jen vzniknout pokyn — proto dostane vlastní stupeň
+            # UNKNOWN místo MEDIUM. Dřív tudy None propadalo rovnou mezi
+            # doporučení, což je ta vada, které se aplikace musí vyhýbat:
+            # z chybějícího vstupu sebejistý verdikt.
             if score is not None and score < 6:
                 continue
             
@@ -319,9 +399,20 @@ class KellyAllocatorService:
                             continue
                         
                         if ticker not in owner_positions.get(other_owner, {}):
-                            # Gap detected!
-                            priority = "HIGH" if (score or 0) >= 8 else "MEDIUM"
-                            
+                            if score is None:
+                                priority = "UNKNOWN"
+                                message = (
+                                    f"{owner} drží {ticker} ({weight*100:.1f} %), "
+                                    f"{other_owner} ne. Bez konvikčního skóre to "
+                                    f"zůstává rozdíl, ne doporučení."
+                                )
+                            else:
+                                priority = "HIGH" if score >= 8 else "MEDIUM"
+                                message = (
+                                    f"{owner} drží {ticker} ({weight*100:.1f} %), "
+                                    f"ale {other_owner} ne. Konvikční skóre {score}/10."
+                                )
+
                             gaps.append(FamilyGap(
                                 ticker=ticker,
                                 company_name=company,
@@ -330,11 +421,13 @@ class KellyAllocatorService:
                                 owner_weight_pct=round(weight * 100, 1),
                                 missing_owner=other_owner,
                                 priority=priority,
-                                message=f"Family Gap: {owner} vlastní {ticker} ({weight*100:.1f}%), ale {other_owner} ne. Conviction Score: {score}/10"
+                                message=message,
                             ))
         
-        # Sort by priority and score
-        gaps.sort(key=lambda x: (0 if x.priority == "HIGH" else 1, -(x.conviction_score or 0)))
+        # Posouzené napřed, neposouzené na konec — ať se doporučení neztratí
+        # mezi rozdíly, o kterých aplikace nic tvrdit neumí.
+        rank = {"HIGH": 0, "MEDIUM": 1, "UNKNOWN": 2}
+        gaps.sort(key=lambda x: (rank.get(x.priority, 3), -(x.conviction_score or 0), x.ticker))
         
         return gaps
     

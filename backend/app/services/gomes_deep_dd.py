@@ -30,7 +30,8 @@ from app.core.prompts import (
 )
 from app.models.stock import Stock
 from app.services.llm import LLMError, complete
-from app.models.score_history import ConvictionScoreHistory, ThesisDriftAlert, AlertType
+from app.models.score_history import ThesisDriftAlert, AlertType
+from app.services.score_journal import record_score
 from app.schemas.gomes import (
     DeepDueDiligenceRequest,
     DeepDueDiligenceResponse,
@@ -312,7 +313,11 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         data = DeepDueDiligenceResult(
             ticker=data_dict.get("ticker", "UNKNOWN"),
             company_name=data_dict.get("company_name"),
-            conviction_score=int(data_dict.get("conviction_score", 5)),
+            # None, never five. A model that returned no score has said
+            # nothing about the company, and inventing a middling conviction
+            # here would set the target weight and the position tier from
+            # silence — the defect this codebase keeps finding.
+            conviction_score=_optional_score(data_dict.get("conviction_score")),
             thesis_status=data_dict.get("thesis_status", "STABLE"),
             inflection_point_status=data_dict.get("inflection_point_status", "UPCOMING"),
             upside_potential=str(data_dict.get("upside_potential", "N/A")),
@@ -522,16 +527,19 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         self.db.flush()
         
         # === SAVE TO SCORE HISTORY ===
-        score_history = ConvictionScoreHistory(
-            ticker=data.ticker.upper(),
-            stock_id=stock.id,
-            conviction_score=data.conviction_score,
+        # Through score_journal, not a bare row: the before_flush safety net
+        # looks for a pending journal entry on this ticker and would otherwise
+        # add a second, `unattributed` one for the same event.
+        record_score(
+            self.db,
+            ticker=data.ticker,
+            score=data.conviction_score,
+            source=analysis_source,
+            stock=stock,
+            price=data.current_price,
             thesis_status=result.thesis_drift or "STABLE",
             action_signal=data.action_signal,
-            price_at_analysis=data.current_price,
-            analysis_source=analysis_source,
         )
-        self.db.add(score_history)
         
         # === CREATE DRIFT ALERT IF NEEDED ===
         if old_score is not None and result.thesis_drift:
@@ -572,3 +580,14 @@ Last Updated: {stock.created_at.strftime('%Y-%m-%d') if stock.created_at else 'N
         self.db.refresh(stock)
         
         return stock
+
+
+def _optional_score(value) -> int | None:
+    """A conviction score, or None. Never a stand-in."""
+    if value is None:
+        return None
+    try:
+        score = int(value)
+    except (TypeError, ValueError):
+        return None
+    return score if 0 <= score <= 10 else None

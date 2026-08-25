@@ -84,6 +84,7 @@ def run_cycle(
     send: bool = True,
     notify=None,
     notes: list[str] | None = None,
+    source_moves: list[str] | None = None,
 ) -> CycleResult:
     """
     One away-mode pass.
@@ -91,6 +92,11 @@ def run_cycle(
     `actions` are the ranked daily actions, ranked as the engine produced them.
     `notify` is called with (subject, body) and returns True when the message
     left; the default sends nothing, which is what tests and dry runs want.
+
+    `source_moves` are Green or Red Lines the analyst has moved while nobody was
+    looking. They carry no instruction of their own and are the most
+    consequential thing that can happen during an absence: every limit price
+    sitting at the broker was worked out against a band that no longer exists.
 
     `notes` are the reasons away mode may have had *nothing* to say — chiefly
     that it could not judge the positions at all. They are stored with the
@@ -119,6 +125,7 @@ def run_cycle(
         now=now,
         last_push_at=_naive(row.last_push_at),
         last_push_urgency=row.last_push_urgency or 0,
+        source_moves=source_moves,
     )
 
     if not digest.send:

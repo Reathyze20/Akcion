@@ -431,6 +431,14 @@ class YahooFinanceCache:
             
             # Save to database
             self._upsert_cache(data)
+
+            # Keep the reading as well as the cache. The cache answers "what is
+            # true now" and overwrites; the snapshot answers "what changed" and
+            # is the only path to a trend for the companies EDGAR cannot see.
+            # Written here rather than at a call site so no future caller can
+            # refresh without recording.
+            if refresh_financial or refresh_fundamental:
+                self._record_snapshot(ticker, data)
             
             # Log success
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -468,6 +476,26 @@ class YahooFinanceCache:
             
             return False
     
+    def _record_snapshot(self, ticker: str, data: dict) -> None:
+        """
+        Keep this reading if it differs from the last one.
+
+        Deliberately swallows its own failures: the cache write has already
+        succeeded by this point, and a lost snapshot is a gap in a series while
+        a raised exception here would be a failed price refresh.
+        """
+        try:
+            from app.services.fundamental_history import record_snapshot
+
+            record_snapshot(self.db, ticker, data)
+            self.db.commit()
+        except Exception as e:  # noqa: BLE001 — see docstring
+            logger.warning(f"Snapshot for {ticker} not recorded: {e}")
+            try:
+                self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
     def _upsert_cache(self, data: dict[str, Any]) -> None:
         """Upsert data do yahoo_finance_cache tabulky."""
         try:
