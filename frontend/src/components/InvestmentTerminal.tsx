@@ -2368,7 +2368,11 @@ export const InvestmentTerminal: React.FC = () => {
   // incidentu, kdy neznámá měna spadla na výchozí kurz USD a ocenila
   // izraelskou pozici na 3,3násobek skutečné hodnoty.
   const unconvertiblePositions = useMemo(() => {
-    return portfolios.flatMap((p) => p.unconvertible_positions);
+    // Backend nemá pole `unconvertible_positions` v odpovědi zapojené —
+    // bez zálohy na [] vracelo `flatMap` na každé portfolio `undefined`
+    // jako jednu položku (flatMap nesplošťuje ne-pole), pole se čtou
+    // .ticker na undefined a záložka Portfolio spadla na prázdnou obrazovku.
+    return portfolios.flatMap((p) => p.unconvertible_positions ?? []);
   }, [portfolios]);
 
   // Které firmy držíme — kanonicky, ne podle zápisu tickeru. Bez toho se
