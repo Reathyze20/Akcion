@@ -17,7 +17,7 @@ import logging
 from contextlib import contextmanager
 from typing import Final, Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -217,8 +217,35 @@ def session_scope() -> Generator[Session, None, None]:
 def is_connected() -> bool:
     """
     Check if database is connected and operational.
-    
+
     Returns:
         True if database connection is active
     """
     return _engine is not None
+
+
+# ==============================================================================
+# Score Journal Hook
+# ==============================================================================
+# Registered on the Session class, so it covers every session this process
+# opens — routes, scripts and the away-mode runner alike. See
+# `app/services/score_journal.py` for why the app cannot rely on each write
+# path remembering to journal its own score.
+
+@event.listens_for(Session, "before_flush")
+def _journal_score_writes(session: Session, flush_context, instances) -> None:
+    """Append a journal row for any conviction score this flush changes."""
+    # Imported here, not at module level: the journal reaches into the model
+    # and service layers, both of which are loaded long before the first
+    # flush, and neither of which should be pulled in by importing a
+    # connection helper.
+    try:
+        from ..services.score_journal import backfill_unattributed
+
+        backfill_unattributed(session)
+    except Exception:  # noqa: BLE001
+        # A broken journal must not break the write it was watching — this is
+        # a family's portfolio, not a metrics pipeline. But it is logged at
+        # ERROR rather than swallowed, because a journal that quietly stops
+        # recording is indistinguishable from a method that stopped working.
+        logger.exception("Deník skóre selhal — zápis skóre pokračuje bez záznamu")

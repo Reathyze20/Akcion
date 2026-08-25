@@ -120,7 +120,11 @@ class StockRepository:
         if not ticker:
             return
 
-        source_key = normalize_source(speaker)
+        # The roster decides first. Without it an analyst writing under his
+        # own name fell to OTHER, and OTHER does not enter the agreement
+        # matrix that sets the position cap — so their work was stored and
+        # silently unused.
+        source_key = normalize_source(speaker, _roster(self._session))
         version = self._handle_existing_versions(ticker, source_key)
         stock = self._create_stock_entity(
             stock_data, ticker, source_type, speaker, version, source_key
@@ -417,3 +421,19 @@ def save_analysis(
     """
     repo = StockRepository(session)
     return repo.create_stocks(stocks, source_id, source_type, speaker)
+
+
+def _roster(session) -> dict[str, str]:
+    """
+    The active analyst roster, or an empty mapping.
+
+    Imported lazily and failing quietly: attribution has a keyword fallback, so
+    a roster that cannot be read degrades to the behaviour that existed before
+    it did rather than taking an import of somebody's research down with it.
+    """
+    try:
+        from app.services.analyst_roster import load
+
+        return load(session)
+    except Exception:  # noqa: BLE001 — see docstring
+        return {}
