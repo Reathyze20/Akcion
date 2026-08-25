@@ -16,7 +16,6 @@ import {
   ChevronRight,
   RefreshCw,
   ShieldCheck,
-  Wallet,
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { DailyAction, DailyActionsResponse } from '../api/client';
@@ -29,6 +28,13 @@ interface DailyActionWidgetProps {
    * pre-filled trade flow; false falls back to a "execute at broker" note.
    */
   onExecuteAction?: (action: DailyAction) => boolean;
+  /**
+   * Called when the user wants to resolve a ROZPOR. Rozpory ukazujeme tady
+   * jen jako jednořádkovou připomínku — celé odůvodnění (fáze cyklu vs.
+   * ocenění) už jednou stojí na záložce „Co s tím", a psát ho sem znovu by
+   * bylo doslovné opakování téže věty ze stejného zdroje dat.
+   */
+  onOpenRozpor?: () => void;
   /** Bump to force a refetch (e.g. after a recorded trade). */
   refreshKey?: number;
 }
@@ -66,13 +72,6 @@ const ALERT_STYLE: Record<string, { dot: string; label: string; pill: string }> 
   },
 };
 
-const ALERT_NAME: Record<string, string> = {
-  GREEN: 'zelená',
-  YELLOW: 'žlutá',
-  ORANGE: 'oranžová',
-  RED: 'červená',
-};
-
 // Semantic tokens only — the emoji + label carry the alert level, color stays quiet.
 const ACTION_STYLE: Record<string, { border: string; badge: string; label: string }> = {
   BUY: { border: 'border-positive-border', badge: 'bg-positive-bg text-positive', label: 'Koupit' },
@@ -101,6 +100,7 @@ const formatCzk = (value: number): string =>
 
 export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
   onExecuteAction,
+  onOpenRozpor,
   refreshKey = 0,
 }) => {
   const [data, setData] = useState<DailyActionsResponse | null>(null);
@@ -176,20 +176,13 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
 
   return (
     <div className="bg-surface-raised rounded-card border border-border overflow-hidden">
-      {/* Header row: alert pill + cash pill + refresh */}
-      <div className="flex items-center justify-between px-5 pt-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span
-            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${alertStyle.pill}`}
-          >
-            <span className={`h-2 w-2 rounded-full ${alertStyle.dot}`} aria-hidden="true" />
-            Semafor: {ALERT_NAME[data.market_alert] ?? data.market_alert}
-          </span>
-          <span className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
-            <Wallet className="w-3.5 h-3.5" />
-            Volná hotovost: {formatCzk(data.available_cash_czk)}
-          </span>
-        </div>
+      {/*
+        Semafor a volná hotovost se dřív opakovaly i tady — semafor už trvale
+        stojí v levém sloupci (SideRail) a hotovost v horní liště appky
+        (HOTOVOST pill). Stejný fakt na obrazovce dvakrát není důraz, je to
+        šum; zůstává jen tlačítko na obnovení téhle karty.
+      */}
+      <div className="flex items-center justify-end px-5 pt-4">
         <button
           onClick={fetchActions}
           title="Obnovit"
@@ -233,6 +226,40 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
           <div className="space-y-3">
             {data.actions.map((action, index) => {
               const style = ACTION_STYLE[action.action_type] ?? ACTION_STYLE.SELL;
+
+              /*
+               * Rozpor je otázka, ne pokyn — odůvodnění (fáze cyklu vs.
+               * ocenění) se nezopakuje, žije na záložce „Co s tím". Tady
+               * zůstává jen tolik, aby bylo vidět, že existuje a u koho.
+               */
+              if (action.action_type === 'ROZPOR') {
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={onOpenRozpor}
+                    disabled={!onOpenRozpor}
+                    className={`flex w-full items-center justify-between gap-3 rounded-lg border bg-surface-raised/40 px-4 py-2.5 text-left transition-colors ${style.border} ${
+                      onOpenRozpor ? 'hover:bg-surface-hover' : ''
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="text-text-muted font-mono text-sm">{index + 1}.</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${style.badge}`}>
+                        {style.label}
+                      </span>
+                      <span className="font-black text-base text-text-primary">{action.ticker}</span>
+                    </span>
+                    {onOpenRozpor && (
+                      <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-accent">
+                        Co s tím
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </button>
+                );
+              }
+
               return (
                 <div
                   key={action.id}
@@ -249,7 +276,7 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
                         <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-surface-hover text-text-secondary">
                           {SOURCE_LABEL[action.source_key] ?? action.source_key}
                         </span>
-                        {action.review_required && action.action_type !== 'ROZPOR' && (
+                        {action.review_required && (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-warning/20 text-warning">
                             ⚠️ ZKONTROLUJ — zdroje v konfliktu
                           </span>
@@ -262,20 +289,13 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
                       </div>
                       <p className="text-xs text-text-secondary mt-1">{action.reason}</p>
                     </div>
-                    {EXECUTABLE(action.action_type) ? (
-                      <button
-                        onClick={() => handleExecute(action)}
-                        className="shrink-0 px-4 py-2 bg-accent hover:bg-accent/80 text-text-primary rounded-lg text-sm font-bold flex items-center gap-1.5 transition-colors"
-                      >
-                        Provést
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    ) : (
-                      <span className="shrink-0 max-w-[9rem] text-[11px] leading-snug text-warning">
-                        Nic k provedení — rozhodni se sám a pak to zaznamenej
-                        v detailu pozice.
-                      </span>
-                    )}
+                    <button
+                      onClick={() => handleExecute(action)}
+                      className="shrink-0 px-4 py-2 bg-accent hover:bg-accent/80 text-text-primary rounded-lg text-sm font-bold flex items-center gap-1.5 transition-colors"
+                    >
+                      Provést
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               );

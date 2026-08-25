@@ -3500,6 +3500,7 @@ export const InvestmentTerminal: React.FC = () => {
                   }
                   return false;
                 }}
+                onOpenRozpor={() => setActiveTab('rozhodnuti')}
               />
               <RiskMeter
                 rocketCount={familyData.rocketCount}
