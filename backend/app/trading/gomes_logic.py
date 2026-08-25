@@ -20,6 +20,9 @@ Reference: Mark Gomes "How I Make Money On Stocks" transcript
 
 from __future__ import annotations
 
+from app.core.czech import d as cz_date
+from app.core.czech import n as cz
+
 import math
 import re
 from collections.abc import Sequence
@@ -30,6 +33,11 @@ from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
+
+# The ratchet lives with the rest of the pure stage rules. Importing it here
+# rather than re-implementing keeps one definition of "Gold Mine is absorbing";
+# `lifecycle_rubric` depends on nothing in this module, so there is no cycle.
+from app.services.lifecycle_rubric import apply_ratchet
 
 
 # ============================================================================
@@ -114,6 +122,9 @@ class LifecycleAssessment:
     signals: dict[str, bool] = field(default_factory=dict)
     reasoning: str = ""
     confidence: str = "MEDIUM"  # HIGH/MEDIUM/LOW
+    #: A Wait Time reading on a company already proven to be a Gold Mine.
+    #: Not a phase — see GOMES_VIDEO_ADDENDUM.md §V1.
+    rough_patch: bool = False
 
 
 @dataclass
@@ -378,6 +389,7 @@ class StockLifecycleClassifier:
         text: str | None = None,
         *,
         aliases: Sequence[str] = (),
+        reached: LifecyclePhase | str | None = None,
     ) -> LifecycleAssessment:
         """
         Classify stock into lifecycle phase from text that mentions it.
@@ -389,10 +401,14 @@ class StockLifecycleClassifier:
                 "gatekeeper", never "GKPRF". Without them a transcript that
                 never spells the ticker yields UNKNOWN, which is the safe
                 answer, not a wrong one.
+            reached: The furthest stage this company has ever reached, from
+                `stock_lifecycle.phase_reached`. Without it this method is
+                memoryless and will demote a proven Gold Mine to Wait Time the
+                first time somebody says "delays" — see below.
 
         Cylinders are deliberately NOT inferred here; see below.
 
-        Ref: Minute 31:28 - "Wait Time is the KILLER. Don't invest."
+        Ref: canon §3, GOMES_VIDEO_ADDENDUM.md §V1.
         """
         signals: dict[str, bool] = {}
         scoped = cls._sentences_about(ticker, text or "", aliases)
@@ -459,6 +475,25 @@ class StockLifecycleClassifier:
         #
         # Unknown cylinders make the Buy Guard refuse to emit BUY. Failing
         # closed is the correct behaviour here.
+        #
+        # The ratchet (§V1) runs last, over whatever the keywords voted for.
+        # It matters most exactly here: WAIT_TIME_SIGNALS above is the
+        # vocabulary of a rough patch — "delays", "missed guidance",
+        # "lawsuit", "cfo left" — and Gomes is explicit that a proven company
+        # saying those things has not gone back to Wait Time. Without a
+        # high-water mark to compare against, this method has no way to know
+        # the difference, so `reached` is what makes the distinction possible
+        # and its absence leaves the old behaviour untouched.
+        rough_patch = False
+        if reached is not None:
+            mark = reached.value if isinstance(reached, LifecyclePhase) else str(reached)
+            result = apply_ratchet(phase.value, mark.upper())
+            if result.changed:
+                phase = LifecyclePhase(result.phase)
+                rough_patch = result.rough_patch
+                is_investable = cls.is_investable(phase)
+                reasoning = f"{reasoning}. {result.held_back_cs}".lstrip(". ")
+
         return LifecycleAssessment(
             ticker=ticker,
             phase=phase,
@@ -467,7 +502,8 @@ class StockLifecycleClassifier:
             cylinders_count=None,
             signals=signals,
             reasoning=reasoning,
-            confidence=confidence
+            confidence=confidence,
+            rough_patch=rough_patch,
         )
 
     @classmethod
@@ -610,19 +646,19 @@ class RiskRewardCalculator:
 
         if cylinders is None:
             return "WATCH", (
-                f"R/R skóre {score:.2f}/10, ale chybí kvalita firmy (válce) "
+                f"R/R skóre {cz(score, 2)}/10, ale chybí kvalita firmy (válce) "
                 f"— nekupovat naslepo"
             )
 
         deserved = cls.deserved_score(cylinders)
         c = max(0, min(10, int(cylinders)))
-        detail = f"zasloužené {deserved:.1f} (10 − {c} válců)"
+        detail = f"zasloužené {cz(deserved, 1)} (10 − {c} válců)"
 
         if score > deserved + cls.RR_DEADBAND:
-            return "BUY", f"R/R skóre {score:.2f} > {detail} — levné vzhledem ke kvalitě"
+            return "BUY", f"R/R skóre {cz(score, 2)} > {detail} — levné vzhledem ke kvalitě"
         if score < deserved - cls.RR_DEADBAND:
-            return "SELL", f"R/R skóre {score:.2f} < {detail} — drahé vzhledem ke kvalitě"
-        return "HOLD", f"R/R skóre {score:.2f} ≈ {detail}"
+            return "SELL", f"R/R skóre {cz(score, 2)} < {detail} — drahé vzhledem ke kvalitě"
+        return "HOLD", f"R/R skóre {cz(score, 2)} ≈ {detail}"
 
     @classmethod
     def decide(
@@ -704,11 +740,11 @@ class RiskRewardCalculator:
         gain_pct = ((current_price - entry_price) / entry_price) * 100
         
         if gain_pct >= 100:
-            return True, f"DOUBLING RULE: +{gain_pct:.1f}% gain. Sell half, play with house money."
+            return True, f"DOUBLING RULE: +{cz(gain_pct, 1)}% gain. Sell half, play with house money."
         elif gain_pct >= 75:
-            return False, f"Approaching double: +{gain_pct:.1f}%. Consider partial profit."
+            return False, f"Approaching double: +{cz(gain_pct, 1)}%. Consider partial profit."
         else:
-            return False, f"Current gain: +{gain_pct:.1f}%"
+            return False, f"Current gain: +{cz(gain_pct, 1)}%"
     
     @classmethod
     def get_action_zone(
@@ -746,10 +782,10 @@ class RiskRewardCalculator:
 
         # Neutral midpoint 5 +/- deadband on the 0-10 log R/R scale.
         if score >= 5 + cls.RR_DEADBAND:
-            return "BUY", f"R/R score {score:.1f}/10 (toward Green Line, undervalued)"
+            return "BUY", f"R/R score {cz(score, 1)}/10 (toward Green Line, undervalued)"
         if score <= 5 - cls.RR_DEADBAND:
-            return "SELL", f"R/R score {score:.1f}/10 (toward Red Line, overvalued)"
-        return "HOLD", f"R/R score {score:.1f}/10 (near fair value)"
+            return "SELL", f"R/R score {cz(score, 1)}/10 (toward Red Line, overvalued)"
+        return "HOLD", f"R/R score {cz(score, 1)}/10 (near fair value)"
 
 
 # ============================================================================
@@ -765,6 +801,12 @@ class PositionSizingEngine:
     PRIMARY (Core): 10% max - Proven Gold Mine stocks
     SECONDARY: 5% max - Great Find, dating phase
     TERTIARY: 1-2% max - FOMO/Speculative
+
+    Those are CEILINGS, not targets. What a name is actually worth inside its
+    ceiling is `target_pct`, which scales with the R/R score — see §V2. The
+    `recommended_pct` values below are kept only for the informational endpoint
+    that shows a tier's shape before any company is scored; nothing sizes a
+    real purchase from them.
     """
     
     TIER_LIMITS: dict[PositionTier, dict[str, Any]] = {
@@ -794,6 +836,73 @@ class PositionSizingEngine:
         },
     }
     
+    #: Below this score, in a market that is not GREEN, a holding is not
+    #: trimmed towards a smaller weight — it goes to nothing.
+    #:
+    #: §V2, and it is Gomes' own number, not a threshold chosen here: "When a
+    #: stock is up here, I'm liable to own zero or 1% of it in my portfolio.
+    #: Especially in a yellow alert — zero. Why should I own a stock that's
+    #: fully valued in a market that's likely to go down? There's no upside in
+    #: that. High risk, low reward."
+    FULL_VALUE_SCORE: float = 1.0
+
+    @classmethod
+    def target_pct(
+        cls,
+        ceiling_pct: float,
+        rr_score: float | None,
+        *,
+        market_alert: MarketAlert | str | None = None,
+    ) -> float:
+        """
+        How much of the portfolio this name is worth RIGHT NOW, inside its cap.
+
+        GOMES_VIDEO_ADDENDUM.md §V2. The tier is a CEILING; the R/R score is the
+        dial. Gomes states both ends of it with numbers:
+
+            "Why would you put the same amount of money in a stock that's here
+             as a stock that is way up here? When a stock is up here, I'm liable
+             to own zero or 1% of it in my portfolio. When it's here, a 10 on
+             the scale, I'm more liable to own 10% of that stock."
+
+        And he rejects the flat alternative outright: "a lot of people say,
+        well, I'm just going to put 10,000 in this stock, 10,000 in that stock
+        — that defeats the purpose."
+
+        Until this existed, `recommended_pct` was a constant per tier, so a
+        PRIMARY at a score of 5 was sized exactly like a PRIMARY at 10. Every
+        ceiling the app already applies still applies: pass the SMALLEST one
+        (tier ∩ asset class ∩ dual-source agreement) as `ceiling_pct` and this
+        only ever scales down from it.
+
+        Args:
+            ceiling_pct: The most this name may occupy, after every cap.
+            rr_score: Today's log R/R score, 0-10. None means the score could
+                not be computed, and an unknown dial is not a full one — the
+                answer is zero, the same way every other missing input in this
+                module refuses rather than defaults.
+            market_alert: When not GREEN, a fully valued name is worth nothing
+                rather than a token slice.
+
+        Returns:
+            Target weight in percent of the portfolio, 0 <= result <= ceiling.
+        """
+        if ceiling_pct <= 0 or rr_score is None:
+            return 0.0
+
+        score = max(0.0, min(10.0, float(rr_score)))
+
+        if market_alert is not None:
+            level = (
+                market_alert.value
+                if isinstance(market_alert, MarketAlert)
+                else str(market_alert).upper()
+            )
+            if level != MarketAlert.GREEN.value and score <= cls.FULL_VALUE_SCORE:
+                return 0.0
+
+        return min(ceiling_pct, ceiling_pct * score / 10.0)
+
     @classmethod
     def get_position_limit(
         cls,
@@ -891,6 +1000,18 @@ class PositionSizingEngine:
 # 5. GOMES GATEKEEPER - Final Verdict Synthesizer
 # ============================================================================
 
+def _drop_tz(value: datetime) -> datetime:
+    """
+    A datetime comparable with any other, aware or not.
+
+    The lifecycle columns are `TIMESTAMP WITH TIME ZONE` and the engine clock
+    is naive. Comparing the two raises, and the first rough patch ever recorded
+    would have taken the guard down with a TypeError — the same way the first
+    cylinder confirmation once did in `daily_actions`.
+    """
+    return value.replace(tzinfo=None)
+
+
 class GomesGatekeeper:
     """
     The GATEKEEPER - Final Investment Decision
@@ -918,14 +1039,47 @@ class GomesGatekeeper:
         self.market_alert = market_alert
         self.current_date = current_date or datetime.now()
 
-    @staticmethod
-    def evaluate_buy_guard(
+    class BuyGate(str, Enum):
+        """
+        Which condition refused the buy.
+
+        A code rather than a sentence, because the refusals are recorded and
+        read back later (`app/models/refused_buy.py`): grouping a year of them
+        by cause has to be a GROUP BY, not a regex over prose that someone
+        rewords. `PASSED` is included so the caller never has to test for the
+        absence of a gate.
+        """
+
+        PASSED = "PASSED"
+        ALERT_UNKNOWN = "ALERT_UNKNOWN"
+        MARKET_NOT_GREEN = "MARKET_NOT_GREEN"
+        CYLINDERS_UNKNOWN = "CYLINDERS_UNKNOWN"
+        WAIT_TIME = "WAIT_TIME"
+        #: Gold Mine kept its stage through a slowdown (§V1), but the quality
+        #: reading behind the purchase was agreed before that slowdown began.
+        ROUGH_PATCH_STALE_QUALITY = "ROUGH_PATCH_STALE_QUALITY"
+        SCORE_MISSING = "SCORE_MISSING"
+        NOT_CHEAP_ENOUGH = "NOT_CHEAP_ENOUGH"
+        EARNINGS_SOON = "EARNINGS_SOON"
+        #: Not a gate inside the guard — the guard passed and the OTHER
+        #: source refused. Recorded with the same vocabulary so a year of
+        #: refusals groups by cause in one query.
+        SOURCE_CONFLICT = "SOURCE_CONFLICT"
+
+    @classmethod
+    def check_buy_guard(
+        cls,
         market_alert: MarketAlert | str,
         rr_score: float | None,
         deserved_score: float | None,
         cylinders: int | None,
         lifecycle_stage: LifecyclePhase | str | None,
-    ) -> tuple[bool, str]:
+        days_to_earnings: int | None = None,
+        earnings_confirmed: bool = True,
+        rough_patch: bool = False,
+        rough_patch_since: datetime | None = None,
+        cylinders_confirmed_at: datetime | None = None,
+    ) -> tuple[bool, "GomesGatekeeper.BuyGate", str]:
         """
         Hard BUY guard — every condition must pass or the buy is refused.
 
@@ -934,21 +1088,43 @@ class GomesGatekeeper:
         operational quality (cylinders) is known. Missing data is a refusal,
         never a default — a BUY built on unknowns is how capital gets lost.
 
+        The rough-patch arguments are the counterweight to §V1. Making Gold
+        Mine an absorbing stage stops a proven company being refused as Wait
+        Time over one bad quarter — but on its own that would let a purchase
+        run on a quality reading agreed BEFORE the business slowed. So the
+        slowdown is checked against the confirmation date instead: the caution
+        that used to live in the phase now lives here, where it can name what
+        is actually wrong.
+
+        The gate order is not arbitrary: it runs cheapest-and-most-decisive
+        first, so the recorded reason is the one that actually matters. A stock
+        refused for an unknown market alert is a different fact from one
+        refused for being expensive, and conflating them would make the
+        refusal log unreadable.
+
         Returns:
-            (is_allowed, reason) — reason names the first failed gate, or
-            confirms all gates passed.
+            (is_allowed, gate, reason) — `gate` is the machine-readable cause,
+            `reason` the sentence with the numbers in it.
         """
+        Gate = cls.BuyGate
+
         if isinstance(market_alert, str):
             try:
                 market_alert = MarketAlert(market_alert.upper())
             except ValueError:
-                return False, f"Unknown market alert '{market_alert}' (BUY requires GREEN)"
+                return False, Gate.ALERT_UNKNOWN, (
+                    f"Unknown market alert '{market_alert}' (BUY requires GREEN)"
+                )
 
         if market_alert != MarketAlert.GREEN:
-            return False, f"Market Alert is {market_alert.value} (BUY requires GREEN)"
+            return False, Gate.MARKET_NOT_GREEN, (
+                f"Market Alert is {market_alert.value} (BUY requires GREEN)"
+            )
 
         if cylinders is None or cylinders == 0:
-            return False, "Cylinders unknown or zero (quality unverified)"
+            return False, Gate.CYLINDERS_UNKNOWN, (
+                "Cylinders unknown or zero (quality unverified)"
+            )
 
         if lifecycle_stage is not None:
             if isinstance(lifecycle_stage, str):
@@ -957,18 +1133,86 @@ class GomesGatekeeper:
                 except ValueError:
                     lifecycle_stage = LifecyclePhase.UNKNOWN
             if lifecycle_stage == LifecyclePhase.WAIT_TIME:
-                return False, "Stock is in Wait Time (hype phase / dead period)"
+                return False, Gate.WAIT_TIME, (
+                    "Stock is in Wait Time (hype phase / dead period)"
+                )
+
+        if rough_patch:
+            # An undated slowdown cannot be checked against anything, and an
+            # unverifiable flag is treated the same way as a missing number
+            # everywhere else in this guard: it refuses.
+            if rough_patch_since is None:
+                return False, Gate.ROUGH_PATCH_STALE_QUALITY, (
+                    "Přechodný útlum je zapsaný bez data — nejde ověřit, "
+                    "jestli je posudek válců starší než on"
+                )
+            if (
+                cylinders_confirmed_at is not None
+                and _drop_tz(cylinders_confirmed_at) < _drop_tz(rough_patch_since)
+            ):
+                return False, Gate.ROUGH_PATCH_STALE_QUALITY, (
+                    f"Válce potvrzené {cz_date(cylinders_confirmed_at)} jsou "
+                    f"starší než útlum od {cz_date(rough_patch_since)} — "
+                    f"kvalita se musí posoudit znovu"
+                )
 
         if rr_score is None or deserved_score is None:
-            return False, "Missing R/R score or deserved score"
+            return False, Gate.SCORE_MISSING, "Missing R/R score or deserved score"
 
         if rr_score <= deserved_score:
-            return False, (
-                f"Score {rr_score:.2f} <= Deserved {deserved_score:.2f} "
+            return False, Gate.NOT_CHEAP_ENOUGH, (
+                f"Score {cz(rr_score, 2)} <= Deserved {cz(deserved_score, 2)} "
                 f"(Not cheap enough)"
             )
 
-        return True, "All Gomes Buy Guard conditions satisfied"
+        # Last, because it is the only gate that will pass on its own with
+        # time. Everything above is a fact about the company or the market;
+        # this one is a fact about the calendar, and recording it as the reason
+        # when something worse is also true would send the owner waiting for a
+        # date instead of looking at the price.
+        if days_to_earnings is not None and 0 <= days_to_earnings <= cls.EARNINGS_DANGER_DAYS:
+            kind = "oznámeno" if earnings_confirmed else "odhad"
+            return False, Gate.EARNINGS_SOON, (
+                f"Výsledky za {days_to_earnings} dní ({kind}) — kánon do nich "
+                f"nevstupuje. Buy Guard drží {cls.EARNINGS_DANGER_DAYS} dní předem"
+            )
+
+        return True, Gate.PASSED, "All Gomes Buy Guard conditions satisfied"
+
+    @classmethod
+    def evaluate_buy_guard(
+        cls,
+        market_alert: MarketAlert | str,
+        rr_score: float | None,
+        deserved_score: float | None,
+        cylinders: int | None,
+        lifecycle_stage: LifecyclePhase | str | None,
+        days_to_earnings: int | None = None,
+        earnings_confirmed: bool = True,
+        rough_patch: bool = False,
+        rough_patch_since: datetime | None = None,
+        cylinders_confirmed_at: datetime | None = None,
+    ) -> tuple[bool, str]:
+        """
+        `check_buy_guard` without the gate code, for callers that only decide.
+
+        Kept as the two-value form because that is what the verdict path and
+        the Daily Action engine consume; the gate matters only where a refusal
+        is being recorded.
+        """
+        allowed, _gate, reason = cls.check_buy_guard(
+            market_alert=market_alert,
+            rr_score=rr_score,
+            deserved_score=deserved_score,
+            cylinders=cylinders,
+            lifecycle_stage=lifecycle_stage,
+            days_to_earnings=days_to_earnings,
+            earnings_confirmed=earnings_confirmed,
+            rough_patch=rough_patch,
+            rough_patch_since=rough_patch_since,
+            cylinders_confirmed_at=cylinders_confirmed_at,
+        )
+        return allowed, reason
     
     def evaluate(
         self,
@@ -982,7 +1226,8 @@ class GomesGatekeeper:
         ml_prediction: dict[str, Any] | None = None,
         transcript_text: str | None = None,
         catalyst_info: dict[str, Any] | None = None,
-        cylinders_count: int | None = None
+        cylinders_count: int | None = None,
+        phase_reached: LifecyclePhase | str | None = None,
     ) -> GomesVerdict:
         """
         Evaluate investment and return final verdict.
@@ -1000,6 +1245,11 @@ class GomesGatekeeper:
             ml_prediction: ML prediction dict {"direction": "UP", "confidence": 0.85}
             transcript_text: Transcript for lifecycle detection
             catalyst_info: Catalyst info dict
+            phase_reached: The furthest stage this company has reached, from
+                `stock_lifecycle.phase_reached`. Passed straight to the
+                classifier so a transcript full of rough-patch vocabulary
+                cannot demote a proven Gold Mine here either (§V1). Without it
+                this path stays memoryless.
             
         Returns:
             GomesVerdict with final decision
@@ -1015,7 +1265,9 @@ class GomesGatekeeper:
         # =====================================================================
         
         if lifecycle_phase is None and transcript_text:
-            assessment = StockLifecycleClassifier.classify(ticker, transcript_text)
+            assessment = StockLifecycleClassifier.classify(
+                ticker, transcript_text, reached=phase_reached
+            )
             lifecycle_phase = assessment.phase
         
         lifecycle_phase = lifecycle_phase or LifecyclePhase.UNKNOWN
@@ -1118,7 +1370,7 @@ class GomesGatekeeper:
             ml_confidence = ml_prediction.get("confidence", ml_prediction.get("score"))
             
             if ml_direction == "DOWN" and ml_confidence and ml_confidence > 0.7:
-                risk_factors.append(f"ML predicts DOWN with {ml_confidence*100:.0f}% confidence")
+                risk_factors.append(f"ML predicts DOWN with {cz(ml_confidence*100, 0)}% confidence")
                 adjusted_score = max(0, adjusted_score - 1)
             elif ml_direction == "UP" and ml_confidence and ml_confidence > 0.7:
                 adjusted_score = min(10, adjusted_score + 1)
@@ -1182,11 +1434,11 @@ class GomesGatekeeper:
         reasoning_parts.append(f"Tier: {position_tier.value} (max {position_limit.max_portfolio_pct}%)")
         
         if green_line:
-            reasoning_parts.append(f"Green Line: ${green_line:.2f}")
+            reasoning_parts.append(f"Green Line: ${cz(green_line, 2)}")
         if red_line:
-            reasoning_parts.append(f"Red Line: ${red_line:.2f}")
+            reasoning_parts.append(f"Red Line: ${cz(red_line, 2)}")
         if current_price:
-            reasoning_parts.append(f"Current: ${current_price:.2f} ({price_zone})")
+            reasoning_parts.append(f"Current: ${cz(current_price, 2)} ({price_zone})")
         
         reasoning = " | ".join(reasoning_parts)
         
@@ -1242,11 +1494,16 @@ class DualSourceBuyDecision:
 # Position-size caps (% of portfolio) by cross-source agreement.
 # Sources agreeing earns full tier size (app-level cap 15%); a lone Gomes take
 # gets standard size; a direct conflict is allowed but tiny + flagged for review.
+#: Position cap by how far the two sources agree. CONFLICT no longer sizes
+#: anything: since 2026-08-23 a Breakout analyst writing "sell" refuses the
+#: purchase outright rather than shrinking it, on the owner's decision that
+#: either source may prevent a buy. The key stays so a decision stored before
+#: that date still resolves to a number.
 AGREEMENT_POSITION_CAPS: dict[str, float] = {
     "AGREE": 15.0,
     "SINGLE": 7.0,
     "MIXED": 7.0,
-    "CONFLICT": 5.0,
+    "CONFLICT": 0.0,
 }
 
 
@@ -1259,31 +1516,57 @@ def evaluate_dual_source_buy(
     """
     Cross the Gomes Buy Guard verdict with the Breakout Investors stance.
 
-    Gomes is the valuation authority: if his guard blocks the buy, Breakout
-    enthusiasm can NEVER override it (GOMES_NO_BUY -> REJECT). When Gomes
-    allows, Breakout only modulates position size and review flags:
+    Both sources may refuse. Neither may authorise alone.
+    ------------------------------------------------------
+    Changed on 2026-08-23, on the owner's decision that the two sources sit at
+    the same level. Equality here is equality in the right to PREVENT, not in
+    the right to allow, and the asymmetry is on purpose:
 
-      AGREE    (Breakout BULLISH)  -> full tier size, capped at 15%
-      SINGLE   (no Breakout take)  -> standard size, capped at 7%
-      MIXED    (Breakout NEUTRAL)  -> standard size, capped at 7%
-      CONFLICT (Breakout BEARISH)  -> allowed but capped at 5% + REVIEW_REQUIRED
+      * Either source saying no stops the purchase. Gomes' valuation guard has
+        always had that power; a Breakout analyst writing that he would sell
+        now has it too. Two people who follow a company and disagree about
+        owning it is not a reason to own a little of it.
+      * Neither can authorise a name the method cannot value. Buying still
+        requires a real valuation band and a Buy Guard that passes on it, so a
+        company nobody has drawn lines for stays unbuyable however enthusiastic
+        anyone is about it.
+
+    What that costs, stated plainly: the app will now decline purchases it used
+    to make at a fifth of the size. A refusal is recoverable and a bad position
+    is not, and a fifth of a position taken against a source you trust was
+    always a strange thing to hold.
+
+    Sizes when everyone allows:
+
+      AGREE   (Breakout BULLISH)  -> full tier size, capped at 15%
+      SINGLE  (no Breakout take)  -> standard size, capped at 7%
+      MIXED   (Breakout NEUTRAL)  -> standard size, capped at 7%
+
+    A stance means somebody wrote something. The scraped watchlist is not one:
+    it carries a count of endorsements and no author, and writing all
+    twenty-eight names in as BULLISH would double the allowed size of
+    twenty-eight positions on the strength of a scrape nobody read. See
+    `app/services/breakout_sync.py`.
 
     Args:
-        gomes_allowed/gomes_reason: output of GomesGatekeeper.evaluate_buy_guard.
+        gomes_allowed/gomes_reason: output of GomesGatekeeper.check_buy_guard.
         breakout_stance: "BULLISH" | "BEARISH" | "NEUTRAL" | None (no take),
-            as produced by app.core.sources.verdict_stance.
+            as produced by app.core.sources.verdict_stance — and only ever from
+            a named analyst on the roster.
         tier_max_pct: the tier's own max position size (PositionSizingEngine).
     """
+    stance = (breakout_stance or "").strip().upper() or None
+
     if not gomes_allowed:
-        if breakout_stance == "BULLISH":
+        if stance == "BULLISH":
             return DualSourceBuyDecision(
                 decision="REJECT",
                 agreement="GOMES_NO_BUY",
                 max_position_pct=0.0,
                 review_required=False,
                 reason=(
-                    f"Breakout je BULLISH, ale Gomes blokuje: {gomes_reason} "
-                    f"— valuační veto platí"
+                    f"Breakout je pro, ale Gomes blokuje: {gomes_reason} "
+                    f"— na zákaz stačí jeden zdroj"
                 ),
             )
         return DualSourceBuyDecision(
@@ -1294,36 +1577,39 @@ def evaluate_dual_source_buy(
             reason=gomes_reason,
         )
 
-    stance = (breakout_stance or "").strip().upper() or None
+    if stance == "BEARISH":
+        # The half that is new. It used to allow a fifth-size position with a
+        # review flag — a compromise between two people who disagreed about
+        # whether to own the company at all.
+        return DualSourceBuyDecision(
+            decision="REJECT",
+            agreement="CONFLICT",
+            max_position_pct=0.0,
+            review_required=True,
+            reason=(
+                "Gomes je pro, ale analytik z Breakoutu píše, že prodávat "
+                "— na zákaz stačí jeden zdroj. Rozhodni sám, jestli to přebít"
+            ),
+        )
+
     if stance == "BULLISH":
         agreement = "AGREE"
-        reason = "Gomes BUY + Breakout BULLISH — zdroje souhlasí, plná velikost"
-    elif stance == "BEARISH":
-        agreement = "CONFLICT"
-        reason = (
-            "Gomes BUY, ale Breakout BEARISH — konflikt zdrojů, "
-            "malá pozice + nutná kontrola"
-        )
+        reason = "Gomes pro + analytik z Breakoutu pro — oba zdroje, plná velikost"
     elif stance is None:
         agreement = "SINGLE"
-        reason = "Jen Gomes BUY (Breakout bez názoru) — standardní velikost"
+        reason = "Jen Gomes (Breakout se nevyjádřil) — standardní velikost"
     else:
         agreement = "MIXED"
-        reason = f"Gomes BUY + Breakout {stance} — bez přímého konfliktu"
+        reason = f"Gomes pro + Breakout {stance} — bez přímého konfliktu"
 
     cap = AGREEMENT_POSITION_CAPS[agreement]
     return DualSourceBuyDecision(
         decision="ALLOW",
         agreement=agreement,
         max_position_pct=min(max(tier_max_pct, 0.0), cap),
-        review_required=(agreement == "CONFLICT"),
+        review_required=False,
         reason=reason,
     )
-
-
-# ============================================================================
-# CONVENIENCE FUNCTIONS
-# ============================================================================
 
 def quick_gomes_check(
     ticker: str,
@@ -1356,3 +1642,252 @@ def quick_gomes_check(
     )
     
     return verdict.passed_gomes_filter, verdict.blocked_reason or verdict.verdict.value
+
+
+# ============================================================================
+# 7. ZONE LADDER — the band, and the prices where it changes
+# ============================================================================
+
+class Band(str, Enum):
+    """
+    Where a price sits relative to what the company's quality deserves.
+
+    Named in Czech because these reach the screen. `MIMO_METODIKU` and
+    `NEZNAME` are two different absences and are kept apart on purpose: the
+    first is a company the method has no valuation for at all, the second is
+    one whose valuation is known and whose quality is not.
+    """
+
+    POD_ZELENOU = "POD_ZELENOU"        # price at or below the Green Line
+    NAKUP = "NAKUP"                    # cheaper than its quality deserves
+    DRZET = "DRZET"                    # about what it deserves
+    PREPLACENO = "PREPLACENO"          # dearer than its quality deserves
+    NAD_CERVENOU = "NAD_CERVENOU"      # price at or above the Red Line
+    NEZNAME = "NEZNAME"                # band known, cylinders not
+    MIMO_METODIKU = "MIMO_METODIKU"    # no Green/Red Line for this company
+
+
+class Trigger(str, Enum):
+    """A move since entry, which is a different question from where the price sits."""
+
+    VYBRAT_ZISK = "VYBRAT_ZISK"        # 3 points cheaper on the scale than at entry
+    DOKOUPIT = "DOKOUPIT"              # 3 points dearer on the scale than at entry
+    ZADNY = "ZADNY"
+
+
+#: Canon section 5. Three points on the ten-point R/R scale, measured FROM ENTRY.
+THREE_POINTS: Final[float] = 3.0
+
+
+@dataclass(frozen=True)
+class LadderReading:
+    """
+    One company's position on the ladder, with the prices where it changes.
+
+    `buy_below` and `sell_above` are the reason this exists. A band tells the
+    owner what is true today; two prices let him place an order once and stop
+    looking. They are derived from the LINES, not from today's price, so a
+    stale quote cannot corrupt them — only the "can this be done now" flag
+    depends on a fresh price.
+    """
+
+    band: Band
+    rr_score: float | None = None
+    deserved: float | None = None
+    #: Buy at or below this and the score beats what the quality deserves.
+    buy_below: float | None = None
+    #: At or above this the position is dearer than its quality deserves.
+    sell_above: float | None = None
+    #: Canon section 5 price triggers, relative to where the position was opened.
+    take_profit_above: float | None = None
+    add_below: float | None = None
+    reason_cs: str = ""
+
+    @property
+    def is_tradeable(self) -> bool:
+        """Whether this band is a statement about value at all."""
+        return self.band not in (Band.NEZNAME, Band.MIMO_METODIKU)
+
+
+class ZoneLadder:
+    """
+    The single answer to which band a stock is in, and at what price that changes.
+
+    Two axes, and conflating them is the mistake this class exists to prevent:
+
+      * The BAND compares today's R/R score with `10 - cylinders` (section 4b).
+        It answers whether the stock is cheap for its quality right now.
+      * The TRIGGERS compare today's score with the score AT ENTRY (section 5).
+        They answer whether it has moved three points since it was bought.
+
+    `three_point_up` and `three_point_down` compute a price relative to the
+    CURRENT price, which makes them triggers rather than band edges. Used as
+    edges they would report "sell" for a stock that is merely dearer than it
+    deserves, and "strong buy" where the canon says plain buy.
+    """
+
+    @staticmethod
+    def price_at_score(
+        score: float, low: float, high: float, top_score: int = 0
+    ) -> float | None:
+        """
+        The price at which the R/R score equals `score` — the formula inverted.
+
+            score = top + (10 - top) * log(high/price) / log(high/low)
+        =>  price = high * (low/high) ** ((score - top) / (10 - top))
+
+        This is what turns a verdict into an order. Derived from the lines
+        alone, so it survives a stale quote; it changes only when the analyst
+        moves the band.
+        """
+        if low is None or high is None or low <= 0 or high <= 0 or high <= low:
+            return None
+        span = 10 - top_score
+        if span <= 0:
+            return None
+        clamped = max(float(top_score), min(10.0, float(score)))
+        return high * (low / high) ** ((clamped - top_score) / span)
+
+    @classmethod
+    def read(
+        cls,
+        current_price: float | None,
+        low: float | None,
+        high: float | None,
+        cylinders: int | float | None,
+        *,
+        entry_score: float | None = None,
+        top_score: int = 0,
+    ) -> LadderReading:
+        """
+        Place one company on the ladder.
+
+        Returns `MIMO_METODIKU` when there is no band at all and `NEZNAME` when
+        there is a band but no confirmed quality. Both refuse to name a price
+        to act at, because both would be guessing at the half that is missing.
+        """
+        if low is None or high is None or high <= low:
+            return LadderReading(
+                band=Band.MIMO_METODIKU,
+                reason_cs="Pro tuhle firmu nemám zelenou ani červenou čáru",
+            )
+
+        score = RiskRewardCalculator.calculate_rr_score(
+            current_price, low, high, top_score
+        )
+        deserved = RiskRewardCalculator.deserved_score(cylinders)
+
+        if deserved is None:
+            return LadderReading(
+                band=Band.NEZNAME,
+                rr_score=score,
+                reason_cs=(
+                    f"R/R skóre {cz(score, 2)}/10, ale kvalitu firmy neznám — "
+                    f"bez ní nevím, jestli je to levné"
+                    if score is not None
+                    else "Chybí kvalita firmy i použitelná cena"
+                ),
+            )
+
+        deadband = RiskRewardCalculator.RR_DEADBAND
+        buy_below = cls.price_at_score(deserved + deadband, low, high, top_score)
+        sell_above = cls.price_at_score(deserved - deadband, low, high, top_score)
+
+        take_profit_above = add_below = None
+        if entry_score is not None:
+            take_profit_above = cls.price_at_score(
+                entry_score - THREE_POINTS, low, high, top_score
+            )
+            add_below = cls.price_at_score(
+                entry_score + THREE_POINTS, low, high, top_score
+            )
+
+        band, reason = cls._classify(
+            current_price, low, high, score, deserved, cylinders
+        )
+        return LadderReading(
+            band=band,
+            rr_score=score,
+            deserved=deserved,
+            buy_below=buy_below,
+            sell_above=sell_above,
+            take_profit_above=take_profit_above,
+            add_below=add_below,
+            reason_cs=reason,
+        )
+
+    @staticmethod
+    def _classify(
+        price: float | None,
+        low: float,
+        high: float,
+        score: float | None,
+        deserved: float,
+        cylinders: int | float | None,
+    ) -> tuple[Band, str]:
+        if price is None or score is None:
+            return Band.NEZNAME, "Chybí použitelná cena"
+
+        c = max(0, min(10, int(cylinders)))
+        detail = f"zasloužené {cz(deserved, 1)} (10 − {c} válců)"
+
+        # The two ends are separate states, not just extreme scores: at or below
+        # the Green Line the analyst says undervalued outright, and at or above
+        # the Red Line he says fully valued. Both are worth naming as such.
+        if price <= low:
+            return Band.POD_ZELENOU, (
+                f"Cena {price:g} je na zelené čáře nebo pod ní — nejlevnější "
+                f"stav, jaký metodika zná ({detail})"
+            )
+        if price >= high:
+            return Band.NAD_CERVENOU, (
+                f"Cena {price:g} je na červené čáře nebo nad ní — plná valuace "
+                f"({detail})"
+            )
+
+        deadband = RiskRewardCalculator.RR_DEADBAND
+        if score > deserved + deadband:
+            return Band.NAKUP, (
+                f"R/R skóre {cz(score, 2)} > {detail} — levné vzhledem ke kvalitě"
+            )
+        if score < deserved - deadband:
+            return Band.PREPLACENO, (
+                f"R/R skóre {cz(score, 2)} < {detail} — drahé vzhledem ke kvalitě"
+            )
+        return Band.DRZET, f"R/R skóre {cz(score, 2)} ≈ {detail}"
+
+    @staticmethod
+    def trigger(
+        current_score: float | None, entry_score: float | None
+    ) -> tuple[Trigger, str]:
+        """
+        Canon section 5, measured from where the position was opened.
+
+        Deliberately independent of the band: a stock can be firmly in NAKUP and
+        still have moved three points against you since entry, and a stock that
+        has moved three points in your favour is worth taking profit on even
+        while it still looks fairly priced for its quality. Reading either one
+        through the other loses a real signal.
+
+        Silent when the entry score is unknown, which is every position opened
+        before it started being recorded. Deriving it from today's band would
+        date the move from a starting point that never existed.
+        """
+        if current_score is None or entry_score is None:
+            return Trigger.ZADNY, "Skóre při vstupu neznám — pravidlo tří bodů mlčí"
+
+        moved = current_score - entry_score
+        if moved <= -THREE_POINTS:
+            return Trigger.VYBRAT_ZISK, (
+                f"Od nákupu spadlo skóre o {cz(abs(moved), 1)} bodu "
+                f"({cz(entry_score, 1)} → {cz(current_score, 1)}) — vybrat zisk"
+            )
+        if moved >= THREE_POINTS:
+            return Trigger.DOKOUPIT, (
+                f"Od nákupu stouplo skóre o {cz(moved, 1)} bodu "
+                f"({cz(entry_score, 1)} → {cz(current_score, 1)}) — dokoupit"
+            )
+        return Trigger.ZADNY, (
+            f"Od nákupu se skóre pohnulo o {moved:+.1f} bodu — na pravidlo "
+            f"tří bodů to nestačí"
+        )
