@@ -194,6 +194,28 @@ class OwnFindAssessment(Base):
         ),
     )
 
+    # Skóre pozornosti. Odpovídá na jinou otázku než brána („mám tomu věnovat
+    # čas", ne „smím to koupit") a počítá ho `find_attention`, ne model.
+    # Ukládá se, i když je to čistá funkce uloženého spisu: váhy rubriky jsou
+    # investiční rozhodnutí a budou se měnit, a přepočet by přepsal i to, co
+    # aplikace tvrdila minule — přesně ta historie, kvůli které jsou posudky
+    # append-only.
+    attention = Column(
+        JSONB,
+        nullable=True,
+        doc="Body, strop, pět pilířů s důvody a věta, co by tím nejvíc pohnulo.",
+    )
+    attention_points = Column(Numeric(5, 1), nullable=True)
+    attention_ceiling = Column(
+        Numeric(5, 1),
+        nullable=True,
+        doc=(
+            "Kolik bodů o téhle firmě VŮBEC jde získat. Strop pod 100 znamená "
+            "chybějící vstupy, ne špatnou firmu — a bez něj se body čtou jako "
+            "známka ze sta."
+        ),
+    )
+
     find = relationship("OwnFind", back_populates="assessments")
 
     __table_args__ = (
@@ -222,6 +244,24 @@ class OwnFindAssessment(Base):
             name="explanation_names_its_author",
         ),
         CheckConstraint("points_dropped >= 0", name="points_dropped_is_a_count"),
+        # Body bez stropu jsou známka ze sta, a to je přesně to čtení, kterému
+        # se rubrika vyhýbá. Buď obojí, nebo nic.
+        CheckConstraint(
+            "(attention_points IS NULL AND attention_ceiling IS NULL) "
+            "OR (attention_points IS NOT NULL AND attention_ceiling IS NOT NULL)",
+            name="attention_points_have_a_ceiling",
+        ),
+        CheckConstraint(
+            "attention_points IS NULL OR ("
+            "attention_points >= 0 AND attention_ceiling >= 0 "
+            "AND attention_ceiling <= 100 AND attention_points <= attention_ceiling)",
+            name="attention_within_its_ceiling",
+        ),
+        # Číslo bez rozpisu pilířů je neobhajitelné skóre.
+        CheckConstraint(
+            "attention_points IS NULL OR attention IS NOT NULL",
+            name="attention_shows_its_work",
+        ),
         CheckConstraint(
             "price_at_assessment IS NULL OR price_at_assessment > 0",
             name="assessment_price_is_a_price",

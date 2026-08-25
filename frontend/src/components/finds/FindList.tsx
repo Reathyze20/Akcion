@@ -1,15 +1,25 @@
 /**
  * Seznam nálezů. Jediná věc na téhle obrazovce, která scrolluje.
  *
- * Řádek nese jen to, podle čeho se vybírá: symbol, pásmo a jednořádkové
- * shrnutí, když už vysvětlení existuje. Čísla, pro a proti a celý spis jsou
- * ve stole vpravo — vypisovat je i tady by znamenalo říct tutéž věc dvakrát.
+ * Řádek nese jen to, podle čeho se vybírá: symbol, skóre pozornosti a
+ * jednořádkové shrnutí, když už vysvětlení existuje. Čísla, pro a proti a celý
+ * spis jsou ve stole vpravo — vypisovat je i tady by znamenalo říct tutéž věc
+ * dvakrát.
+ *
+ * **Řadí se podle podílu ze stropu, ne podle data.** Pásmo tu dřív bylo hlavní
+ * značka a bylo k ničemu: u vlastního nálezu vyjde `MIMO METODIKU` skoro
+ * vždycky, protože pásmo se počítá z Gomesových čar a vlastní nález je
+ * z definice firma, kterou Gomes nepokrývá. Dvanáct řádků se stejnou značkou
+ * není podle čeho seřadit — a přesně kvůli tomu skóre vzniklo.
+ *
+ * Skóre se píše VŽDY jako dvojice `body / strop`. Samotné body by se četly
+ * jako známka ze sta a neprozkoumaná firma by vypadala jako špatná.
  */
 
 
 import type { Find } from '../../api/client';
-import { bandName, bandTone } from '../../lib/format';
 import { day } from '../../lib/format';
+import { attentionLabel, attentionRatio, attentionTone, sortByAttention } from '../../lib/finds';
 
 interface Props {
   finds: Find[];
@@ -36,9 +46,10 @@ export default function FindList({ finds, selectedId, onSelect }: Props) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {finds.map((find) => {
+        {sortByAttention(finds).map((find) => {
           const active = find.id === selectedId;
-          const tone = bandTone(find.last_band);
+          const ratio = attentionRatio(find.attention_points, find.attention_ceiling);
+          const label = attentionLabel(find.attention_points, find.attention_ceiling);
           return (
             <button
               key={find.id}
@@ -63,10 +74,20 @@ export default function FindList({ finds, selectedId, onSelect }: Props) {
               )}
 
               <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full ${tone.marker}`} aria-hidden />
-                <span className={`text-[10px] ${tone.text}`}>
-                  {find.last_band ? bandName(find.last_band) : 'bez posudku'}
-                </span>
+                {label ? (
+                  <>
+                    <span className={`font-mono text-[11px] ${attentionTone(ratio)}`}>
+                      {label}
+                    </span>
+                    {find.attention_verdict_cs && (
+                      <span className="truncate text-[10px] text-text-muted">
+                        {find.attention_verdict_cs}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-[10px] text-text-muted">bez skóre</span>
+                )}
               </div>
 
               {find.last_one_line_cs && (

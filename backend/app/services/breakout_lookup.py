@@ -16,13 +16,15 @@ on it is dropped, which is the point of being able to deactivate anybody.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import text
+from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
 
 from app.core.sources import InvestmentSource, normalize_source
 from app.core.tickers import canonical_ticker
+from app.models.analysis import TickerMention
 from app.services.analyst_roster import load as load_roster
 from app.services.breakout_band import AnalystWord, BreakoutView, WatchlistRow, build_view
 
@@ -100,6 +102,74 @@ def load_analyst_words(db: Session) -> dict[str, list[AnalystWord]]:
                 said_on=r["mention_date"],
                 target=_f(r["price_target"]),
                 verdict=r["action_mentioned"],
+            )
+        )
+    return out
+
+
+@dataclass(frozen=True)
+class AnalystNote:
+    """Co jmenovaný analytik napsal, doslova."""
+
+    analyst: str
+    said_on: date | None
+    quote: str
+    #: FACT / OPINION, jak to označila extrakce. Může chybět.
+    claim_type: str | None = None
+    verdict: str | None = None
+    target: float | None = None
+
+
+def load_analyst_notes(db: Session) -> dict[str, list[AnalystNote]]:
+    """
+    Doslovná tvrzení jmenovaných analytiků BI, keyed by canonical ticker.
+
+    Proč vedle `load_analyst_words()` a ne místo ní
+    ------------------------------------------------
+    Ta druhá slouží stavbě pásma a zahazuje tvrzení bez verdiktu a bez čísla —
+    tam je to správně, kontext pásmem nehne. Jenže z jedenácti věcí, které
+    Robert Mock napsal o DFSC, jich devět nemá ani verdikt, ani cíl: „Bliss
+    will be produced using outsourced manufacturing", „General Dynamics owns
+    the major contract". Pro pásmo to je šum, pro spis nálezu je to **to
+    jediné cenné, co od Breakoutu vůbec máme** — jméno pod tvrzením a doslovný
+    citát, na rozdíl od seškrábaného počtu podpisů.
+
+    **Nefiltruje se na `is_current`, a je to schválně.** Ten sloupec zapisují
+    dvě různá místa opačně (backfill přepisů `False`, extrakce z WhatsAppu
+    `True`), takže je to příznak toho, kudy řádek přišel, ne jestli platí.
+    Filtrovat na něj znamená vybírat podle cesty a dostat prázdno, až se ta
+    cesta změní. Podmínkou je to, na čem tady doopravdy záleží: je pod tím
+    podepsaný člověk z aktuálního seznamu a je k tomu citát.
+    """
+    roster = load_roster(db)
+    # Přes ORM, ne přes `text()`. Ta funkce vedle používá syrové SQL z jediného
+    # důvodu: `speaker`, `source_key` a `claim_type` byly v databázi a na modelu
+    # chyběly, takže je ORM neviděl. To je teď spravené — a syrový dotaz by
+    # navíc na SQLite vracel datum jako řetězec, což by se projevilo až v testu
+    # jako `'str' object has no attribute 'day'`.
+    rows = (
+        db.query(TickerMention)
+        .filter(TickerMention.speaker.isnot(None))
+        .filter(TickerMention.context_snippet.isnot(None))
+        .order_by(desc(TickerMention.mention_date), TickerMention.id)
+        .all()
+    )
+
+    out: dict[str, list[AnalystNote]] = {}
+    for row in rows:
+        if (
+            normalize_source(row.speaker, roster=roster)
+            != InvestmentSource.BREAKOUT_INVESTORS.value
+        ):
+            continue
+        out.setdefault(canonical_ticker(row.ticker), []).append(
+            AnalystNote(
+                analyst=row.speaker,
+                said_on=row.mention_date,
+                quote=row.context_snippet,
+                claim_type=row.claim_type,
+                verdict=row.action_mentioned,
+                target=_f(row.price_target),
             )
         )
     return out

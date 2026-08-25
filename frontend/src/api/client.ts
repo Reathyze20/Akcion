@@ -1230,12 +1230,31 @@ export interface DailyAction {
   review_required: boolean;
 }
 
+/**
+ * How much of the portfolio sits in companies with a known problem, and how
+ * much sits in companies nobody can read at all — `app/services/concentration.py`.
+ * A range rather than one number: `material_pct` is the floor of what is
+ * known to be wrong, `upper_bound_pct` is what it could be if the unreadable
+ * share is as bad as the readable share turned out to be.
+ */
+export interface ConcentrationReading {
+  total_czk: number;
+  material_pct: number;
+  unassessed_pct: number;
+  upper_bound_pct: number;
+  material_tickers: string[];
+  unassessed_tickers: string[];
+}
+
 export interface DailyActionsResponse {
   market_alert: 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED' | 'UNKNOWN';
   available_cash_czk: number;
   status: 'HOLD_HOLD_HOLD' | 'ACTION_REQUIRED';
   actions: DailyAction[];
   warnings: string[];
+  //: null when the reading could not be made, or no position had a knowable
+  //: value — absent, never a reassuring zero.
+  concentration: ConcentrationReading | null;
   generated_at: string;
 }
 
@@ -1458,6 +1477,37 @@ export interface BreakoutChange {
   detected_at: string;
 }
 
+/** Jedno jejich jméno od prvního čtení po dnešek. */
+export interface BreakoutScoredName {
+  symbol: string;
+  days_watched: number;
+  price_then: number;
+  target_then: number;
+  price_now?: number | null;
+  upside_then_pct: number;
+  move_pct?: number | null;
+  /** Kolik z cesty k cíli uběhlo. null, když cíl neleží nad cenou. */
+  progress_pct?: number | null;
+  reached?: boolean | null;
+}
+
+/**
+ * Jak si vedou jejich cíle — nebo věta, proč se to ještě neříká.
+ *
+ * `too_early` je celý smysl téhle struktury a UI ho musí respektovat:
+ * úspěšnost spočítaná po týdnu měří šum a četla by se jako výsledek. Pod
+ * horizontem je `reached_total` null a vykresluje se jen průběh.
+ */
+export interface BreakoutScorecard {
+  median_days?: number | null;
+  too_early: boolean;
+  measurable: number;
+  reached_total?: number | null;
+  min_horizon_days: number;
+  verdict_cs: string;
+  names: BreakoutScoredName[];
+}
+
 export interface BreakoutWatchlist {
   last_attempt_at?: string | null;
   last_success_at?: string | null;
@@ -1470,13 +1520,21 @@ export interface BreakoutWatchlist {
   ours_total: number;
   entries: BreakoutEntry[];
   changes: BreakoutChange[];
+  scorecard: BreakoutScorecard;
 }
 
 // ============================================================================
 // Nálezy — vlastní nápady a jejich posudky
 // ============================================================================
 
-export type FindLayer = 'VLASTNI' | 'GOMES' | 'BREAKOUT' | 'FUNDAMENTY' | 'METODIKA' | 'TRH';
+export type FindLayer =
+  | 'VLASTNI'
+  | 'GOMES'
+  | 'FIT'
+  | 'BREAKOUT'
+  | 'FUNDAMENTY'
+  | 'METODIKA'
+  | 'TRH';
 export type FactDirection = 'PRO' | 'PROTI' | 'NEUTRAL';
 export type PointSide = 'PRO' | 'PROTI';
 export type PointWeight = 'ROZHODUJICI' | 'PODSTATNY' | 'DROBNY';
@@ -1541,6 +1599,42 @@ export interface FindDossier {
   method: FindMethod;
 }
 
+/**
+ * Jeden díl skóre pozornosti.
+ *
+ * `ceiling` je strop při dnešní znalosti, `max_points` strop při plné
+ * znalosti. Rozdíl mezi nimi jsou body, které se získat NEDAJÍ — a to je
+ * jediné, co odlišuje slabou firmu od neprozkoumané.
+ */
+export interface FindPillar {
+  key: string;
+  label_cs: string;
+  points: number;
+  ceiling: number;
+  max_points: number;
+  reason_cs: string;
+  missing_cs?: string | null;
+  /** DOPLNIT_DATA | POTVRDIT_VALCE | VYSVETLIT — musí mít tlačítko na obrazovce. */
+  action?: string | null;
+}
+
+/**
+ * Skóre pozornosti. Odpovídá „mám tomu věnovat čas", ne „smím to koupit".
+ *
+ * Nikdy se nevykresluje bez `ceiling`: samotné body se čtou jako známka ze
+ * sta a rubrika se tím změní ve verdikt, kterým být nemá.
+ */
+export interface FindAttention {
+  points: number;
+  ceiling: number;
+  total: number;
+  verdict_cs: string;
+  lever_cs?: string | null;
+  lever_action?: string | null;
+  if_cylinders_cs?: string | null;
+  pillars: FindPillar[];
+}
+
 export interface FindPoint {
   side: PointSide | string;
   headline_cs: string;
@@ -1576,6 +1670,7 @@ export interface FindAssessment {
   /** Kolik bodů od AI citovalo neexistující fakt. Nenulové patří na obrazovku. */
   points_dropped: number;
   dossier?: FindDossier | null;
+  attention?: FindAttention | null;
 }
 
 export interface Find {
@@ -1593,11 +1688,24 @@ export interface Find {
   last_band?: string | null;
   last_price?: number | null;
   last_one_line_cs?: string | null;
+  /** Vždy v páru se stropem — bez něj by to v seznamu byla známka ze sta. */
+  attention_points?: number | null;
+  attention_ceiling?: number | null;
+  attention_verdict_cs?: string | null;
 }
 
 export interface FindDetail {
   find: Find;
   dossier: FindDossier;
+  /**
+   * Ze kterého posudku spis pochází.
+   *
+   * Není to metadata pro metadata: spis se dřív při každém otevření skládal
+   * znovu, vycházel slabší (bez výkazů) a přečísloval id faktů — takže čipy
+   * s doklady pod body od AI ukazovaly na jiná fakta. Teď se posílá zapsaný
+   * snímek a tohle říká který.
+   */
+  dossier_from_assessment_id?: number | null;
   assessments: FindAssessment[];
   collect_notes_cs: string[];
   collect_errors_cs: string[];

@@ -9,6 +9,12 @@
  * jak pojistka přestane být vidět — a nikdo si nevšimne, že model začal
  * vymýšlet.
  *
+ * Totéž platí o citaci, kterou se ve spisu nepodařilo dohledat. Dřív se mlčky
+ * vynechala, a když se stůl rozešel se spisem, ke kterému bylo vysvětlení
+ * napsané, zmizely čtyři z osmi čipů a nikdo se to nedozvěděl. Chybějící
+ * doklad je teď vidět — je to horší zpráva než žádný doklad, protože znamená,
+ * že se rozešly dvě verze spisu.
+ *
  * Prázdná strana se nevycpává. „Nic pro to nemluví" je poctivá odpověď a musí
  * být napsaná jako věta, ne jako prázdné místo.
  */
@@ -16,7 +22,7 @@
 import { Sparkles } from 'lucide-react';
 
 import type { FindAssessment, FindDossier, FindPoint } from '../../api/client';
-import { citedFacts, directionTone, splitSides, weightLabel } from '../../lib/finds';
+import { citations, directionTone, splitSides, weightLabel } from '../../lib/finds';
 
 interface Props {
   assessment: FindAssessment | undefined;
@@ -129,6 +135,43 @@ export default function VerdictColumns({ assessment, dossier, note, busy, onExpl
   );
 }
 
+/**
+ * Čipy s doklady. Nedohledané se ukazují, ne zahazují.
+ *
+ * Čip odkazující do prázdna vypadá jako doklad — proto se nedohledané id
+ * nekreslí jako čip, ale jako pojmenovaná chyba. Když tohle vidíš, rozešel se
+ * spis na obrazovce se spisem, ke kterému model psal, a body pod ním se nedají
+ * ověřit.
+ */
+function FactChips({ point, dossier }: { point: FindPoint; dossier: FindDossier }) {
+  const { found, missing } = citations(point, dossier);
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1">
+      {found.map((fact) => (
+        <span
+          key={fact.id}
+          title={fact.text_cs}
+          className={`rounded-sm border border-border-subtle bg-surface-active px-1.5 py-0.5 font-mono text-[10px] ${directionTone(
+            fact.direction,
+          )}`}
+        >
+          {fact.id}
+        </span>
+      ))}
+      {missing.length > 0 && (
+        <span
+          className="rounded-sm border border-negative/40 bg-negative-bg px-1.5 py-0.5 text-[10px] text-negative"
+          title={`Vysvětlení se opírá o ${missing.join(', ')}, ale ve spisu na obrazovce to není. Ten bod si nejde ověřit.`}
+        >
+          {missing.length === 1
+            ? `doklad ${missing[0]} v tomhle spisu není`
+            : `${missing.length} dokladů v tomhle spisu není`}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Column({
   title,
   points,
@@ -171,19 +214,7 @@ function Column({
                 {point.check_yourself_cs}
               </p>
 
-              <div className="mt-2 flex flex-wrap gap-1">
-                {citedFacts(point, dossier).map((fact) => (
-                  <span
-                    key={fact.id}
-                    title={fact.text_cs}
-                    className={`rounded-sm border border-border-subtle bg-surface-active px-1.5 py-0.5 font-mono text-[10px] ${directionTone(
-                      fact.direction,
-                    )}`}
-                  >
-                    {fact.id}
-                  </span>
-                ))}
-              </div>
+              <FactChips point={point} dossier={dossier} />
             </li>
           ))}
         </ul>

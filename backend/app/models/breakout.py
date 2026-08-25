@@ -81,6 +81,21 @@ class BreakoutWatchEntry(Base):
         ),
     )
 
+    # The first reading, written once and never again. `price_at_read` and
+    # `implied_target` above are the LATEST poll and are overwritten every
+    # time; without these two the starting line the clock runs from is lost on
+    # the second poll, and their one falsifiable prediction becomes unscorable.
+    price_at_first_seen = Column(
+        Numeric(12, 4),
+        nullable=True,
+        doc="Price at the first read. Written on insert only — the starting line.",
+    )
+    target_at_first_seen = Column(
+        Numeric(12, 4),
+        nullable=True,
+        doc="Their reconstructed target at the first read. Never overwritten.",
+    )
+
     added_at = Column(
         TIMESTAMP(timezone=True),
         nullable=True,
@@ -104,6 +119,14 @@ class BreakoutWatchEntry(Base):
             "implied_target IS NULL "
             "OR (price_at_read IS NOT NULL AND upside_ratio IS NOT NULL)",
             name="target_has_its_inputs",
+        ),
+        CheckConstraint(
+            "target_at_first_seen IS NULL OR price_at_first_seen IS NOT NULL",
+            name="first_target_has_its_price",
+        ),
+        CheckConstraint(
+            "price_at_first_seen IS NULL OR price_at_first_seen > 0",
+            name="first_price_is_a_price",
         ),
         CheckConstraint(
             "price_at_read IS NULL OR price_at_read > 0",

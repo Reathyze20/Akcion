@@ -27,6 +27,7 @@ import Term from './ui/Term';
 import type {
   BreakoutChange,
   BreakoutEntry,
+  BreakoutScorecard,
   BreakoutWatchlist,
 } from '../api/client';
 
@@ -126,6 +127,7 @@ export const BreakoutWatchlistCard: React.FC<Props> = ({ className = '' }) => {
           )}
 
           {theirs.length > 0 && <Rest entries={theirs} />}
+          <Scorecard card={data.scorecard} />
           {data.changes.length > 0 && <Changes changes={data.changes} />}
         </>
       )}
@@ -319,5 +321,66 @@ const Changes: React.FC<{ changes: BreakoutChange[] }> = ({ changes }) => (
     </ul>
   </div>
 );
+
+/**
+ * Jak si vedou jejich cíle.
+ *
+ * Jediný zdroj v téhle aplikaci, který dává padatelnou předpověď: cíl s datem.
+ * Gomes dává čáru bez splatnosti, tu nejde vyvrátit. Proto se tady měří oni —
+ * ne proto, že by jejich hlas něco vážil (neváží, anonymní počet podpisů není
+ * stanovisko), ale proto, aby se za rok dalo rozhodnout podloženě.
+ *
+ * **Dokud je `too_early`, žádná úspěšnost se nevykresluje.** Ne jako nula, ne
+ * jako „zatím 40 %". Podíl spočítaný po týdnu měří náladu trhu a jakmile jednou
+ * padne číslo, nikdo se už nezeptá, z jak dlouhé doby. Vidět je jen průběh
+ * a věta, kdy to bude mít smysl číst.
+ */
+const Scorecard: React.FC<{ card: BreakoutScorecard }> = ({ card }) => {
+  const shown = card.names.filter((n) => n.progress_pct !== null).slice(0, 6);
+
+  return (
+    <div className="mt-3 border-t border-sheet-rule pt-2">
+      <h4 className="mb-1.5 text-[11px] uppercase tracking-wide text-sheet-muted">
+        Jak jim vycházejí cíle
+      </h4>
+
+      <p className="text-[12px] leading-relaxed text-sheet-muted">
+        {card.verdict_cs}
+      </p>
+
+      {!card.too_early && card.reached_total !== null && (
+        <p className="mt-1 font-mono text-[12px] text-sheet-text">
+          {card.reached_total} / {card.measurable} cílů dosaženo
+        </p>
+      )}
+
+      {shown.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {shown.map((n) => (
+            <li
+              key={n.symbol}
+              className="flex items-baseline gap-2 text-[12px] leading-relaxed"
+            >
+              <span className="w-14 shrink-0 font-mono text-[11px] text-sheet-text">
+                {n.symbol}
+              </span>
+              <span
+                className={
+                  (n.progress_pct ?? 0) >= 0 ? 'text-sheet-text' : 'text-negative'
+                }
+              >
+                {/* Průběh, ne známka: kolik z cesty k jejich cíli uběhlo. */}
+                {Math.round(n.progress_pct ?? 0)} % cesty k cíli
+              </span>
+              <span className="text-[11px] text-sheet-faint">
+                za {n.days_watched} dní, cíl byl +{Math.round(n.upside_then_pct)} %
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
 
 export default BreakoutWatchlistCard;

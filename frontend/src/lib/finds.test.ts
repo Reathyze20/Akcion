@@ -11,15 +11,31 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { FindAssessment, FindDossier, FindFact, FindPoint } from '../api/client';
+import type {
+  Find,
+  FindAssessment,
+  FindAttention,
+  FindDossier,
+  FindFact,
+  FindPillar,
+  FindPoint,
+} from '../api/client';
 import {
+  attentionLabel,
+  attentionRatio,
+  attentionTone,
+  citations,
   citedFacts,
   conditionalCylinderSentence,
   directionTone,
   evolution,
   factsByLayer,
   layerLabel,
+  orderedPillars,
+  pillarWidths,
   priceChangePct,
+  sortByAttention,
+  splitGaps,
   splitSides,
 } from './finds';
 
@@ -210,5 +226,182 @@ describe('evolution', () => {
     expect(result.changed).toBe(true);
     expect(result.summary_cs).toContain('pásmo');
     expect(result.summary_cs).toContain('nákupní brána');
+  });
+});
+
+// ==============================================================================
+// Skóre pozornosti
+// ==============================================================================
+
+function pillar(overrides: Partial<FindPillar> = {}): FindPillar {
+  return {
+    key: 'OCENENI',
+    label_cs: 'Ocenění',
+    points: 0,
+    ceiling: 0,
+    max_points: 30,
+    reason_cs: 'Bez čar to nejde.',
+    ...overrides,
+  };
+}
+
+function find(overrides: Partial<Find> = {}): Find {
+  return {
+    id: 1,
+    ticker: 'ABCD',
+    symbol: 'ABCD',
+    note: 'proč',
+    found_at: '2026-08-20',
+    status: 'OTEVRENY',
+    assessment_count: 1,
+    ...overrides,
+  } as Find;
+}
+
+describe('citations', () => {
+  it('vrátí nedohledaná id zvlášť místo aby je zahodila', () => {
+    // Přesně ten případ z 24. 8.: vysvětlení psané k jednomu spisu,
+    // obrazovka ukazující jiný. Tiché zahození to schovalo.
+    const result = citations(
+      point({ fact_ids: ['GOMES-1', 'FUND-5'] }),
+      dossier([fact('GOMES-1')]),
+    );
+    expect(result.found.map((f) => f.id)).toEqual(['GOMES-1']);
+    expect(result.missing).toEqual(['FUND-5']);
+  });
+
+  it('citedFacts zůstává zkratkou na dohledaná fakta', () => {
+    const d = dossier([fact('GOMES-1')]);
+    const p = point({ fact_ids: ['GOMES-1', 'NEEXISTUJE-9'] });
+    expect(citedFacts(p, d)).toEqual(citations(p, d).found);
+  });
+});
+
+describe('splitGaps', () => {
+  it('oddělí to, co jde doplnit, od toho, co prostě je', () => {
+    const d = {
+      ...dossier([]),
+      gaps: [
+        { id: 'MEZ-1', layer: 'FUNDAMENTY', text_cs: 'SEC nedosáhne', fixable_cs: 'Doplnit data' },
+        { id: 'MEZ-2', layer: 'GOMES', text_cs: 'Gomes o ní nemluví' },
+      ],
+    } as FindDossier;
+    const { fixable, permanent } = splitGaps(d);
+    expect(fixable.map((g) => g.id)).toEqual(['MEZ-1']);
+    expect(permanent.map((g) => g.id)).toEqual(['MEZ-2']);
+  });
+});
+
+describe('attentionRatio', () => {
+  it('je null při nulovém stropu, nikdy nula', () => {
+    // Nula tvrdí „nic nezískal". Prázdný strop znamená „nedá se říct".
+    expect(attentionRatio(0, 0)).toBeNull();
+    expect(attentionRatio(null, 100)).toBeNull();
+  });
+
+  it('měří podíl ze stropu, ne ze sta', () => {
+    expect(attentionRatio(30, 60)).toBe(0.5);
+  });
+});
+
+describe('attentionLabel', () => {
+  it('nikdy nevrátí samotné body bez stropu', () => {
+    expect(attentionLabel(38, 62)).toBe('38 / 62');
+  });
+
+  it('u nulového stropu řekne, že skóre není', () => {
+    expect(attentionLabel(0, 0)).toBe('bez skóre');
+  });
+
+  it('bez čísel nevrací nic k vykreslení', () => {
+    expect(attentionLabel(null, null)).toBeNull();
+  });
+});
+
+describe('attentionTone', () => {
+  it('barví podle podílu, takže neprozkoumaná firma nevypadá jako slabá', () => {
+    // 20 ze 30 dosažitelných je zelená, i když je to jen 20 ze sta možných.
+    expect(attentionTone(attentionRatio(20, 30))).toBe('text-positive');
+    expect(attentionTone(attentionRatio(20, 100))).not.toBe('text-positive');
+  });
+
+  it('bez podílu je šedá', () => {
+    expect(attentionTone(null)).toBe('text-text-muted');
+  });
+});
+
+describe('sortByAttention', () => {
+  it('řadí podle podílu ze stropu, ne podle absolutních bodů', () => {
+    const rows = [
+      find({ id: 1, symbol: 'NIZKY', attention_points: 40, attention_ceiling: 100 }),
+      find({ id: 2, symbol: 'VYSOKY', attention_points: 20, attention_ceiling: 25 }),
+    ];
+    expect(sortByAttention(rows).map((r) => r.symbol)).toEqual(['VYSOKY', 'NIZKY']);
+  });
+
+  it('nálezy bez skóre padají na konec, ne na začátek', () => {
+    const rows = [
+      find({ id: 1, symbol: 'BEZ' }),
+      find({ id: 2, symbol: 'SE', attention_points: 5, attention_ceiling: 100 }),
+    ];
+    expect(sortByAttention(rows).map((r) => r.symbol)).toEqual(['SE', 'BEZ']);
+  });
+
+  it('při shodném podílu jde napřed ten, o kterém víme víc', () => {
+    const rows = [
+      find({ id: 1, symbol: 'MENE', attention_points: 5, attention_ceiling: 10 }),
+      find({ id: 2, symbol: 'VICE', attention_points: 50, attention_ceiling: 100 }),
+    ];
+    expect(sortByAttention(rows).map((r) => r.symbol)).toEqual(['VICE', 'MENE']);
+  });
+
+  it('nemění pole, které dostane', () => {
+    const rows = [find({ id: 1 }), find({ id: 2, attention_points: 9, attention_ceiling: 10 })];
+    const before = rows.map((r) => r.id);
+    sortByAttention(rows);
+    expect(rows.map((r) => r.id)).toEqual(before);
+  });
+});
+
+describe('orderedPillars', () => {
+  it('drží pevné pořadí bez ohledu na to, jak přijdou', () => {
+    const attention = {
+      pillars: [pillar({ key: 'TEZE' }), pillar({ key: 'OCENENI' }), pillar({ key: 'PROVOZ' })],
+    } as FindAttention;
+    expect(orderedPillars(attention).map((p) => p.key)).toEqual([
+      'OCENENI',
+      'PROVOZ',
+      'TEZE',
+    ]);
+  });
+});
+
+describe('pillarWidths', () => {
+  it('kreslí i nedosažitelnou část, ne jen prázdno', () => {
+    // Bez téhle části vypadá chybějící vstup jako propadlá známka.
+    const w = pillarWidths(pillar({ points: 0, ceiling: 0, max_points: 30 }), 100);
+    expect(w.earned).toBe(0);
+    expect(w.open).toBe(0);
+    expect(w.unreachable).toBe(30);
+  });
+
+  it('rozdělí plný pilíř na získané a zbývající', () => {
+    const w = pillarWidths(pillar({ points: 10, ceiling: 25, max_points: 25 }), 100);
+    expect(w.earned).toBe(10);
+    expect(w.open).toBe(15);
+    expect(w.unreachable).toBe(0);
+  });
+
+  it('nikdy nevrátí zápornou šířku', () => {
+    const w = pillarWidths(pillar({ points: -5, ceiling: 0, max_points: 0 }), 100);
+    expect(w.earned).toBeGreaterThanOrEqual(0);
+    expect(w.open).toBeGreaterThanOrEqual(0);
+    expect(w.unreachable).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('layerLabel — vrstva FIT', () => {
+  it('pojmenuje shodu s Markovými vstupy místo obecného „Ostatní“', () => {
+    expect(layerLabel('FIT')).not.toBe('Ostatní');
   });
 });

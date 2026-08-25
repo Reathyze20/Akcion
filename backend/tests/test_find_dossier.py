@@ -24,9 +24,11 @@ from sqlalchemy.orm import sessionmaker
 import app.models  # noqa: F401
 from app.models.analysis import AnalystTranscript, TickerMention
 from app.models.base import Base
-from app.models.breakout import BreakoutWatchEntry
+from app.models.analyst_roster import RosterEntry
+from app.models.breakout import BreakoutWatchChange, BreakoutWatchEntry
 from app.models.gomes import StockLifecycleModel
 from app.models.portfolio import MarketStatus, MarketStatusEnum
+from app.models.earnings import EarningsDate
 from app.models.sec import SecCoverage
 from app.models.sec_finding import SecFinding
 from app.models.stock import Stock
@@ -64,9 +66,12 @@ def db():
             AnalystTranscript.__table__,
             TickerMention.__table__,
             BreakoutWatchEntry.__table__,
+            BreakoutWatchChange.__table__,
+            RosterEntry.__table__,
             SecCoverage.__table__,
             SecFinding.__table__,
             MarketStatus.__table__,
+            EarningsDate.__table__,
         ],
     )
     session = sessionmaker(bind=engine)()
@@ -268,9 +273,104 @@ class TestBreakoutIsShownNotObeyed:
         )
         db.commit()
         facts = [f for f in build(db).facts if f.layer == fd.LAYER_BREAKOUT]
-        assert len(facts) == 1
-        assert facts[0].direction == fd.DIR_NEUTRAL
-        assert "nerozhoduje" in facts[0].text_cs
+        # Kolik jich je, se mění (přibyla věta o jejich cíli a o změnách na
+        # seznamu). Co se měnit nesmí: ani jedna z nich nenese směr.
+        assert facts, "vrstva nevydala nic, i když firma na watchlistu je"
+        assert all(f.direction == fd.DIR_NEUTRAL for f in facts)
+        assert any("nerozhoduje" in f.text_cs for f in facts)
+
+    def test_their_target_is_reported_without_judging_whether_it_was_right(self, db):
+        """
+        Jejich cíl je jediná padatelná předpověď, kterou od kohokoli máme —
+        a zároveň je sledování staré dny. Věta proto smí říct, odkud a kam,
+        ale nesmí říct, jestli jim to vychází.
+        """
+        db.add(
+            BreakoutWatchEntry(
+                symbol="ABCD",
+                company_name="Firma",
+                endorsements=3,
+                upside_ratio=0.5,
+                price_at_read=4.0,
+                implied_target=6.0,
+                price_at_first_seen=4.0,
+                target_at_first_seen=6.0,
+            )
+        )
+        db.commit()
+        texts = " ".join(
+            f.text_cs for f in build(db).facts if f.layer == fd.LAYER_BREAKOUT
+        )
+        assert "padatelná" in texts
+        assert "je zatím brzy" in texts
+
+    def test_a_named_analyst_is_quoted_by_name_not_folded_into_a_count(self, db):
+        """
+        Jediná část Breakoutu, pod kterou je někdo podepsaný. Spis ji do
+        25. 8. 2026 nečetl vůbec a ukazoval místo ní počet hlasů.
+        """
+        db.add(
+            BreakoutWatchEntry(symbol="ABCD", company_name="Firma", endorsements=2,
+                               upside_ratio=0.5, price_at_read=4.0, implied_target=6.0)
+        )
+        db.add(RosterEntry(name_key="robert mock", display_name="Robert Mock",
+                           source_key="BREAKOUT_INVESTORS", active=True))
+        tid = add_transcript(db, date(2026, 8, 24))
+        db.add(
+            TickerMention(
+                ticker="ABCD", transcript_id=tid, mention_date=date(2026, 8, 24),
+                sentiment="NEUTRAL", speaker="Robert Mock",
+                source_key="BREAKOUT_INVESTORS", claim_type="FACT",
+                context_snippet="Bliss will be produced using outsourced manufacturing",
+            )
+        )
+        db.commit()
+        d = build(db)
+        texts = [f.text_cs for f in d.facts if f.layer == fd.LAYER_BREAKOUT]
+        assert any("Robert Mock" in t and "outsourced" in t for t in texts)
+        assert d.signals.bi_named_claims == 1
+
+    def test_a_claim_without_a_verdict_or_target_still_reaches_the_dossier(self, db):
+        """
+        Devět z jedenácti tvrzení Roberta Mocka o DFSC nemá verdikt ani cíl.
+        Pro stavbu pásma je to šum a `load_analyst_words` je zahazuje správně;
+        pro spis je to to jediné cenné, co od Breakoutu máme.
+        """
+        db.add(
+            BreakoutWatchEntry(symbol="ABCD", company_name="Firma", endorsements=1,
+                               upside_ratio=0.5, price_at_read=4.0, implied_target=6.0)
+        )
+        db.add(RosterEntry(name_key="robert mock", display_name="Robert Mock",
+                           source_key="BREAKOUT_INVESTORS", active=True))
+        tid = add_transcript(db, date(2026, 8, 24))
+        db.add(
+            TickerMention(
+                ticker="ABCD", transcript_id=tid, mention_date=date(2026, 8, 24),
+                sentiment="NEUTRAL", speaker="Robert Mock",
+                action_mentioned=None, price_target=None,
+                context_snippet="General Dynamics owns the major contract",
+            )
+        )
+        db.commit()
+        assert build(db).signals.bi_named_claims == 1
+
+    def test_their_endorsements_never_reach_the_score(self, db):
+        """
+        Signály z BI existují kvůli SHODĚ dvou zdrojů, ne kvůli jejich názoru.
+        Samotný počet podpisů se nesmí nikam propsat jako stanovisko.
+        """
+        db.add(
+            BreakoutWatchEntry(
+                symbol="ABCD", company_name="Firma", endorsements=9, upside_ratio=1.0,
+                price_at_read=4.0, implied_target=8.0,
+            )
+        )
+        db.commit()
+        signals = build(db).signals
+        assert signals.bi_on_watchlist is True
+        assert signals.bi_endorsements == 9
+        # Žádný Gomes → žádná shoda, i při devíti podpisech.
+        assert signals.second_source_agrees is False
 
 
 class TestBandNeedsConfirmedCylinders:
@@ -524,7 +624,7 @@ class TestATypoIsNamedAsATypo:
         GSI.V opravdu je zahraniční listing a tam ta věta platí. Rozhoduje
         jediná věc: jestli se s papírem obchoduje.
         """
-        facts, gaps = fd._fundamentals_layer(
+        facts, gaps, _ = fd._fundamentals_layer(
             db,
             ("ABCD",),
             {"current_price": 1.79, "company_name": "Gatekeeper"},
@@ -534,7 +634,7 @@ class TestATypoIsNamedAsATypo:
         )
         db.add(SecCoverage(ticker="ABCD", status="NOT_AN_SEC_FILER"))
         db.commit()
-        _, gaps = fd._fundamentals_layer(
+        _, gaps, _bits = fd._fundamentals_layer(
             db,
             ("ABCD",),
             {"current_price": 1.79, "company_name": "Gatekeeper"},
@@ -597,7 +697,7 @@ class TestStaleFilings:
         assert fd._filing_staleness(None, date(2026, 8, 24)) is None
 
     def test_the_gap_says_how_old_and_warns_against_judging(self, db):
-        _, gaps = fd._fundamentals_layer(
+        _, gaps, _bits = fd._fundamentals_layer(
             db,
             ("ABCD",),
             {"current_price": 4.2, "company_name": "Firma"},
@@ -610,3 +710,157 @@ class TestStaleFilings:
         assert "2023" in stale_gap.text_cs
         assert "nepopisují dnešek" in stale_gap.text_cs
         assert stale_gap.fixable_cs == "Doplnit data"
+
+
+class TestSignalsSurviveRealData:
+    """
+    Signály musí projít i tehdy, když Yahoo a Finnhub něco vrátí.
+
+    Tahle třída existuje kvůli konkrétní vadě: `_fundamentals_layer` měla
+    lokální `bits = []` pro kousky věty („tržní kapitalizace X mil., …") a nový
+    akumulátor signálů se jmenoval stejně. Ta pozdější proměnná ho uvnitř
+    funkce přepsala, takže funkce vracela seznam řetězců místo slovníku a
+    `build()` padal na `dict.update()`. Prošlo to celou zelenou sadou, protože
+    ve fixtures nebylo v Yahoo ani ve Finnhubu nic — spadlo to na prvním
+    tickeru, který měl něco v cache.
+    """
+
+    class _Finnhub:
+        has_anything = True
+        revenue_yoy_pct = 12.5
+        gross_margin_pct = 40.0
+        net_margin_pct = 5.0
+        is_profitable = True
+
+    def test_the_third_return_value_is_a_mapping_not_the_sentence_pieces(self, db):
+        _facts, _gaps, bits = fd._fundamentals_layer(
+            db,
+            ("ABCD",),
+            {
+                "current_price": 4.2,
+                "company_name": "Firma",
+                "market_cap": 9_100_000,
+                "total_cash": 6_700_000,
+                "total_debt": 400_000,
+            },
+            None,
+            self._Finnhub(),
+            fd._Ids(),
+            date(2026, 8, 24),
+        )
+        assert isinstance(bits, dict), "vrstva vrátila kousky věty místo signálů"
+        assert "filings_fresh" in bits
+
+    def test_the_sentences_themselves_still_come_out(self, db):
+        facts, _gaps, _bits = fd._fundamentals_layer(
+            db,
+            ("ABCD",),
+            {"current_price": 4.2, "company_name": "Firma", "market_cap": 9_100_000},
+            None,
+            self._Finnhub(),
+            fd._Ids(),
+            date(2026, 8, 24),
+        )
+        texts = " ".join(f.text_cs for f in facts)
+        assert "Finnhub:" in texts
+        assert "tržní kapitalizace" in texts
+
+
+class TestAPriceTargetMustBeInItsOwnQuote:
+    """
+    `price_target` plní extraktor a bere čísla z okolního textu. Změřeno na
+    všech 61 cílech v databázi: **27 se ve vlastním citátu nevyskytuje.**
+    U AEHR jsou za pět měsíců cíle 4,00 / 42,00 / 112,00 / 68,00 / 110,00 /
+    55,00 při kurzu kolem 101 — a v citátech u nich žádný cíl není.
+
+    Vytisknout takové číslo jako Markův fakt je vymyšlené číslo s odkazem na
+    zdroj. Táž kázeň jako `find_explainer.unsupported_numbers()`, jen o vrstvu
+    níž: tam se hlídá model, tady extraktor.
+    """
+
+    class _M:
+        def __init__(self, target, snippet=None, points=None):
+            self.price_target = target
+            self.context_snippet = snippet
+            self.key_points = points
+
+    def test_a_target_absent_from_the_quote_is_dropped(self):
+        assert fd._quoted_target(
+            self._M(42.0, "this press release is major validation")
+        ) is None
+
+    def test_a_target_present_in_the_quote_survives(self):
+        assert fd._quoted_target(
+            self._M(36.0, "I think RDCM is worth 36.00 on that math")
+        ) == 36.0
+
+    def test_a_comma_decimal_counts_as_the_same_number(self):
+        assert fd._quoted_target(self._M(12.55, "cíl je 12,55 dolaru")) == 12.55
+
+    def test_key_points_count_as_the_quote_too(self):
+        assert fd._quoted_target(self._M(7.5, None, ["target of 7.5 by 2027"])) == 7.5
+
+    def test_a_near_miss_is_not_a_match(self):
+        """12,6 není 12,55. Volnější tolerance by pustila rok 2042 jako cíl 42."""
+        assert fd._quoted_target(self._M(12.55, "kolem 12,6")) is None
+
+    def test_no_target_at_all_stays_none(self):
+        assert fd._quoted_target(self._M(None, "žádné číslo")) is None
+
+    def test_the_sentence_never_calls_the_number_a_target(self, db):
+        """
+        Že v citátu číslo padlo, ještě neznamená, že je to cílová cena. Věta
+        smí říct jen to, co jde obhájit.
+        """
+        tid = add_transcript(db, date(2026, 8, 1))
+        db.add(
+            TickerMention(
+                ticker="ABCD",
+                transcript_id=tid,
+                mention_date=date(2026, 8, 1),
+                sentiment="BULLISH",
+                context_snippet="I think this is worth 36.00 eventually",
+                price_target=36.0,
+            )
+        )
+        db.commit()
+        texts = " ".join(f.text_cs for f in build(db).facts if f.layer == fd.LAYER_GOMES)
+        assert "36,00" in texts
+        assert "cíl" not in texts.lower()
+
+
+class TestCadenceCountsEpisodesNotRows:
+    def test_two_mentions_in_one_transcript_are_one_episode(self, db):
+        """
+        WhatsApp import z 24. 8. dal jedné firmě jedenáct zmínek z jediného
+        zdroje. Jako jedenáct epizod by to vypadalo, že o ní mluví každý týden.
+        """
+        tid = add_transcript(db, date(2026, 8, 1))
+        for snippet in ("první věta", "druhá věta"):
+            db.add(
+                TickerMention(
+                    ticker="ABCD",
+                    transcript_id=tid,
+                    mention_date=date(2026, 8, 1),
+                    sentiment="BULLISH",
+                    context_snippet=snippet,
+                )
+            )
+        db.commit()
+        assert build(db).signals.gomes_episodes_total == 1
+
+    def test_an_old_episode_does_not_count_as_recent(self, db):
+        old = add_transcript(db, date(2025, 1, 1))
+        db.add(
+            TickerMention(
+                ticker="ABCD",
+                transcript_id=old,
+                mention_date=date(2025, 1, 1),
+                sentiment="BULLISH",
+                context_snippet="dávno",
+            )
+        )
+        db.commit()
+        signals = build(db).signals
+        assert signals.gomes_episodes_total == 1
+        assert signals.gomes_episodes_recent == 0

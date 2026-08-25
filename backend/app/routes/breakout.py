@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import desc
+from sqlalchemy import bindparam, desc, text
 from sqlalchemy.orm import Session
 
 from app.core.sources import InvestmentSource
@@ -26,6 +26,7 @@ from app.core.tickers import canonical_ticker, variants_of
 from app.database.connection import get_db
 from app.models.breakout import BreakoutWatchChange, BreakoutWatchEntry
 from app.models.stock import Stock
+from app.services import breakout_scorecard
 from app.services.breakout_sync import (
     RELATION_OWNED,
     RELATION_THEIRS,
@@ -94,6 +95,37 @@ class ChangeOut(BaseModel):
     detected_at: datetime
 
 
+class ScoredNameOut(BaseModel):
+    symbol: str
+    days_watched: int
+    price_then: float
+    target_then: float
+    price_now: float | None = None
+    upside_then_pct: float
+    move_pct: float | None = None
+    #: Kolik z cesty k cíli uběhlo. `None`, když cíl neleží nad cenou.
+    progress_pct: float | None = None
+    reached: bool | None = None
+
+
+class ScorecardOut(BaseModel):
+    """
+    Jak si vedou jejich cíle — nebo věta, proč se to ještě neříká.
+
+    `too_early` je celý smysl téhle struktury. Úspěšnost spočítaná po týdnu
+    měří šum a četla by se jako výsledek, takže se pod horizontem nevydá
+    vůbec — ne jako nula, ne jako „zatím 40 %".
+    """
+
+    median_days: int | None = None
+    too_early: bool
+    measurable: int
+    reached_total: int | None = None
+    min_horizon_days: int
+    verdict_cs: str
+    names: list[ScoredNameOut] = Field(default_factory=list)
+
+
 class WatchlistOut(BaseModel):
     last_attempt_at: datetime | None = None
     last_success_at: datetime | None = None
@@ -109,6 +141,7 @@ class WatchlistOut(BaseModel):
     ours_total: int = Field(description="How many of their names we own or watch")
     entries: list[EntryOut]
     changes: list[ChangeOut]
+    scorecard: ScorecardOut
 
 
 def _gomes_lines(db: Session, symbols: set[str]) -> dict[str, tuple[float | None, float | None]]:
@@ -158,6 +191,29 @@ def _gomes_lines(db: Session, symbols: set[str]) -> dict[str, tuple[float | None
     }
 
 
+def _f(value) -> float | None:
+    return None if value is None else float(value)
+
+
+def _current_prices(db: Session, symbols: set[str]) -> dict[str, float]:
+    """
+    Dnešní kurzy z cache. Nesahá na síť — vysvědčení je čtení, ne sběr.
+
+    Chybějící kurz se nedoplňuje: jméno bez ceny se do jmenovatele nezapočítá,
+    protože nevědět, kde akcie stojí, není nesplněný cíl.
+    """
+    if not symbols:
+        return {}
+    rows = db.execute(
+        text(
+            "SELECT ticker, current_price FROM yahoo_finance_cache "
+            "WHERE ticker IN :symbols AND current_price IS NOT NULL"
+        ).bindparams(bindparam("symbols", expanding=True)),
+        {"symbols": sorted(symbols)},
+    ).mappings().all()
+    return {r["ticker"]: float(r["current_price"]) for r in rows}
+
+
 def _vs_gomes(
     target: float | None, green: float | None, red: float | None
 ) -> str | None:
@@ -185,6 +241,7 @@ def _build(db: Session, *, change_days: int) -> WatchlistOut:
 
     rows = db.query(BreakoutWatchEntry).all()
     lines = _gomes_lines(db, {r.symbol for r in rows})
+    prices = _current_prices(db, {r.symbol for r in rows})
 
     entries: list[EntryOut] = []
     for row in rows:
@@ -221,6 +278,21 @@ def _build(db: Session, *, change_days: int) -> WatchlistOut:
         )
     )
 
+    # Vysvědčení jejich cílů. Vydá se vždy, ale dokud je na soud brzy, nese to
+    # místo úspěšnosti větu proč — a to je taky odpověď.
+    scorecard = breakout_scorecard.build(
+        [
+            breakout_scorecard.Reading(
+                symbol=row.symbol,
+                first_seen_at=row.first_seen_at,
+                price_at_first_seen=_f(row.price_at_first_seen),
+                target_at_first_seen=_f(row.target_at_first_seen),
+                price_now=prices.get(row.symbol),
+            )
+            for row in rows
+        ]
+    )
+
     since = datetime.now(timezone.utc) - timedelta(days=change_days)
     change_rows = (
         db.query(BreakoutWatchChange)
@@ -255,6 +327,7 @@ def _build(db: Session, *, change_days: int) -> WatchlistOut:
         ours_total=sum(1 for e in entries if e.relation != RELATION_THEIRS),
         entries=entries,
         changes=changes,
+        scorecard=ScorecardOut(**scorecard.to_dict()),
     )
 
 

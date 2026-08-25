@@ -35,26 +35,35 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Sequence
 
-from sqlalchemy import desc, text
+from sqlalchemy import case, desc, func, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.czech import d as cz_date
 from app.core.czech import n as cz_num
+from app.core.czech import plural
 from app.core.sources import InvestmentSource, verdict_stance
 from app.core.tickers import canonical_ticker, variants_of
 from app.models.analysis import AnalystTranscript, TickerMention
-from app.models.breakout import BreakoutWatchEntry
+from app.models.breakout import BreakoutWatchChange, BreakoutWatchEntry
+from app.models.earnings import EarningsDate
 from app.models.gomes import StockLifecycleModel
 from app.models.gomes_fit_cache import GomesFitCache
 from app.models.portfolio import MarketStatus
 from app.models.sec import SecCoverage
 from app.models.sec_finding import SecFinding
 from app.models.stock import Stock
-from app.services import cylinder_intake, lifecycle_intake
+from app.services import (
+    breakout_lookup,
+    cylinder_intake,
+    earnings_lookup,
+    lifecycle_intake,
+)
+from app.services.cylinders import SOURCE_FORM4
 from app.trading.gomes_logic import GomesGatekeeper, ZoneLadder
 
 logger = logging.getLogger(__name__)
@@ -80,6 +89,18 @@ GAP_PREFIX = "MEZ"
 DIR_PRO = "PRO"
 DIR_PROTI = "PROTI"
 DIR_NEUTRAL = "NEUTRAL"
+
+#: Kolik doslovných tvrzení jmenovaného analytika BI se do spisu vejde. Pět:
+#: u jedné firmy jich Robert Mock napsal jedenáct a spis není archiv chatu.
+MAX_BI_NOTES = 5
+
+#: Okno, ve kterém se měří, čím se právě zabývá. Čtvrtletí: kratší okno by
+#: u člověka, který natáčí týdně, kolísalo podle dovolené.
+CADENCE_WINDOW_DAYS = 90
+
+#: Kolik epizod za to okno je plné krytí. Šest za čtvrtletí je zhruba „vrací
+#: se k tomu skoro obden" — nejvíc, co kdy které jméno mělo, je devět.
+CADENCE_FULL_EPISODES = 6
 
 #: Kolik Gomesových výroků se do spisu vejde. Osm je zhruba rok jeho pokrytí
 #: jednoho jména; víc už majitel čte jako archiv, ne jako podklad.
@@ -160,6 +181,82 @@ class MethodReading:
 
 
 @dataclass(frozen=True)
+class Signals:
+    """
+    Číselné vstupy skóre pozornosti. Věty patří do faktů, sem patří čísla.
+
+    Existuje kvůli jednomu pravidlu: **skóre se musí dát spočítat z uloženého
+    spisu.** Kdyby si `find_attention` chodilo pro `CylinderProposal` a pro
+    zmínky do databáze, znamenalo by to, že skóre u půl roku starého posudku
+    počítá z dnešních dat — tedy že historie tiše mění názor. Tenhle blok se
+    serializuje spolu se spisem, takže každý posudek si svoje vstupy nese.
+
+    Nic z toho není hodnocení. `cylinder_hard_delta` je součet posunů, které
+    rubrika válců udělala na základě vykázaných čísel, ne známka.
+    """
+
+    #: Jestli tenhle blok někdo opravdu vyplnil.
+    #:
+    #: Rozlišuje „signály říkají nulu" od „signály tu nejsou". Posudky zapsané
+    #: před zavedením `Signals` mají v JSONB prázdno, a bez tohohle příznaku by
+    #: z nich skóre spočítalo, že o firmě nemáme jediný přepis — u nálezu,
+    #: jehož vlastní spis v mezerách hlásí „máme 61 jeho přepisů". Přesně ta
+    #: záměna chybějícího vstupu za tvrzení, kvůli které tahle část vznikla.
+    recorded: bool = False
+
+    #: Měsíce hotovosti při vykázaném tempu pálení.
+    runway_months: float | None = None
+    #: Součet delt z rubriky válců, zvlášť za tvrdé (vykázané) a měkké zdroje.
+    cylinder_hard_delta: int = 0
+    cylinder_soft_delta: int = 0
+    cylinder_evidence_count: int = 0
+    #: Form 4: insider nakupoval na volném trhu v posledním půlroce.
+    insider_buy_recent: bool = False
+    #: Nejnovější čtvrtletí ve výkazech není starší než `STALE_FILING_DAYS`.
+    filings_fresh: bool = False
+
+    #: Kolik Gomesových přepisů vůbec máme. Nula = strop dolů, ne nula bodů.
+    gomes_transcripts_total: int = 0
+    #: V kolika jeho epizodách to jméno padlo — celkem a za poslední čtvrtletí.
+    #: Tohle je měřítko krytí, ne `gomes_newest_direction` níž: sentiment je
+    #: v datech 85 % býčí a u zbytku většinou špatně označený.
+    gomes_episodes_total: int = 0
+    gomes_episodes_recent: int = 0
+    #: Váha nejnovější použitelné zmínky (poločas 30 dnů), 0–1.
+    gomes_newest_weight: float | None = None
+    #: Směr nejnovější zmínky. **Do skóre nevstupuje** a je to úmysl: pole
+    #: `sentiment`, ze kterého vzniká, je 311× BULLISH z 366 a z deseti
+    #: „BEARISH" jsou správně dvě. Zůstává jako kontext pro sloupce pro/proti.
+    gomes_newest_direction: str | None = None
+    gomes_newest_age_days: int | None = None
+
+    #: Breakout Investors. Jejich názor váhu nemá a mít nebude — sem to jde
+    #: kvůli SHODĚ dvou zdrojů, což je jiná věc než jejich stanovisko.
+    bi_on_watchlist: bool = False
+    bi_endorsements: int = 0
+    #: Kolik dní je jméno na jejich seznamu, co ho sledujeme.
+    bi_days_watched: int | None = None
+    #: Kolik doslovných tvrzení pod tím jménem napsal jmenovaný analytik BI.
+    #: Je to jiná váha než `bi_endorsements`: pod počtem podpisů není nikdo
+    #: podepsaný, pod tímhle ano.
+    bi_named_claims: int = 0
+    #: Kolik změn u toho jména zaznamenal poller (přidání podpisu, změna cíle,
+    #: vyřazení). Churn je u anonymního hlasování to jediné, co něco stojí.
+    bi_changes_recent: int = 0
+
+    #: Oba zdroje na to jméno sáhly. **Není to jejich souhlas** — je to fakt,
+    #: že se nezávisle na sobě dívají na tutéž firmu. Matice stropu pozic už
+    #: ten rozdíl zná (shoda dvou zdrojů 15 %, jeden zdroj 7 %), spis ho do
+    #: dneška nepočítal. Samotné BI tuhle hodnotu nikdy nezvedne.
+    second_source_agrees: bool = False
+
+    #: Kalendář výsledků. `earnings_known=False` je mezera, ne „daleko".
+    earnings_known: bool = False
+    earnings_days: int | None = None
+    earnings_confirmed: bool | None = None
+
+
+@dataclass(frozen=True)
 class Dossier:
     ticker: str
     symbol: str
@@ -173,6 +270,7 @@ class Dossier:
     facts: tuple[Fact, ...]
     gaps: tuple[Gap, ...]
     method: MethodReading
+    signals: Signals = field(default_factory=Signals)
 
     def fact_ids(self) -> frozenset[str]:
         return frozenset(f.id for f in self.facts)
@@ -212,6 +310,11 @@ _FIT_BUCKET_CS = {
     "MIMO": "leží mimo rozsah",
     "NA_OKRAJI": "leží na okraji rozsahu",
 }
+
+
+def _f(value: Any) -> float | None:
+    """Decimal z databáze na float, None zůstává None."""
+    return None if value is None else float(value)
 
 
 def _aware(stamp: datetime | None) -> datetime | None:
@@ -255,6 +358,39 @@ def _gomes_mentions(
     return usable[:MAX_GOMES_MENTIONS]
 
 
+#: Čísla v textu, proti kterým se cíl ověřuje. Desetinná čárka i tečka.
+_NUMBER_IN_TEXT = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def _quoted_target(mention: TickerMention) -> float | None:
+    """
+    Cíl ze zmínky, ale jen když to číslo je v jejím vlastním citátu.
+
+    Táž kázeň jako `find_explainer.unsupported_numbers()`, jen o vrstvu níž:
+    tam se hlídá model, tady extraktor. Obojí umí vyrobit číslo, které nikdo
+    neřekl, a obojí ho umí opatřit zdrojem.
+    """
+    if mention.price_target is None:
+        return None
+    value = float(mention.price_target)
+
+    haystack = " ".join(
+        part
+        for part in (
+            mention.context_snippet or "",
+            " ".join(str(p) for p in (mention.key_points or []) if p),
+        )
+        if part
+    )
+    found = {
+        float(m.group().replace(",", "."))
+        for m in _NUMBER_IN_TEXT.finditer(haystack)
+    }
+    # Tolerance na zaokrouhlení, ne na jiné číslo: 12,55 se smí potkat s 12,55,
+    # ne s 12,6. Kdyby byla volnější, prošel by cíl 42 na citátu s rokem 2042.
+    return value if any(abs(value - f) < 0.005 for f in found) else None
+
+
 def _mention_direction(mention: TickerMention) -> str:
     stance = verdict_stance(mention.action_mentioned)
     if stance == "NEUTRAL":
@@ -268,9 +404,18 @@ def _mention_direction(mention: TickerMention) -> str:
 
 def _gomes_layer(
     db: Session, symbols: tuple[str, ...], ids: _Ids, today: date
-) -> tuple[list[Fact], list[Gap]]:
+) -> tuple[list[Fact], list[Gap], dict[str, Any]]:
+    """
+    Fakta, mezery a číselné vstupy pro skóre.
+
+    Třetí návratová hodnota nejsou další data — je to totéž, co je ve větách,
+    jen v podobě, ze které se dá počítat. Vytahuje se tady, protože jinde už
+    není z čeho: `Fact` nese hotovou českou větu a rozebírat ji zpátky
+    regulárním výrazem je způsob, jak se čísla rozejdou s textem.
+    """
     facts: list[Fact] = []
     gaps: list[Gap] = []
+    bits: dict[str, Any] = {}
 
     for mention, _transcript in _gomes_mentions(db, symbols):
         said = mention.mention_date
@@ -284,12 +429,36 @@ def _gomes_layer(
             summary = mention.context_snippet[:240]
 
         line = f"Mark Gomes {cz_date(said)}: {summary}".strip()
-        if mention.price_target:
-            line += f" Zmíněný cíl {cz_num(float(mention.price_target), 2)}."
+
+        # Číslo se vydá jen tehdy, když je doopravdy v tom, co řekl.
+        #
+        # `price_target` plní extraktor a bere čísla z okolního textu: u AEHR
+        # jsou za pět měsíců cíle 4,00 / 42,00 / 112,00 / 68,00 / 110,00 / 55,00
+        # při kurzu kolem 101, a v citátech u nich žádný cíl není („$1 of EPS
+        # for every 100 million of revenue" → 68). Změřeno na všech 61 cílech:
+        # **27 z nich se ve vlastním citátu nevyskytuje.** Tisknout je jako
+        # Markův fakt je vymyšlené číslo s odkazem na zdroj.
+        #
+        # A i to, co testem projde, se nesmí pojmenovat „cíl": že číslo v citátu
+        # padlo, ještě neznamená, že je to cílová cena. Věta proto říká jen to,
+        # co jde obhájit, a zbytek nechává na citátu vedle.
+        target = _quoted_target(mention)
+        if target is not None:
+            line += f" Zazněla v ní cena {cz_num(target, 2)}; čeho se týká, ukazuje citát."
         # Stáří patří rovnou do věty. Bez něj se dva roky starý výrok čte jako
         # dnešní názor — a váha zmínky klesá s poločasem zhruba třiceti dnů.
         if age is not None and age > 60:
             line += f" (řečeno před {age} dny, váha {cz_num(mention.weight, 2)})"
+
+        direction = _mention_direction(mention)
+        # Jen z nejnovější zmínky, ne z průměru. Průměr přes dva roky by
+        # dnešní „prodávám" zprůměroval s loňským „kupuju" na nic.
+        if not bits:
+            bits = {
+                "gomes_newest_weight": float(mention.weight),
+                "gomes_newest_direction": direction,
+                "gomes_newest_age_days": age,
+            }
 
         facts.append(
             Fact(
@@ -299,9 +468,43 @@ def _gomes_layer(
                 source=f"Mark Gomes, {cz_date(said)}",
                 as_of=said,
                 quote=mention.context_snippet,
-                direction=_mention_direction(mention),
+                direction=direction,
             )
         )
+
+    # Kadence: v kolika jeho epizodách to jméno padlo, a kolik z toho je
+    # v posledním čtvrtletí.
+    #
+    # Tohle nahradilo sentiment jako měřítko krytí a je to změřené rozhodnutí:
+    # `sentiment` je na 366 zmínkách 311× BULLISH, 45× NEUTRAL, 10× BEARISH —
+    # a z těch deseti jsou skutečně kritické dvě, zbytek jsou útržky z WhatsApp
+    # vlákna („So this was conducted right before the latest raise, correct?
+    # Correct"). Pole, které v 85 % případů říká totéž a ve zbytku se mýlí,
+    # neměří nic. `conviction_level` je na tom stejně: 361× HIGH z 366.
+    #
+    # Počítá se přes DISTINCT transcript_id, ne přes řádky: WhatsApp import
+    # z 24. 8. dal jedné firmě jedenáct zmínek z jediného zdroje a jako
+    # jedenáct epizod by to vypadalo, že o ní mluví každý týden.
+    since = today - timedelta(days=CADENCE_WINDOW_DAYS)
+    # Přes ORM, ne přes `text()`: `IN :symbols` se v syrovém SQL nerozbaluje a
+    # `FILTER (WHERE …)` neumí SQLite, na kterém běží testy. `count(distinct
+    # case(…))` říká totéž a projde obojím.
+    total_ep, recent_ep = (
+        db.query(
+            func.count(func.distinct(TickerMention.transcript_id)),
+            func.count(
+                func.distinct(
+                    case((TickerMention.mention_date > since, TickerMention.transcript_id))
+                )
+            ),
+        )
+        .join(AnalystTranscript, AnalystTranscript.id == TickerMention.transcript_id)
+        .filter(TickerMention.ticker.in_(symbols))
+        .filter(AnalystTranscript.source_name == "Mark Gomes")
+        .one()
+    )
+    bits["gomes_episodes_total"] = int(total_ep or 0)
+    bits["gomes_episodes_recent"] = int(recent_ep or 0)
 
     if not facts:
         total = (
@@ -332,8 +535,15 @@ def _gomes_layer(
                 fixable_cs=None if total else "Načíst přepisy",
             )
         )
+        bits["gomes_transcripts_total"] = total
+    else:
+        bits["gomes_transcripts_total"] = (
+            db.query(AnalystTranscript)
+            .filter(AnalystTranscript.source_name == "Mark Gomes")
+            .count()
+        )
 
-    return facts, gaps
+    return facts, gaps, bits
 
 
 # ==============================================================================
@@ -341,8 +551,8 @@ def _gomes_layer(
 # ==============================================================================
 
 def _breakout_layer(
-    db: Session, symbols: tuple[str, ...], ids: _Ids
-) -> tuple[list[Fact], list[Gap]]:
+    db: Session, symbols: tuple[str, ...], ids: _Ids, today: date
+) -> tuple[list[Fact], list[Gap], dict[str, Any]]:
     """
     Co o firmě říká druhý zdroj.
 
@@ -354,6 +564,7 @@ def _breakout_layer(
     """
     facts: list[Fact] = []
     gaps: list[Gap] = []
+    bits: dict[str, Any] = {}
 
     entry = (
         db.query(BreakoutWatchEntry)
@@ -371,7 +582,7 @@ def _breakout_layer(
                 ),
             )
         )
-        return facts, gaps
+        return facts, gaps, bits
 
     parts = [
         f"Breakout Investors ji drží na watchlistu, {entry.endorsements} podpisů"
@@ -396,7 +607,110 @@ def _breakout_layer(
             direction=DIR_NEUTRAL,
         )
     )
-    return facts, gaps
+
+    bits["bi_on_watchlist"] = True
+    bits["bi_endorsements"] = int(entry.endorsements or 0)
+
+    # Co u té firmy napsal jmenovaný analytik.
+    #
+    # Tohle je jediná část Breakoutu, která má pod sebou podpis, a spis ji do
+    # dneška nečetl vůbec — ukazoval jen agregát „drží ji na watchlistu, dva
+    # podpisy". U DFSC to znamenalo zamlčet jedenáct vět Roberta Mocka
+    # s doslovnými citáty a ukázat místo nich počet hlasů.
+    #
+    # Směr zůstává NEUTRAL i tady, a není to z opatrnosti: nemáme čím ho určit.
+    # `sentiment` je v datech 311× býčí z 366 a u zbytku většinou špatně,
+    # `claim_type` rozlišuje jen FACT/OPINION. Vymyslet směr z textu by byl
+    # přesně ten úsudek, který si tahle vrstva zakazuje.
+    by_ticker = breakout_lookup.load_analyst_notes(db)
+    notes: list[breakout_lookup.AnalystNote] = []
+    for sym in symbols:
+        notes = by_ticker.get(canonical_ticker(sym)) or []
+        if notes:
+            break
+    bits["bi_named_claims"] = len(notes)
+    for note in notes[:MAX_BI_NOTES]:
+        facts.append(
+            Fact(
+                id=ids.next(_PREFIX[LAYER_BREAKOUT]),
+                layer=LAYER_BREAKOUT,
+                text_cs=f"{note.analyst} ({cz_date(note.said_on)}): {note.quote}",
+                source=f"Breakout Investors — {note.analyst}, jmenovitě",
+                as_of=note.said_on,
+                quote=note.quote,
+                direction=DIR_NEUTRAL,
+            )
+        )
+    # Zkrácení se řekne nahlas. Pět z jedenácti bez poznámky se čte jako
+    # „tohle je všechno, co napsal" — a to je jiné tvrzení.
+    if len(notes) > MAX_BI_NOTES:
+        rest = len(notes) - MAX_BI_NOTES
+        facts.append(
+            Fact(
+                id=ids.next(_PREFIX[LAYER_BREAKOUT]),
+                layer=LAYER_BREAKOUT,
+                text_cs=(
+                    f"Od {notes[0].analyst} je k téhle firmě ještě {rest} dalších "
+                    f"tvrzení, která se sem nevešla."
+                ),
+                source="Breakout Investors — jmenovitě",
+                as_of=notes[0].said_on,
+                direction=DIR_NEUTRAL,
+            )
+        )
+
+    first_seen = _aware(entry.first_seen_at)
+    if first_seen is not None:
+        bits["bi_days_watched"] = (today - first_seen.date()).days
+
+    # Jak se jejich cíli daří od chvíle, kdy jsme ho poprvé viděli.
+    #
+    # Tohle je jediné, co u anonymního hlasování jde ověřit: cíl je padatelná
+    # předpověď s datem. Zatím se **neříká, jestli měli pravdu** — na to je
+    # sledování staré dny, ne roky. Říká se, kolik té cesty už uběhlo, aby se
+    # to za rok dalo přečíst zpátky.
+    origin_price = _f(entry.price_at_first_seen) or _f(entry.price_at_read)
+    origin_target = _f(entry.target_at_first_seen) or _f(entry.implied_target)
+    days = bits.get("bi_days_watched")
+    if origin_price and origin_target and origin_target > origin_price and days is not None:
+        facts.append(
+            Fact(
+                id=ids.next(_PREFIX[LAYER_BREAKOUT]),
+                layer=LAYER_BREAKOUT,
+                text_cs=(
+                    f"Když jsme je poprvé viděli ({days} {plural(days, 'den', 'dny', 'dní')} "
+                    f"zpět), stála "
+                    f"{cz_num(origin_price, 2)} a jejich dopočtený cíl byl "
+                    f"{cz_num(origin_target, 2)}. Je to jejich jediná padatelná "
+                    f"předpověď; na soud, jestli jim to vychází, je zatím brzy."
+                ),
+                source="Breakout Investors (watchlist)",
+                as_of=first_seen.date() if first_seen else None,
+                direction=DIR_NEUTRAL,
+            )
+        )
+
+    churn = (
+        db.query(BreakoutWatchChange)
+        .filter(BreakoutWatchChange.symbol.in_(symbols))
+        .order_by(desc(BreakoutWatchChange.detected_at))
+        .limit(4)
+        .all()
+    )
+    bits["bi_changes_recent"] = len(churn)
+    for change in churn:
+        facts.append(
+            Fact(
+                id=ids.next(_PREFIX[LAYER_BREAKOUT]),
+                layer=LAYER_BREAKOUT,
+                text_cs=f"Změna u Breakout Investors: {change.detail_cs}",
+                source="Breakout Investors (sledování změn)",
+                as_of=change.detected_at.date() if change.detected_at else None,
+                direction=DIR_NEUTRAL,
+            )
+        )
+
+    return facts, gaps, bits
 
 
 # ==============================================================================
@@ -593,11 +907,21 @@ def _fundamentals_layer(
     finnhub: Any | None,
     ids: _Ids,
     today: date | None = None,
-) -> tuple[list[Fact], list[Gap]]:
+) -> tuple[list[Fact], list[Gap], dict[str, Any]]:
     facts: list[Fact] = []
     gaps: list[Gap] = []
 
     stale = _filing_staleness(fundamentals, today or datetime.now(timezone.utc).date())
+    # Čerstvost výkazů je vstup skóre, ne jen poznámka: údaj z podání starého
+    # tři čtvrtě roku nesmí zvedat naléhavost.
+    # Jmenuje se `signal_bits`, ne `bits`: dvě proměnné toho jména už se v téhle
+    # funkci potkaly a ta pozdější (kousky věty pro Yahoo/Finnhub souhrn) tuhle
+    # přepsala, takže se místo signálů vracel seznam řetězců. Testy to nechytly,
+    # protože v jejich fixtures Yahoo ani Finnhub nic nevrací — spadlo to až na
+    # tickeru, který má něco v cache.
+    signal_bits: dict[str, Any] = {
+        "filings_fresh": fundamentals is not None and stale is None
+    }
     if stale:
         end, age = stale
         gaps.append(
@@ -690,20 +1014,20 @@ def _fundamentals_layer(
             )
 
     if finnhub is not None and getattr(finnhub, "has_anything", False):
-        bits = []
+        parts = []
         if finnhub.revenue_yoy_pct is not None:
-            bits.append(f"tržby meziročně {cz_num(finnhub.revenue_yoy_pct, 1)} %")
+            parts.append(f"tržby meziročně {cz_num(finnhub.revenue_yoy_pct, 1)} %")
         if finnhub.gross_margin_pct is not None:
-            bits.append(f"hrubá marže {cz_num(finnhub.gross_margin_pct, 1)} %")
+            parts.append(f"hrubá marže {cz_num(finnhub.gross_margin_pct, 1)} %")
         if finnhub.net_margin_pct is not None:
-            bits.append(f"čistá marže {cz_num(finnhub.net_margin_pct, 1)} %")
-        if bits:
+            parts.append(f"čistá marže {cz_num(finnhub.net_margin_pct, 1)} %")
+        if parts:
             profitable = finnhub.is_profitable
             facts.append(
                 Fact(
                     id=ids.next(_PREFIX[LAYER_FUNDAMENTY]),
                     layer=LAYER_FUNDAMENTY,
-                    text_cs="Finnhub: " + ", ".join(bits) + ".",
+                    text_cs="Finnhub: " + ", ".join(parts) + ".",
                     source="Finnhub",
                     direction=(
                         DIR_NEUTRAL
@@ -716,21 +1040,21 @@ def _fundamentals_layer(
             )
 
     if _has_market_data(yahoo):
-        bits = []
+        parts = []
         if yahoo.get("market_cap"):
-            bits.append(f"tržní kapitalizace {_millions(yahoo['market_cap'])} mil.")
+            parts.append(f"tržní kapitalizace {_millions(yahoo['market_cap'])} mil.")
         if yahoo.get("revenue_ttm"):
-            bits.append(f"tržby za 12 měsíců {_millions(yahoo['revenue_ttm'])} mil.")
+            parts.append(f"tržby za 12 měsíců {_millions(yahoo['revenue_ttm'])} mil.")
         if yahoo.get("total_cash") is not None:
-            bits.append(f"hotovost {_millions(yahoo['total_cash'])} mil.")
+            parts.append(f"hotovost {_millions(yahoo['total_cash'])} mil.")
         if yahoo.get("total_debt") is not None:
-            bits.append(f"dluh {_millions(yahoo['total_debt'])} mil.")
-        if bits:
+            parts.append(f"dluh {_millions(yahoo['total_debt'])} mil.")
+        if parts:
             facts.append(
                 Fact(
                     id=ids.next(_PREFIX[LAYER_FUNDAMENTY]),
                     layer=LAYER_FUNDAMENTY,
-                    text_cs="Yahoo: " + ", ".join(bits) + ".",
+                    text_cs="Yahoo: " + ", ".join(parts) + ".",
                     source="Yahoo Finance (neauditované)",
                     direction=DIR_NEUTRAL,
                 )
@@ -745,7 +1069,7 @@ def _fundamentals_layer(
             )
         )
 
-    return facts, gaps
+    return facts, gaps, signal_bits
 
 
 # ==============================================================================
@@ -873,9 +1197,11 @@ def _method_layer(
     ids: _Ids,
     now: datetime,
     fx_rate_to_czk: Callable[[str], float] | None,
-) -> tuple[list[Fact], list[Gap], MethodReading]:
+    earnings: earnings_lookup.EarningsBadge | None = None,
+) -> tuple[list[Fact], list[Gap], MethodReading, dict[str, Any]]:
     facts: list[Fact] = []
     gaps: list[Gap] = []
+    bits: dict[str, Any] = {}
 
     band_row = (
         db.query(Stock)
@@ -941,6 +1267,22 @@ def _method_layer(
         logger.warning("Návrh válců pro %s selhal", ticker, exc_info=True)
 
     if cyl_proposal is not None:
+        # Tvrdé a měkké zvlášť. `is_hard` znamená „vykázala to firma nebo je to
+        # v podání u regulátora"; měkký důkaz je něčí věta a do skóre jde
+        # poloviční vahou. Sčítá se tady, kde je `Evidence` po ruce se
+        # znaménkem — z hotové české věty už se to zpátky vyčíst nedá.
+        bits["cylinder_hard_delta"] = sum(
+            e.delta for e in cyl_proposal.evidence if e.is_hard
+        )
+        bits["cylinder_soft_delta"] = sum(
+            e.delta for e in cyl_proposal.evidence if not e.is_hard
+        )
+        bits["cylinder_evidence_count"] = len(cyl_proposal.evidence)
+        bits["insider_buy_recent"] = any(
+            e.source == SOURCE_FORM4 and e.delta > 0 for e in cyl_proposal.evidence
+        )
+        bits["runway_months"] = cyl_proposal.runway_months
+
         for ev in cyl_proposal.evidence:
             facts.append(
                 Fact(
@@ -1059,6 +1401,40 @@ def _method_layer(
             Gap(id=ids.next(GAP_PREFIX), layer=LAYER_METODIKA, text_cs=conflict)
         )
 
+    # Kalendář výsledků. Do spisu nepatřil vůbec, a přitom je to jediný vstup
+    # brány, který se sám od sebe změní zítra — a jediná věc, která umí říct
+    # „tohle se má řešit teď, ne za měsíc".
+    if earnings is not None:
+        facts.append(
+            Fact(
+                id=ids.next(_PREFIX[LAYER_METODIKA]),
+                layer=LAYER_METODIKA,
+                text_cs=(
+                    f"Další výsledky {earnings.label_cs} "
+                    f"({cz_date(earnings.next_date)}, "
+                    f"{'oznámeno firmou' if earnings.confirmed else 'odhad'})."
+                ),
+                source="kalendář výsledků",
+                as_of=earnings.next_date,
+                direction=DIR_NEUTRAL,
+            )
+        )
+        bits["earnings_known"] = True
+        bits["earnings_days"] = earnings.days
+        bits["earnings_confirmed"] = earnings.confirmed
+    else:
+        gaps.append(
+            Gap(
+                id=ids.next(GAP_PREFIX),
+                layer=LAYER_METODIKA,
+                text_cs=(
+                    "Nevíme, kdy firma vykáže další výsledky. Kánon do výsledků "
+                    "nevstupuje, takže bez toho data nejde říct, jestli je teď "
+                    "na nákup vůbec vhodná chvíle."
+                ),
+            )
+        )
+
     status_row = db.query(MarketStatus).first()
     market_alert = status_row.status.value if status_row else None
     alert_updated = _aware(status_row.last_updated if status_row else None)
@@ -1076,6 +1452,12 @@ def _method_layer(
             deserved_score=reading.deserved,
             cylinders=confirmed,
             lifecycle_stage=life_proposal.effective_phase if life_proposal else None,
+            # Blackout kolem výsledků platil všude jinde a tady se nepředával,
+            # takže tatáž brána odpovídala na dvou obrazovkách jinak. Je to
+            # poslední podmínka v pořadí, takže se projeví jen tam, kde všechno
+            # ostatní prošlo — přesně jak to `check_buy_guard` zamýšlí.
+            days_to_earnings=earnings.days if earnings else None,
+            earnings_confirmed=earnings.confirmed if earnings else True,
             rough_patch=bool(life_proposal.rough_patch) if life_proposal else False,
             cylinders_confirmed_at=confirmed_at,
         )
@@ -1104,7 +1486,7 @@ def _method_layer(
         gate_code=gate_code,
         gate_reason=gate_reason,
     )
-    return facts, gaps, method
+    return facts, gaps, method, bits
 
 
 # ==============================================================================
@@ -1193,16 +1575,34 @@ def build(
                 )
             )
 
-    for layer_facts, layer_gaps in (
-        _gomes_layer(db, symbols, ids, today),
-        _breakout_layer(db, symbols, ids),
-        _fundamentals_layer(db, symbols, yahoo, fundamentals, finnhub, ids, today),
-        _gomes_fit_layer(db, symbols, ids),
-    ):
-        facts += layer_facts
-        gaps += layer_gaps
+    bits: dict[str, Any] = {}
 
-    m_facts, m_gaps, method = _method_layer(
+    g_facts, g_gaps, g_bits = _gomes_layer(db, symbols, ids, today)
+    facts += g_facts
+    gaps += g_gaps
+    bits.update(g_bits)
+
+    b_facts, b_gaps, b_bits = _breakout_layer(db, symbols, ids, today)
+    facts += b_facts
+    gaps += b_gaps
+    bits.update(b_bits)
+
+    f_facts, f_gaps, f_bits = _fundamentals_layer(
+        db, symbols, yahoo, fundamentals, finnhub, ids, today
+    )
+    facts += f_facts
+    gaps += f_gaps
+    bits.update(f_bits)
+
+    # gomes_fit — 2-tuple, no signal bits: it is a comparison against Mark's
+    # entries, not an input the attention score reads.
+    fit_facts, fit_gaps = _gomes_fit_layer(db, symbols, ids)
+    facts += fit_facts
+    gaps += fit_gaps
+
+    earnings = _earnings_badge(db, canonical, symbols, today)
+
+    m_facts, m_gaps, method, m_bits = _method_layer(
         db,
         canonical,
         symbols,
@@ -1212,9 +1612,38 @@ def build(
         ids,
         moment,
         fx_rate_to_czk,
+        earnings,
     )
     facts += m_facts
     gaps += m_gaps
+    bits.update(m_bits)
+
+    # Shoda dvou zdrojů. Počítá se až tady, protože je to jediný údaj, který
+    # nepatří žádné vrstvě — vzniká teprve tím, že se dvě vrstvy potkaly.
+    #
+    # „Gomes to pokrývá" znamená mluvil o tom NEBO pro to vydal čáry; jedno bez
+    # druhého se stává (o RDCM mluví osmkrát a čáry k ní nemá, u jiných jmen je
+    # to naopak). Kdyby se vyžadovalo obojí, shoda by skoro nikdy nenastala.
+    gomes_covers = bool(bits.get("gomes_episodes_total")) or (
+        method.green_line is not None and method.red_line is not None
+    )
+    bits["second_source_agrees"] = bool(bits.get("bi_on_watchlist")) and gomes_covers
+    if bits["second_source_agrees"]:
+        facts.append(
+            Fact(
+                id=ids.next(_PREFIX[LAYER_METODIKA]),
+                layer=LAYER_METODIKA,
+                text_cs=(
+                    "Na tuhle firmu se nezávisle dívají oba zdroje — Mark Gomes "
+                    "i Breakout Investors. Není to jejich shoda na názoru, je to "
+                    "shoda na tom, že o firmě vůbec vědí; matice stropu pozic "
+                    "s tím rozdílem počítá."
+                ),
+                source="Gomes + Breakout Investors",
+                as_of=today,
+                direction=DIR_NEUTRAL,
+            )
+        )
 
     return Dossier(
         ticker=canonical,
@@ -1227,7 +1656,46 @@ def build(
         facts=tuple(facts),
         gaps=tuple(gaps),
         method=method,
+        signals=replace(Signals(recorded=True), **bits),
     )
+
+
+def _earnings_badge(
+    db: Session, canonical: str, symbols: tuple[str, ...], today: date
+) -> earnings_lookup.EarningsBadge | None:
+    """
+    Nejbližší výsledky, pod kterýmkoli tvarem symbolu je kalendář vede.
+
+    Věta se skládá v `earnings_lookup.badge()`, ne tady: odpočet se musí číst
+    stejně v držených pozicích, na watchlistu i ve spisu, včetně slova „asi"
+    u odhadu.
+
+    **Dotaz jde přes savepoint, a to je celý důvod, proč se nevolá
+    `earnings_lookup.badges()`.** Ta funkce svoje selhání spolkne a vrátí
+    prázdno — jenže v Postgresu je po chybném dotazu zrušená celá transakce,
+    takže by spolknutá chyba shodila až `commit()` o dvě vrstvy výš, kde už by
+    nikdo nevěděl proč. Se savepointem se vrátí jen tenhle dotaz a zbytek
+    posudku se zapíše.
+    """
+    order = tuple(dict.fromkeys((canonical.upper(), *(s.upper() for s in symbols))))
+    try:
+        with db.begin_nested():
+            rows = {
+                r.ticker.upper(): r
+                for r in db.query(EarningsDate)
+                .filter(EarningsDate.ticker.in_(order))
+                .all()
+            }
+    except SQLAlchemyError:
+        # Odpočet je doplněk, spis je to podstatné. Loguje se, netiší se.
+        logger.warning("Kalendář výsledků pro %s selhal", canonical, exc_info=True)
+        return None
+
+    for key in order:
+        made = earnings_lookup.badge(rows.get(key), today=today)
+        if made is not None:
+            return made
+    return None
 
 
 # ==============================================================================
@@ -1296,7 +1764,19 @@ def from_payload(payload: dict[str, Any]) -> Dossier:
             gate_code=method.get("gate_code"),
             gate_reason=method.get("gate_reason_cs") or method.get("gate_reason"),
         ),
+        # Starý posudek `signals` nemá. Prázdné `Signals()` znamená „nevíme",
+        # a skóre z nich pak vyjde s nízkým stropem — což je pravda o tom
+        # posudku, ne porucha. Dopočítávat je z dnešních dat by znamenalo dát
+        # loňskému čtení dnešní čísla.
+        signals=_signals_from_payload(payload.get("signals")),
     )
+
+
+def _signals_from_payload(payload: Any) -> Signals:
+    if not isinstance(payload, dict):
+        return Signals()
+    known = {f.name for f in fields(Signals)}
+    return replace(Signals(), **{k: v for k, v in payload.items() if k in known})
 
 
 def _parse_dt(value: Any) -> datetime | None:

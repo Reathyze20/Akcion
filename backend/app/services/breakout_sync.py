@@ -169,6 +169,16 @@ def sync_watchlist(
             row = BreakoutWatchEntry(symbol=entry.symbol, first_seen_at=moment)
             db.add(row)
 
+        # The starting line, written once. Everything else on this row is the
+        # latest poll and gets overwritten; these two must not, or their one
+        # falsifiable prediction stops being measurable the moment we poll
+        # again. `is None` rather than `not row.price_at_first_seen`, so a name
+        # first seen at a price we could not read stays honestly empty instead
+        # of silently adopting today's.
+        if row.price_at_first_seen is None and price is not None:
+            row.price_at_first_seen = _dec(price, "0.0001")
+            row.target_at_first_seen = _dec(target, "0.0001")
+
         row.company_name = entry.company_name
         row.endorsements = entry.endorsements
         row.upside_ratio = _dec(entry.upside_ratio, "0.000001")

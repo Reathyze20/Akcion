@@ -6,10 +6,12 @@
  *   1. hlavička — firma a kurz
  *   2. co říká metodika (`bg-frame`, tmavý pruh — tady mluví aplikace):
  *      věta nákupní brány je NADPIS, pásmo je podpora pod ní
- *   3. co nevíme — vypsané doslova, deterministicky, NAD textem od modelu
- *   4. vysvětlení — dva sloupce, nebo tlačítko s cenovkou
- *   5. podklady — všechna fakta, v odrážkách, jedna otevřená
- *   6. historie posudků
+ *   3. kolik si zaslouží pozornosti — POD bránou a menším písmem, protože
+ *      odpovídá na jinou otázku („mám tomu věnovat čas", ne „smím koupit")
+ *   4. co nevíme — vypsané doslova, deterministicky, NAD textem od modelu
+ *   5. vysvětlení — dva sloupce, nebo tlačítko s cenovkou
+ *   6. podklady — všechna fakta, v odrážkách, jedna otevřená
+ *   7. historie posudků
  *
  * Proč brána nad pásmem: pásmo hlásí NÁKUP už při skóre o půl bodu nad
  * zaslouženým, kdežto brána propustí i těsnější rozdíl — a hlavně se zastaví
@@ -17,6 +19,14 @@
  * rozhoduje ta, která umí říct proč ne.
  *
  * Nic z toho nescrolluje kromě otevřené odrážky a historie.
+ *
+ * **Spis na téhle obrazovce je zapsaný snímek, ne čerstvé sestavení.** Backend
+ * ho posílá z posudku a `dossier_from_assessment_id` říká z kterého. Skládat
+ * ho znovu při každém otevření vypadalo nevinně a nebylo: sestavení bez
+ * `enrich()` nemá výkazy, vydá míň faktů a přečísluje jim id — takže čipy
+ * s doklady pod body od AI ukazovaly na jiná fakta, než o která se bod
+ * opíral. Datum spisu se proto píše do hlavičky; spis bez data se čte jako
+ * dnešní.
  */
 
 import { useCallback, useState } from 'react';
@@ -26,7 +36,8 @@ import { apiClient } from '../../api/client';
 import type { FindAssessment, FindDetail } from '../../api/client';
 import { bandName, bandTone, decimal, price as fmtPrice, day } from '../../lib/format';
 import Term from '../ui/Term';
-import { conditionalCylinderSentence, evolution, priceChangePct } from '../../lib/finds';
+import { conditionalCylinderSentence, evolution, priceChangePct, splitGaps } from '../../lib/finds';
+import AttentionPanel from './AttentionPanel';
 import FindEvidenceStrip from './FindEvidenceStrip';
 import VerdictColumns from './VerdictColumns';
 
@@ -73,6 +84,7 @@ export default function FindDesk({ detail, onChanged }: Props) {
   const tone = bandTone(m.band);
   const conditional = conditionalCylinderSentence(dossier);
   const history = evolution(assessments);
+  const gaps = splitGaps(dossier);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -98,6 +110,11 @@ export default function FindDesk({ detail, onChanged }: Props) {
               kurz není čerstvý
             </span>
           )}
+          {/* Spis je snímek, ne dnešek. Bez data by se četl jako dnešní —
+              a přesně to tvrzení bylo dřív nepravdivé. */}
+          <span className="text-[11px] text-text-muted">
+            spis z {day(dossier.as_of)}
+          </span>
           <button
             type="button"
             className="btn-ghost flex items-center gap-1.5 text-xs"
@@ -166,34 +183,74 @@ export default function FindDesk({ detail, onChanged }: Props) {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-0.5">
-        {/* 3. co nevíme — deterministické, nad textem od modelu */}
-        {dossier.gaps.length > 0 && (
+        {/* 3. kolik si zaslouží pozornosti — pod bránou, menším písmem */}
+        <AttentionPanel
+          attention={newest?.attention}
+          onRefresh={() => void refresh()}
+          onExplain={() => void explain()}
+          busy={busy !== null}
+        />
+
+        {/* 4. co nevíme — deterministické, nad textem od modelu.
+            Rozdělené na dva seznamy: jeden seznam třinácti položek se čte jako
+            třináct selhání, přitom většina z nich je „takhle to prostě je". */}
+        {(gaps.fixable.length > 0 || gaps.permanent.length > 0) && (
           <div className="sheet p-3">
-            <p className="eyebrow mb-2">Co nevíme</p>
-            <ul className="space-y-1.5">
-              {dossier.gaps.map((gap) => (
-                <li key={gap.id} className="flex items-start gap-2 text-xs text-text-secondary">
-                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-text-muted" aria-hidden />
-                  <span>
-                    {gap.text_cs}
-                    {gap.fixable_cs && (
-                      <button
-                        type="button"
-                        className="ml-2 text-accent underline underline-offset-2"
-                        onClick={() => void refresh()}
-                        disabled={busy !== null}
-                      >
-                        {gap.fixable_cs}
-                      </button>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {gaps.fixable.length > 0 && (
+              <>
+                <p className="eyebrow mb-2">Co chybí a jde doplnit</p>
+                <ul className="space-y-1.5">
+                  {gaps.fixable.map((gap) => (
+                    <li
+                      key={gap.id}
+                      className="flex items-start gap-2 text-xs text-text-secondary"
+                    >
+                      <span
+                        className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-warning"
+                        aria-hidden
+                      />
+                      <span>
+                        {gap.text_cs}
+                        <button
+                          type="button"
+                          className="ml-2 text-accent underline underline-offset-2"
+                          onClick={() => void refresh()}
+                          disabled={busy !== null}
+                        >
+                          {gap.fixable_cs}
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {gaps.permanent.length > 0 && (
+              <>
+                <p className={`eyebrow mb-2 ${gaps.fixable.length > 0 ? 'mt-3' : ''}`}>
+                  Co se nedozvíme
+                </p>
+                <ul className="space-y-1.5">
+                  {gaps.permanent.map((gap) => (
+                    <li
+                      key={gap.id}
+                      className="flex items-start gap-2 text-xs text-text-secondary"
+                    >
+                      <span
+                        className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-text-muted"
+                        aria-hidden
+                      />
+                      <span>{gap.text_cs}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
         )}
 
-        {/* 4. vysvětlení */}
+        {/* 5. vysvětlení */}
         <VerdictColumns
           assessment={newest}
           dossier={dossier}
@@ -202,10 +259,10 @@ export default function FindDesk({ detail, onChanged }: Props) {
           onExplain={() => void explain()}
         />
 
-        {/* 5. podklady */}
+        {/* 6. podklady */}
         <FindEvidenceStrip dossier={dossier} />
 
-        {/* 6. historie */}
+        {/* 7. historie */}
         {assessments.length > 1 && (
           <div className="sheet p-3">
             <p className="eyebrow mb-2">Historie posudků</p>

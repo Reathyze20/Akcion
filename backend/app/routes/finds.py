@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.core.tickers import canonical_ticker
 from app.database.connection import get_db
 from app.models.own_find import STATUS_OPEN, OwnFind, OwnFindAssessment
-from app.services import find_dossier, find_explainer
+from app.services import find_attention, find_dossier, find_explainer
 from app.services.buy_gate_cs import gate_cs
 from app.services.find_explainer import FindExplainError
 
@@ -94,6 +94,43 @@ class MethodOut(BaseModel):
     gate_reason_cs: str
 
 
+class SignalsOut(BaseModel):
+    """
+    Číselné vstupy skóre. Na obrazovku nejdou — jedou s uloženým spisem.
+
+    Jsou tady proto, že `_dossier_out()` je zároveň tvar, ve kterém se spis
+    ukládá do JSONB. Kdyby signály tenhle model neprošly, uložený posudek by
+    je ztratil a přepočet skóre po vysvětlení by ho spočítal z prázdna —
+    tedy přesně to tiché zhoršení dat, kvůli kterému se čipy s doklady
+    rozešly s texty.
+    """
+
+    #: Bez tohohle příznaku by starý posudek bez signálů vypadal jako posudek,
+    #: kde všechny signály vyšly nulové — a skóre by z prázdna udělalo tvrzení.
+    recorded: bool = False
+    runway_months: float | None = None
+    cylinder_hard_delta: int = 0
+    cylinder_soft_delta: int = 0
+    cylinder_evidence_count: int = 0
+    insider_buy_recent: bool = False
+    filings_fresh: bool = False
+    gomes_transcripts_total: int = 0
+    gomes_episodes_total: int = 0
+    gomes_episodes_recent: int = 0
+    gomes_newest_weight: float | None = None
+    gomes_newest_direction: str | None = None
+    gomes_newest_age_days: int | None = None
+    bi_on_watchlist: bool = False
+    bi_endorsements: int = 0
+    bi_days_watched: int | None = None
+    bi_named_claims: int = 0
+    bi_changes_recent: int = 0
+    second_source_agrees: bool = False
+    earnings_known: bool = False
+    earnings_days: int | None = None
+    earnings_confirmed: bool | None = None
+
+
 class DossierOut(BaseModel):
     ticker: str
     symbol: str
@@ -105,6 +142,39 @@ class DossierOut(BaseModel):
     facts: list[FactOut]
     gaps: list[GapOut]
     method: MethodOut
+    signals: SignalsOut = Field(default_factory=SignalsOut)
+
+
+class PillarOut(BaseModel):
+    key: str
+    label_cs: str
+    points: float
+    #: Kolik jde v tomhle dílu získat při dnešní znalosti.
+    ceiling: float
+    #: Kolik by šlo získat, kdyby se vědělo všechno.
+    max_points: float
+    reason_cs: str
+    missing_cs: str | None = None
+    action: str | None = None
+
+
+class AttentionOut(BaseModel):
+    """
+    Skóre pozornosti. **Body i strop, nikdy jen body.**
+
+    `ceiling` není ozdoba: odděluje slabou firmu (málo bodů z vysokého stropu)
+    od neprozkoumané (nízký strop). Bez něj se dvojka čte jako známka ze sta
+    a rubrika se změní ve verdikt, kterým být nemá.
+    """
+
+    points: float
+    ceiling: float
+    total: float
+    verdict_cs: str
+    lever_cs: str | None = None
+    lever_action: str | None = None
+    if_cylinders_cs: str | None = None
+    pillars: list[PillarOut] = Field(default_factory=list)
 
 
 class PointOut(BaseModel):
@@ -142,6 +212,7 @@ class AssessmentOut(BaseModel):
     explained_at: datetime | None = None
     points_dropped: int
     dossier: DossierOut | None = None
+    attention: AttentionOut | None = None
 
 
 class FindOut(BaseModel):
@@ -159,11 +230,19 @@ class FindOut(BaseModel):
     last_band: str | None = None
     last_price: float | None = None
     last_one_line_cs: str | None = None
+    #: Skóre z posledního posudku, aby šel seznam seřadit. Vždy s dvojicí
+    #: bodů a stropu — samotné body by v seznamu vypadaly jako známka.
+    attention_points: float | None = None
+    attention_ceiling: float | None = None
+    attention_verdict_cs: str | None = None
 
 
 class FindDetailOut(BaseModel):
     find: FindOut
     dossier: DossierOut
+    #: Ze kterého posudku spis pochází. `None` = složen teď a nikde neuložen.
+    #: Obrazovka podle toho píše datum spisu — spis bez data se čte jako dnešní.
+    dossier_from_assessment_id: int | None = None
     assessments: list[AssessmentOut]
     collect_notes_cs: list[str] = Field(default_factory=list)
     collect_errors_cs: list[str] = Field(default_factory=list)
@@ -214,6 +293,7 @@ def _dossier_out(d: find_dossier.Dossier) -> DossierOut:
         facts=[FactOut(**vars(f)) for f in d.facts],
         gaps=[GapOut(**vars(g)) for g in d.gaps],
         method=_method_out(d.method),
+        signals=SignalsOut(**vars(d.signals)),
     )
 
 
@@ -254,6 +334,12 @@ def _assessment_out(row: OwnFindAssessment, *, with_dossier: bool) -> Assessment
         explained_at=row.explained_at,
         points_dropped=row.points_dropped,
         dossier=DossierOut(**row.dossier) if with_dossier and row.dossier else None,
+        # Posudek zapsaný před rubrikou skóre nemá a zpětně se nedopočítává.
+        # Nevykreslit nic by ale znamenalo mlčet — a mlčení se čte jako nula.
+        # `not_scored()` je věta, proč skóre není, ne skóre samo.
+        attention=AttentionOut(
+            **(row.attention or find_attention.not_scored().to_dict())
+        ),
     )
 
 
@@ -268,6 +354,7 @@ def _find_out(db: Session, find: OwnFind) -> FindOut:
     one_line = None
     if newest is not None and newest.explanation:
         one_line = newest.explanation.get("one_line_cs")
+    att = (newest.attention or {}) if newest is not None else {}
     return FindOut(
         id=find.id,
         ticker=find.ticker,
@@ -287,6 +374,9 @@ def _find_out(db: Session, find: OwnFind) -> FindOut:
             else None
         ),
         last_one_line_cs=one_line,
+        attention_points=att.get("points"),
+        attention_ceiling=att.get("ceiling"),
+        attention_verdict_cs=att.get("verdict_cs"),
     )
 
 
@@ -347,7 +437,30 @@ def _assess(
         ),
     )
     db.add(row)
+    # Bez vysvětlení: díl „Tvoje teze" je zatím nedosažitelný a rubrika to
+    # ukáže jako snížený strop, ne jako nulu.
+    _write_attention(row, dossier)
     return dossier, row
+
+
+def _write_attention(
+    row: OwnFindAssessment,
+    dossier: find_dossier.Dossier,
+    *,
+    own_reason_verdict: str | None = None,
+) -> find_attention.Attention:
+    """
+    Spočítat skóre pozornosti k posudku a zapsat ho na jeho řádek.
+
+    Počítá se z toho SAMÉHO spisu, který se k posudku ukládá — ne z čerstvě
+    složeného. Skóre, které stojí na jiných faktech než ta, co jsou na
+    obrazovce, je neobhajitelné číslo, i kdyby bylo správné.
+    """
+    att = find_attention.score(dossier, own_reason_verdict=own_reason_verdict)
+    row.attention = att.to_dict()
+    row.attention_points = round(att.points, 1)
+    row.attention_ceiling = round(att.ceiling, 1)
+    return att
 
 
 def _get(db: Session, find_id: int) -> OwnFind:
@@ -423,6 +536,7 @@ def create_find(body: FindCreate, db: Session = Depends(get_db)):
     return FindDetailOut(
         find=_find_out(db, find),
         dossier=_dossier_out(dossier),
+        dossier_from_assessment_id=row.id,
         assessments=[_assessment_out(row, with_dossier=False)],
         collect_notes_cs=collected.notes_cs,
         collect_errors_cs=collected.errors_cs,
@@ -431,24 +545,54 @@ def create_find(body: FindCreate, db: Session = Depends(get_db)):
 
 @router.get("/{find_id}", response_model=FindDetailOut)
 def get_find(find_id: int, db: Session = Depends(get_db)):
-    """Nález, čerstvý spis z databáze (zdarma) a všechny posudky."""
+    """
+    Nález, spis z posledního posudku a celá řada posudků.
+
+    **Spis se tu neskládá znovu, a je to jádro téhle routy.** Skládal se, a
+    bylo to špatně stejnou vadou, jaká už jednou zasáhla `/explain`, jen
+    z druhé strany: sestavení bez `enrich()` nemá v ruce výkazy, takže vydá
+    míň faktů — u AZTR sedm místo třinácti — a protože se id rozdávají po
+    pořadí (`FUND-1`, `FUND-2`…), kratší vrstva všechna následující
+    PŘEČÍSLUJE. Vysvětlení přitom cituje id z uloženého spisu. Výsledek: čip
+    `METOD-4` pod bodem „insideři nakupovali" ukazoval na fakt „provoz peníze
+    spotřebovává", a citace, které se ve znovusloženém spisu nenašly, front
+    end tiše zahodil. Osm z osmi doložení bylo špatně a nic to nehlásilo.
+
+    Jeden spis na obrazovku, a je to ten zapsaný. Čerstvý se pořizuje
+    tlačítkem „Dotáhnout data", které připíše nový posudek — takže se čtení
+    obnovuje výslovně, ne mlčky při každém otevření.
+    """
     find = _get(db, find_id)
-    dossier = find_dossier.build(
-        db,
-        find.ticker,
-        symbol=find.display_ticker,
-        note=find.note,
-        fx_rate_to_czk=_fx(),
-    )
     rows = (
         db.query(OwnFindAssessment)
         .filter(OwnFindAssessment.find_id == find.id)
         .order_by(desc(OwnFindAssessment.assessed_at))
         .all()
     )
+
+    stored = next((r for r in rows if r.dossier), None)
+    if stored is not None:
+        dossier_out = DossierOut(**stored.dossier)
+        from_assessment = stored.id
+    else:
+        # Nález bez jediného uloženého spisu by neměl vzniknout — `create_find`
+        # posudek zapisuje hned. Když přesto nastane, je poctivější složit spis
+        # než ukázat prázdno; hlásí se to jako spis bez posudku.
+        dossier_out = _dossier_out(
+            find_dossier.build(
+                db,
+                find.ticker,
+                symbol=find.display_ticker,
+                note=find.note,
+                fx_rate_to_czk=_fx(),
+            )
+        )
+        from_assessment = None
+
     return FindDetailOut(
         find=_find_out(db, find),
-        dossier=_dossier_out(dossier),
+        dossier=dossier_out,
+        dossier_from_assessment_id=from_assessment,
         assessments=[_assessment_out(r, with_dossier=True) for r in rows],
     )
 
@@ -476,6 +620,7 @@ def refresh_find(find_id: int, db: Session = Depends(get_db)):
     return FindDetailOut(
         find=_find_out(db, find),
         dossier=_dossier_out(dossier),
+        dossier_from_assessment_id=row.id,
         assessments=[_assessment_out(r, with_dossier=True) for r in rows],
         collect_notes_cs=collected.notes_cs,
         collect_errors_cs=collected.errors_cs,
@@ -538,6 +683,14 @@ def explain_find(
     row.explanation_model = result.model
     row.explained_at = datetime.now(timezone.utc)
     row.points_dropped = result.points_dropped
+
+    # Skóre se dopočítá o díl „Tvoje teze", který do teď nešel získat. Není to
+    # zpětný přepočet historie — je to dokončení TOHOTO posudku ze stejného
+    # spisu, ve stejné transakci, se stejným `assessed_at`. Starších řádků se
+    # to nedotkne a dotknout nesmí.
+    _write_attention(
+        row, dossier, own_reason_verdict=result.explanation.own_reason_verdict
+    )
     db.commit()
     db.refresh(row)
     return _assessment_out(row, with_dossier=False)
