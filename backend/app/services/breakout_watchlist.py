@@ -196,6 +196,34 @@ def fetch_quotes(
     return out
 
 
+def implied_target(price: float | None, upside_ratio: float | None) -> float | None:
+    """
+    The group's target price, reconstructed from a quote and their upside.
+
+    They publish `upside` — expected gain as a ratio — rather than the target
+    itself, but the two are the same fact stated differently: a target of $0.30
+    on a $0.09 quote IS +233 %. Multiplying back recovers numbers that are
+    visibly round (WATT $29.40, DAIO $6.50, ADCOF $0.30), which is what a
+    stored analyst target looks like and not what an arithmetic coincidence
+    looks like.
+
+    Two conditions, and both are refusals rather than fallbacks:
+
+      * no price, or a non-positive one, means no target. Their quote endpoint
+        answers 0 for fields it has no data for, and a 0 multiplied by anything
+        is a target of zero — a sell signal invented out of a missing quote.
+      * no upside means no target. Not "assume flat".
+
+    Accuracy is bounded by the quote the ratio was computed against. Reading
+    both in the same pass keeps them consistent; pairing today's upside with
+    last week's price would not.
+    """
+    if price is None or price <= 0 or upside_ratio is None:
+        return None
+    target = price * (1.0 + upside_ratio)
+    return target if target > 0 else None
+
+
 def diff_watchlist(
     previous: list[WatchlistEntry], current: list[WatchlistEntry]
 ) -> list[WatchlistChange]:

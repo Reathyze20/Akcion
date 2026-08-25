@@ -16,6 +16,7 @@ See docs/GOMES_METHODOLOGY_CANON.md (dual-source context).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import Enum
 
 
@@ -26,17 +27,38 @@ class InvestmentSource(str, Enum):
     OTHER = "OTHER"
 
 
-def normalize_source(speaker: str | None) -> str:
+def normalize_source(
+    speaker: str | None,
+    roster: Mapping[str, str] | None = None,
+) -> str:
     """
-    Map a free-text speaker/analyst name to a canonical source key.
+    Map a free-text speaker to the source whose authority their claim carries.
 
-    Robust to casing and common variants ("Mark Gomes", "money mark",
-    "Breakout Investors", "breakout"). Anything unrecognized -> OTHER.
+    `roster` maps a lower-cased name to a source key and is consulted FIRST.
+    Load it with `app/services/analyst_roster.py`; this module stays free of
+    the database so the rules can be exercised without one.
+
+    Why the roster had to exist: this key becomes `Stock.source_key`, and
+    `evaluate_dual_source_buy` reads it to decide whether two sources agree —
+    which sets the position cap at 15 %, 7 % or 5 %. Deciding it by substring
+    meant an analyst writing under his own name fell to OTHER, and OTHER does
+    not enter the matrix at all. Their work was stored and silently unused.
+
+    The keyword fallback stays for Gomes' own spellings and for content pasted
+    with a source label rather than a person's name. Anything unrecognised is
+    OTHER, which is the correct treatment for a stranger in a group of a
+    hundred and thirty and is not a judgement about them.
     """
     if not speaker:
         return InvestmentSource.OTHER.value
 
     s = speaker.strip().lower()
+
+    if roster:
+        listed = roster.get(s)
+        if listed:
+            return listed
+
     if "gomes" in s or "money mark" in s:
         return InvestmentSource.GOMES.value
     if "breakout" in s:
@@ -117,3 +139,52 @@ def summarize_source_agreement(takes: list[dict]) -> dict:
         "stances": stances,
         "detail": "Zdroje se liší (ne přímo opačně)",
     }
+
+
+# ---------------------------------------------------------------------------
+# Which reading about a company outranks which
+# ---------------------------------------------------------------------------
+
+#: A reading the analyst himself put on record — his own words, dated.
+RANK_ANALYST: int = 2
+#: A number this app worked out from filings and prices. Useful, and an
+#: estimate.
+RANK_RUBRIC: int = 1
+#: Provenance nobody recorded. Ranks below the rubric on purpose: a row that
+#: cannot say where it came from is the weakest thing in the table.
+RANK_UNKNOWN: int = 0
+
+_ANALYST_PREFIXES = ("gomes", "breakout", "transcript", "video")
+_ANALYST_MARKERS = ("official",)
+_RUBRIC_MARKERS = ("rubric", "heuristic", "estimate", "computed")
+
+
+def lifecycle_source_rank(source: str | None) -> int:
+    """
+    How much authority a `stock_lifecycle` row's `source` carries.
+
+    Rows about the same company arrive from two very different places. One is
+    Mark Gomes saying a number out loud on a dated video; the other is this
+    app's rubric inferring one from filings. Both are worth storing. They are
+    not worth the same, and until 2026-08-24 the table did not know that: the
+    writer superseded whatever was live, so the newest row won by being newest.
+
+    What that cost, concretely. On 2026-08-21 Gomes said of Gatekeeper
+    „they are operating on all ten cylinders". Two days later a rubric
+    confirmation of 5 closed that row out. Because `zasloužené = 10 − válce`,
+    the bar the price is judged against moved from 0 to 5, the R/R score of
+    4,26 turned from cheap into overpriced, and the app ordered half a 13,9 %
+    position sold — on the strength of its own guess, over his statement.
+
+    So sources are ranked and the writers consult the rank. The owner may still
+    overrule anything; what he may not do any more is overrule it by accident.
+    """
+    if not source:
+        return RANK_UNKNOWN
+
+    text = source.strip().lower()
+    if text.startswith(_ANALYST_PREFIXES) or any(m in text for m in _ANALYST_MARKERS):
+        return RANK_ANALYST
+    if any(m in text for m in _RUBRIC_MARKERS):
+        return RANK_RUBRIC
+    return RANK_UNKNOWN

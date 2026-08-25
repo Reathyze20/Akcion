@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, func, Float, Date
+from sqlalchemy.orm import column_property
 
 from .base import Base
 
@@ -114,10 +115,22 @@ class Stock(Base):
         nullable=True,
         doc="Market sentiment: Bullish, Bearish, Neutral"
     )
-    conviction_score = Column(
-        Integer,
-        nullable=True,
-        doc="Investment conviction score 1-10 (10 = highest)"
+    # column_property, not a bare Column, for the sake of active_history: the
+    # score journal's before_flush net has to tell a real change from a
+    # re-assignment of the same number, and it can only do that if the
+    # previous value is loaded at the moment of the set. Without it, setting
+    # the score on an expired instance — which happens whenever anything
+    # committed earlier in the request, and YahooFinanceCache does commit —
+    # looks like a change and files a spurious journal row. The cost is one
+    # SELECT on the rare occasion a score is written to an unloaded instance.
+    # See app/services/score_journal.py.
+    conviction_score = column_property(
+        Column(
+            Integer,
+            nullable=True,
+            doc="Investment conviction score 1-10 (10 = highest)"
+        ),
+        active_history=True,
     )
     
     # Price & Timing
@@ -316,6 +329,16 @@ class Stock(Base):
     )
     
     # Price Lines & Trend Analysis (Gomes Intelligence)
+    line_currency = Column(
+        String(3),
+        nullable=True,
+        doc=(
+            "Currency the green/red lines are quoted in — the tracker quotes "
+            "the US OTC listing, so a CAD-priced position must be converted "
+            "before it is scored against them. NULL = unknown, and unknown is "
+            "never assumed to match the position's own currency."
+        ),
+    )
     current_price = Column(
         Float,
         nullable=True,
