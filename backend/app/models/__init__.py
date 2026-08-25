@@ -72,6 +72,9 @@ from .earnings import SOURCE_SEC_CADENCE, SOURCE_YAHOO, EarningsDate
 # Reading the Gomes tracker: when we last looked, and what moved
 from .tracker import TRACKER_CHANGE_KINDS, TrackerLineChange, TrackerPollState
 
+# Per-ticker cooldown for POST /api/intelligence/analyze-ticker
+from .analyze_ticker import AnalyzeTickerState
+
 # Trading models (imported separately to avoid circular imports)
 # from .trading import OHLCVData, ActiveWatchlist, MLPrediction, TradingSignal
 
@@ -174,6 +177,8 @@ __all__ = [
     "TrackerPollState",
     "TrackerLineChange",
     "TRACKER_CHANGE_KINDS",
+    # analyze-ticker cooldown
+    "AnalyzeTickerState",
     # Breakout Investors watchlist
     "BreakoutWatchEntry",
     "BreakoutWatchChange",
