@@ -75,6 +75,9 @@ from .tracker import TRACKER_CHANGE_KINDS, TrackerLineChange, TrackerPollState
 # Per-ticker cooldown for POST /api/intelligence/analyze-ticker
 from .analyze_ticker import AnalyzeTickerState
 
+# A standing owner instruction the phase gate cannot see (ECOR, SMSI)
+from .owner_intent import OwnerIntentModel
+
 # Trading models (imported separately to avoid circular imports)
 # from .trading import OHLCVData, ActiveWatchlist, MLPrediction, TradingSignal
 
@@ -179,6 +182,8 @@ __all__ = [
     "TRACKER_CHANGE_KINDS",
     # analyze-ticker cooldown
     "AnalyzeTickerState",
+    # owner intent (ECOR, SMSI)
+    "OwnerIntentModel",
     # Breakout Investors watchlist
     "BreakoutWatchEntry",
     "BreakoutWatchChange",

@@ -28,6 +28,7 @@ from app.services.away_mode import (
     escalation_note,
 )
 from app.services.away_runner import _naive, get_state, run_cycle
+from app.services import owner_intent as owner_intent_service
 from app.services.currency import CurrencyService
 from app.services import market_catalyst
 from app.services.tracker_sync import unnotified_line_moves
@@ -202,6 +203,11 @@ def run_away_cycle(db: Session, *, send: bool, notify=None, now: datetime | None
         fx_rate_to_czk=CurrencyService.get_rate_to_czk,
         now=now,
         alert_note=alert_note,
+        owner_intent=lambda ticker: (
+            row.intent
+            if (row := owner_intent_service.get(db, ticker)) is not None
+            else None
+        ),
     )
 
     note = escalation_note(market_alert)

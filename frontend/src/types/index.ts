@@ -207,6 +207,15 @@ export interface UnconvertiblePosition {
   reason: string;
 }
 
+/** A standing owner instruction that suppresses BUY/ACCUMULATE for this ticker, independent of phase. */
+export interface OwnerIntent {
+  ticker: string;
+  intent: 'EXIT_PENDING' | 'TAX_LOSS_HOLD' | string;
+  note: string | null;
+  set_by: string;
+  set_at: string;
+}
+
 export interface PortfolioSummary {
   portfolio: Portfolio;
   positions: Position[];

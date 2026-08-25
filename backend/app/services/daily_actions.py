@@ -331,6 +331,7 @@ def generate_daily_actions(
     pacing: Callable[[str, bool], str | None] | None = None,
     unvalued: dict[str, list] | None = None,
     concentration=None,
+    owner_intent: Callable[[str], str | None] | None = None,
 ) -> DailyActionResponse:
     """
     Build the daily action list. Pure function — inject FX and clock for tests.
@@ -384,6 +385,14 @@ def generate_daily_actions(
     tightens and never loosens by design — so without somebody being asked, an
     escalation set during a scare goes on refusing every purchase forever, and
     silently, because a refusal looks exactly like caution working.
+
+    `owner_intent` is asked, for a ticker about to receive a BUY or add-to
+    suggestion, whether the owner has already decided something about it that
+    no phase reading captures — ECOR is queued for exit despite a passing
+    phase, SMSI is held only for a tax-loss harvest despite already failing
+    the phase gate for an unrelated reason. A non-None answer produces no
+    action at all for that ticker; it never becomes a warning, because a
+    position the owner has already decided about does not need daily notice.
     """
     now = now or datetime.utcnow()
     warnings: list[str] = []
@@ -675,6 +684,7 @@ def generate_daily_actions(
             buy_alert, value_czk, portfolio_value_czk, cash_czk, rate,
             fx_rate_to_czk, now, refusal_sink=refusal_sink,
             blocked_notes=capped_by_unknown_tier,
+            owner_intent=owner_intent,
         )
         if add is None:
             continue
@@ -699,6 +709,7 @@ def generate_daily_actions(
             buy_alert, ticker, analysis, breakout_by_ticker.get(company),
             cash_czk, portfolio_value_czk, fx_rate_to_czk, now,
             refusal_sink=refusal_sink,
+            owner_intent=owner_intent,
         )
         if buy is None:
             continue
@@ -1156,6 +1167,7 @@ def _add_action(
     now: datetime,
     refusal_sink: Callable[[Refusal], None] | None = None,
     blocked_notes: list[str] | None = None,
+    owner_intent: Callable[[str], str | None] | None = None,
 ) -> ActionItem | None:
     """
     Add to a position already held, when it is still cheap for its quality.
@@ -1178,7 +1190,18 @@ def _add_action(
     Every guard the buy path uses applies unchanged: the market must be green,
     cylinders confirmed, the score above what the quality deserves, and the
     resulting weight inside the tier cap and the dual-source matrix.
+
+    `owner_intent` is checked first and independently of all of that: a phase
+    reading answers whether the business still argues for buying, but ECOR is
+    GREAT_FIND today and queued for exit anyway (waiting for buyer interest,
+    not for the thesis to fail), and SMSI stays blocked for the wrong reason
+    once its WAIT_TIME phase eventually lifts — it is held only for a
+    tax-loss harvest. Neither reason lives in a phase and neither should ever
+    silently stop applying because a rubric re-read the numbers.
     """
+    if owner_intent is not None and owner_intent(ticker) is not None:
+        return None
+
     price = price_in_band_currency(
         pos.current_price, pos.currency, analysis.line_currency, fx_rate_to_czk
     )
@@ -1325,8 +1348,16 @@ def _buy_action(
     fx_rate_to_czk: Callable[[str], float],
     now: datetime,
     refusal_sink: Callable[[Refusal], None] | None = None,
+    owner_intent: Callable[[str], str | None] | None = None,
 ) -> ActionItem | None:
-    """Watchlist candidate must pass the hard Buy Guard + dual-source sizing."""
+    """
+    Watchlist candidate must pass the hard Buy Guard + dual-source sizing.
+
+    Checked before any of that, same as `_add_action`: `owner_intent`.
+    """
+    if owner_intent is not None and owner_intent(ticker) is not None:
+        return None
+
     price = analysis.current_price
     if price is None or price <= 0:
         return None  # no price -> no invented BUY

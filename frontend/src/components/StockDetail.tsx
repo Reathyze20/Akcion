@@ -15,7 +15,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import type { Stock } from '../types';
+import type { Stock, OwnerIntent } from '../types';
 import { apiClient } from '../api/client';
 import { percent, price } from '../lib/format';
 import {
@@ -129,6 +129,27 @@ export const StockDetail: React.FC<StockDetailProps> = ({
       cancelled = true;
     };
   }, [marketAlertOverride]);
+
+  // A standing owner instruction (e.g. ECOR: čeká na kupní zájem, SMSI: jen
+  // na odpis daní) — set only via scripts/set_owner_intent.py, no write path
+  // on the screen. null is the normal case for eleven of twelve positions.
+  const [ownerIntent, setOwnerIntent] = useState<OwnerIntent | null>(null);
+
+  useEffect(() => {
+    if (!position?.ticker) return;
+    let cancelled = false;
+    apiClient
+      .getOwnerIntent(position.ticker)
+      .then((data) => {
+        if (!cancelled) setOwnerIntent(data);
+      })
+      .catch(() => {
+        /* Volitelný doplněk — mlčí, pokud nejde načíst. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [position?.ticker]);
 
   // Which trade form is open, if any.
   const [trade, setTrade] = useState<{ side: TradeSide; requireReason: boolean } | null>(null);
@@ -690,6 +711,20 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                     </div>
                   )}
                 </div>
+
+                {ownerIntent && (
+                  <div className="rounded-lg border border-warning-border bg-warning-bg p-4">
+                    <p className="text-[13px] leading-relaxed text-warning">
+                      <span className="font-bold">
+                        {ownerIntent.intent === 'EXIT_PENDING' ? 'Na odchodu' :
+                         ownerIntent.intent === 'TAX_LOSS_HOLD' ? 'Drží se jen na odpis daní' :
+                         ownerIntent.intent}
+                        {': '}
+                      </span>
+                      {ownerIntent.note || 'Vlastní záměr bez poznámky.'}
+                    </p>
+                  </div>
+                )}
 
                 {position.currency_conflict &&
                   !position.currency_confirmed &&

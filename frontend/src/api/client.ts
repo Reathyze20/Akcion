@@ -21,6 +21,7 @@ import type {
   Portfolio,
   PortfolioSummary,
   Position,
+  OwnerIntent,
   EnrichedStock,
   MatchAnalysisResponse,
   CSVUploadResponse,
@@ -295,6 +296,17 @@ class ApiClient {
     const response = await this.client.get<Position[]>('/api/portfolio/positions', {
       params: portfolioId ? { portfolio_id: portfolioId } : {},
     });
+    return response.data;
+  }
+
+  // ==========================================================================
+  // Owner intent — a standing instruction the phase gate cannot see
+  // ==========================================================================
+
+  async getOwnerIntent(ticker: string): Promise<OwnerIntent | null> {
+    const response = await this.client.get<OwnerIntent | null>(
+      `/api/gomes/owner-intent/${encodeURIComponent(ticker)}`
+    );
     return response.data;
   }
 

@@ -48,6 +48,7 @@ from app.services.pacing import pacing_check
 from app.services.unvalued_lookup import unvalued_findings
 from app.services.refused_buys import collector
 from app.services import market_catalyst
+from app.services import owner_intent as owner_intent_service
 from app.services.tracker_sync import recent_line_notes
 
 logger = logging.getLogger(__name__)
@@ -260,6 +261,11 @@ def _actions_for(db: Session, portfolio: Portfolio) -> DailyActionResponse:
         """What the trade ledger says about the last few days."""
         return [brake.message for brake in collect_brakes(db, portfolio_value_czk)]
 
+    def owner_intent(ticker: str) -> str | None:
+        """A standing instruction that overrides phase, e.g. ECOR, SMSI."""
+        row = owner_intent_service.get(db, ticker)
+        return row.intent if row is not None else None
+
     response = generate_daily_actions(
         market_alert=market_alert,
         market_alert_updated_at=alert_updated_at,
@@ -279,6 +285,7 @@ def _actions_for(db: Session, portfolio: Portfolio) -> DailyActionResponse:
         pacing=pacing_check(db, portfolio_id=portfolio.id),
         unvalued=unvalued_findings(db, positions),
         concentration=portfolio_concentration(db, positions),
+        owner_intent=owner_intent,
     )
 
     # Whose instruction this is. Stamped here rather than threaded through the
@@ -390,6 +397,11 @@ def get_daily_actions(
                 analyses=analyses,
                 cash_czk=cash_czk,
                 fx_rate_to_czk=CurrencyService.get_rate_to_czk,
+                owner_intent=lambda ticker: (
+                    row.intent
+                    if (row := owner_intent_service.get(db, ticker)) is not None
+                    else None
+                ),
             )
 
         answers = [_actions_for(db, p) for p in portfolios]

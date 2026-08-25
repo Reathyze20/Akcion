@@ -2073,6 +2073,38 @@ def confirm_lifecycle(
 
 
 # ============================================================================
+# OWNER INTENT — a standing instruction the phase gate cannot see
+# ============================================================================
+# ECOR passes the phase gate (GREAT_FIND) but is queued for exit; SMSI fails
+# it (WAIT_TIME) for the wrong reason — a tax-loss hold, not a stalled thesis.
+# See `app/models/owner_intent.py`. Read-only here: today this is set only by
+# `scripts/set_owner_intent.py`, the same CLI-only reasoning as the lifecycle
+# rubric's SEC pull — two tickers on a single-user app do not need a form.
+
+
+class OwnerIntentResponse(BaseModel):
+    ticker: str
+    intent: str
+    note: Optional[str] = None
+    set_by: str
+    set_at: datetime
+
+
+@router.get("/owner-intent/{ticker}", response_model=Optional[OwnerIntentResponse])
+def get_owner_intent(ticker: str, db: Session = Depends(get_db)):
+    """The standing instruction on record for this ticker, or null."""
+    from app.services import owner_intent as owner_intent_service
+
+    row = owner_intent_service.get(db, ticker)
+    if row is None:
+        return None
+    return OwnerIntentResponse(
+        ticker=row.ticker, intent=row.intent, note=row.note,
+        set_by=row.set_by, set_at=row.set_at,
+    )
+
+
+# ============================================================================
 # THE LADDER — every holding, its band, and the two prices that change it
 # ============================================================================
 
