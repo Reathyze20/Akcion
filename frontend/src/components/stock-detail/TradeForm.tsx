@@ -55,6 +55,11 @@ export const TradeForm: React.FC<TradeFormProps> = ({
 }) => {
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState(currentPrice != null ? String(currentPrice) : '');
+  /* Den obchodu, ne den zápisu. Předvyplněný dneškem, protože obchod se
+     většinou zapisuje hned — ale přepsatelný, protože zpětný zápis starého
+     prodeje se jinak počítá jako dnešní obchod a spustí brzdu proti
+     přeobchodování. */
+  const [tradeDate, setTradeDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +77,9 @@ export const TradeForm: React.FC<TradeFormProps> = ({
       return `Nemůžeš prodat ${sharesNum} akcií, držíš jen ${sharesHeld}.`;
     if (requireReason && reason.trim().length < 3)
       return 'Tenhle obchod jde proti pravidlům. Napiš proč ho děláš.';
+    if (!tradeDate) return 'Doplň datum obchodu.';
+    if (tradeDate > new Date().toISOString().slice(0, 10))
+      return 'Datum obchodu nemůže být v budoucnosti.';
     return null;
   };
 
@@ -89,6 +97,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
         shares: sharesNum,
         price: priceNum,
         emotion_tag: reason.trim() || null,
+        trade_date: tradeDate,
       });
       setResult(res);
       onRecorded(res);
@@ -237,6 +246,20 @@ export const TradeForm: React.FC<TradeFormProps> = ({
           )}
         </label>
       </div>
+
+      <label className="block space-y-1">
+        <span className="text-sm text-secondary">Datum obchodu</span>
+        <input
+          type="date"
+          value={tradeDate}
+          max={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setTradeDate(e.target.value)}
+          className="input w-full"
+        />
+        <span className="text-xs text-secondary">
+          Kdy se to stalo u brokera, ne kdy to zapisuješ.
+        </span>
+      </label>
 
       <label className="block space-y-1">
         <span className="text-sm text-secondary">

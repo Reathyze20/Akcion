@@ -8,8 +8,16 @@ export interface Stock {
   id: number;
   created_at: string;
   ticker: string;
+  /**
+   * Ticker, pod kterým se firma páruje napříč burzami — KUYA.V i KUYAF mají
+   * KUYAF. Počítá ho backend (`app/core/tickers.py`), tady se jen používá.
+   * Zobrazuje se vždycky `ticker`, ne tohle.
+   */
+  canonical_ticker?: string | null;
   company_name: string | null;
   source_type: string;
+  /** GOMES / BREAKOUT_INVESTORS / OTHER — na ticker může být řádek od každého. */
+  source_key?: 'GOMES' | 'BREAKOUT_INVESTORS' | 'OTHER' | null;
   speaker: string;
   sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | null;
   conviction_score: number | null;
@@ -164,6 +172,19 @@ export interface Position {
   id: number;
   portfolio_id: number;
   ticker: string;
+  /** Viz `Stock.canonical_ticker`. Pro párování pozice s analýzou. */
+  canonical_ticker?: string | null;
+  /**
+   * Majitel potvrdil, že měna sedí s výpisem od brokera. Umlčí kontrolu
+   * podle přípony tickeru, která u IMP.V a KUYA.V hlásí konflikt,
+   * přestože EUR je správně.
+   */
+  currency_confirmed?: boolean;
+  /**
+   * Měna, kterou napovídá přípona tickeru, když nesedí s uloženou. `null`
+   * znamená „sedí" i „nedá se říct" — ty dva se nerozlišují schválně.
+   */
+  currency_conflict?: string | null;
   company_name?: string | null;
   shares_count: number;
   // null = purchase price unknown (Degiro exports carry none) — user must
@@ -483,12 +504,24 @@ export interface AllocationRecommendation {
   risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
 }
 
+/**
+ * Pozor: tenhle typ musí sedět na to, co skutečně posílá
+ * `GET /api/portfolio/family-audit` (backend/app/routes/portfolio.py:1065).
+ *
+ * Dřív tu stálo `holder` / `missing_from` / `action` — tři jména, která
+ * backend nikdy neposlal. Odpověď se jen přetypuje, nevaliduje, takže
+ * TypeScript mlčel a panel vykresloval „holds, does not" s prázdnými jmény.
+ */
 export interface FamilyGap {
   ticker: string;
-  holder: string;
-  missing_from: string;
-  conviction_score: number;
-  action: string;
+  company_name: string | null;
+  /** Null, dokud pozice nemá hodnocení. Není to nula. */
+  conviction_score: number | null;
+  owner_with_position: string;
+  owner_weight_pct: number;
+  missing_owner: string;
+  priority: string;
+  message: string;
 }
 
 export interface AllocationPlanRequest {
@@ -505,9 +538,12 @@ export interface AllocationPlanResponse {
 }
 
 export interface FamilyAuditResponse {
-  portfolios_compared: string[];
   gaps: FamilyGap[];
-  summary: string;
+  /* Volitelné schválně: dvě větve endpointu (portfolio.py:1045 a :1058)
+     vracejí jen `message` a prázdné `gaps`. */
+  owners_analyzed?: string[];
+  gaps_found?: number;
+  message?: string;
 }
 
 // ==================== Deep Due Diligence Types ====================
@@ -571,6 +607,11 @@ export interface TradeRequest {
   price: number;
   emotion_tag?: string | null;
   note?: string | null;
+  /**
+   * Den obchodu u brokera (YYYY-MM-DD), ne den zápisu. Bez něj se zpětný
+   * zápis starého prodeje počítá jako dnešní obchod.
+   */
+  trade_date?: string | null;
 }
 
 export interface TradeResponse {
@@ -589,5 +630,180 @@ export interface TradeResponse {
   new_avg_cost: number | null;
   avg_cost_known: boolean;
   position_closed: boolean;
+  message: string;
+}
+
+// ============================================================================
+// Pásmo — kde cena leží vůči tomu, co si firma zaslouží
+// ============================================================================
+
+/**
+ * Pásma tak, jak je počítá `ZoneLadder` na serveru.
+ *
+ * Není to poloha v rozpětí. `POD_ZELENOU` a `NAD_CERVENOU` jsou o ceně, ale
+ * `NAKUP`, `DRZET` a `PREPLACENO` porovnávají R/R skóre se zaslouženou úrovní
+ * `10 − válce` — tedy stejná cena u dvou různě kvalitních firem dá jiné pásmo.
+ * Prohlížeč to nikdy nedopočítává; kdyby ano, ukázal by jiné číslo než engine.
+ */
+export type Band =
+  | 'POD_ZELENOU'
+  | 'NAKUP'
+  | 'DRZET'
+  | 'PREPLACENO'
+  | 'NAD_CERVENOU'
+  | 'NEZNAME'
+  | 'MIMO_METODIKU';
+
+export interface LadderItem {
+  ticker: string;
+  company_name?: string | null;
+  band: Band;
+  reason_cs: string;
+  rr_score?: number | null;
+  deserved?: number | null;
+  /** Limitky odvozené z linií, ne z dnešní ceny — přežijí zastaralý kurz. */
+  buy_below?: number | null;
+  sell_above?: number | null;
+  take_profit_above?: number | null;
+  add_below?: number | null;
+  line_currency?: string | null;
+  trigger: string;
+  trigger_reason: string;
+  /** Potvrzení válců vypršelo: prodejní strana platí, nákupní ne. */
+  quality_expired: boolean;
+}
+
+export interface LadderResponse {
+  generated_at: string;
+  items: LadderItem[];
+  with_band: number;
+  outside_method: number;
+}
+
+// ============================================================================
+// Tabule „co s tímhle" — jedna karta na firmu, pokyn pro každý účet
+// ============================================================================
+
+/** Co má jeden člověk udělat s jednou firmou. */
+export interface OwnerLine {
+  owner: string;
+  portfolio_id: number;
+  /** Už česky. Tuhle obrazovku čte někdo, kdo enum nezná. */
+  instruction_cs: string;
+  detail_cs: string;
+  action_type?: string | null;
+  quantity?: number | null;
+  limit_price?: number | null;
+  limit_currency?: string | null;
+  estimated_czk?: number | null;
+  valid_until?: string | null;
+  urgency: number;
+  /** Podíl na JEHO účtu, nikdy na součtu obou. */
+  weight_pct?: number | null;
+  holds: boolean;
+}
+
+/** Druhý zdroj, v jedné větě. */
+export interface BreakoutLine {
+  stance: 'SOUHLASI' | 'NESOUHLASI' | 'MLCI';
+  summary_cs: string;
+  target?: number | null;
+  endorsements: number;
+  /** Vyplněné jen tehdy, když něco napsal jmenovaný analytik. */
+  analyst?: string | null;
+  verdict?: string | null;
+  notes_cs: string[];
+}
+
+/**
+ * Ochranná rezerva — jediné čtení na kartě, které měří dolů.
+ *
+ * Pásmo, R/R i cíl Breakoutu počítají vzdálenost ke stropu. Tohle se ptá
+ * opačně: co drží cenu zdola, když se teze rozpadne. Podlaha je jen z hmotných
+ * aktiv — goodwill a nehmotná se při rozbité tezi odepisují první.
+ */
+export interface SafetyLine {
+  floor?: number | null;
+  /** TANGIBLE_BOOK je víc než NET_CASH a karta to řekne. */
+  layer: 'TANGIBLE_BOOK' | 'NET_CASH' | 'NONE';
+  downside_pct?: number | null;
+  upside_pct?: number | null;
+  asymmetry?: number | null;
+  below_floor: boolean;
+  notes_cs: string[];
+}
+
+export interface BoardCard {
+  ticker: string;
+  company_name?: string | null;
+  band: Band;
+  band_label_cs: string;
+  band_reason_cs: string;
+  rr_score: number | null;
+  deserved: number | null;
+  buy_below?: number | null;
+  sell_above?: number | null;
+  take_profit_above?: number | null;
+  add_below?: number | null;
+  line_currency?: string | null;
+  trigger: string;
+  trigger_reason: string;
+  quality_expired: boolean;
+  breakout?: BreakoutLine | null;
+  /** Kam až může cena spadnout, než ji něco skutečného zastaví. */
+  safety?: SafetyLine | null;
+  /** Co appka umí říct o TÉHLE firmě. Na kartě, ne ve zdi nad všemi. */
+  notes_cs: string[];
+  owners: OwnerLine[];
+  urgency: number;
+}
+
+export interface BoardResponse {
+  generated_at: string;
+  cards: BoardCard[];
+  /** Varování o celém portfoliu — mění, jak se má číst každá karta. */
+  warnings: string[];
+  market_alert?: string | null;
+}
+
+/** Jedna denní svíčka. Zdroj: tabulka `ohlcv_data`, ne živý kurz. */
+export interface OhlcvBar {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface OhlcvResponse {
+  ticker: string;
+  count: number;
+  data: OhlcvBar[];
+}
+
+export interface IntakeAnalysisResult {
+  ticker: string;
+  original_ticker?: string | null;
+  company_name: string;
+  source_type: string;
+  speaker: string;
+  green_line?: number | null;
+  red_line?: number | null;
+  grey_line?: number | null;
+  cylinders?: number | null;
+  lifecycle_phase: 'GREAT_FIND' | 'WAIT_TIME' | 'GOLD_MINE' | 'UNKNOWN';
+  conviction_score?: number | null;
+  primary_catalyst?: string | null;
+  milestones: string[];
+  red_flags: string[];
+  verbatim_quote?: string | null;
+  summary_cz: string;
+  recommended_action: 'BUY' | 'WAIT' | 'SELL' | 'WATCH' | 'RESEARCH';
+}
+
+export interface IntakeCommitResponse {
+  success: boolean;
+  ticker: string;
   message: string;
 }

@@ -20,6 +20,15 @@ export interface CalculatorState {
   annualReturnPct: number;
   target: number;
   currentAge: number;
+  /** Věk, ve kterém se přestává vkládat a začíná vybírat. */
+  retirementAge: number;
+  /**
+   * Hypotéka: po kolika letech klesne vklad. Nula znamená „nepočítat
+   * s ní" — pak se ovládání druhého pole vůbec nevykreslí.
+   */
+  changeAfterYears: number;
+  /** Vklad po zlomu. */
+  changeContribution: number;
 }
 
 interface CalculatorControlsProps {
@@ -194,6 +203,69 @@ export const CalculatorControls: React.FC<CalculatorControlsProps> = ({
         render={(v) => `${v} let`}
         hint="pro přepočet na věk v cíli"
       />
+
+      <Field
+        label="Odchod do důchodu"
+        min={value.currentAge + 1}
+        max={75}
+        step={1}
+        value={value.retirementAge}
+        suffix="let"
+        onChange={(v) => set('retirementAge', v)}
+        render={(v) => `${v} let`}
+        hint={`za ${Math.max(0, value.retirementAge - value.currentAge)} let`}
+      />
+
+      {/*
+        Hypotéka je schovaná za přepínačem schválně. Většinu času je to
+        pole navíc, které jen ubírá výšku panelu — a ten je na nízkém okně
+        to první, co začne rolovat. Zapnutá odkryje dvě pole, protože bez
+        obou je odpověď k ničemu: „kdy" bez „kolik" nic neříká.
+      */}
+      <div className="border-b border-sheet-rule px-4 py-1.5 last:border-b-0">
+        <label className="flex items-center justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium text-sheet-text">
+              Počítat s hypotékou
+            </span>
+            <span className="block text-[11px] leading-tight text-sheet-muted">
+              splátka sníží vklad, ne výnos
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={value.changeAfterYears > 0}
+            onChange={(e) => set('changeAfterYears', e.target.checked ? 2 : 0)}
+            className="size-4 shrink-0 accent-[rgb(var(--accent))]"
+          />
+        </label>
+      </div>
+
+      {value.changeAfterYears > 0 && (
+        <>
+          <Field
+            label="Splátka začne za"
+            min={1}
+            max={Math.max(1, value.retirementAge - value.currentAge)}
+            step={1}
+            value={value.changeAfterYears}
+            suffix="let"
+            onChange={(v) => set('changeAfterYears', v)}
+            render={(v) => `${v} let`}
+            hint="od té chvíle platí vklad níž"
+          />
+          <Field
+            label="Vklad po splátce"
+            min={0}
+            max={100_000}
+            step={1_000}
+            value={value.changeContribution}
+            suffix="Kč"
+            onChange={(v) => set('changeContribution', v)}
+            hint={`${amount(value.changeContribution * 12)} Kč ročně`}
+          />
+        </>
+      )}
     </div>
   );
 };

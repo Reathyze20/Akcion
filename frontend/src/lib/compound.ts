@@ -32,6 +32,8 @@ export interface ProjectionInput {
   annualReturn: number;
   /** Délka projekce v letech. */
   years: number;
+  /** Volitelná změna vkladu v čase (typicky start hypotéky). */
+  contributionChange?: ContributionChange;
 }
 
 export interface YearPoint {
@@ -73,7 +75,36 @@ export const RETURN_SPREAD_PP = 0.03;
 /** Dlouhodobý inflační cíl ČNB. Používá se k přepočtu na dnešní kupní sílu. */
 export const DEFAULT_INFLATION = 0.02;
 
+/**
+ * Podíl portfolia, který jde ročně vybírat, aniž by došlo.
+ *
+ * Slavná čtyři procenta (Bengen 1994) jsou kalibrovaná na **třicet let**
+ * důchodu. Odchod v padesáti znamená, že peníze musí vydržet čtyřicet
+ * až padesát — a na tom horizontu čtyři procenta historicky selhávala.
+ * Proto 3,25 %.
+ *
+ * Není to opatrnost pro opatrnost. Rozdíl mezi 4 % a 3,25 % je pětina
+ * renty; rozdíl mezi „vyšlo to" a „v sedmdesáti pěti došly peníze" je
+ * celý zbytek života.
+ */
+export const SAFE_WITHDRAWAL_RATE = 0.0325;
+
 const MONTHS = 12;
+
+/**
+ * Změna měsíčního vkladu v čase.
+ *
+ * Existuje kvůli hypotéce. Splátka nesníží výnos ani nepohne trhem —
+ * sníží vklad, a to je jediná páka, kterou člověk skutečně drží.
+ * Projekce s konstantním vkladem po celou dobu kreslí dráhu, po které
+ * se ve skutečnosti nejde.
+ */
+export interface ContributionChange {
+  /** Po kolika letech od dneška se vklad mění. */
+  afterYears: number;
+  /** Nový měsíční vklad od té chvíle dál. */
+  monthlyContribution: number;
+}
 
 /**
  * Budoucí hodnota při měsíčním připisování a vkladu na konci měsíce.
@@ -103,6 +134,70 @@ export function futureValue(
 }
 
 /**
+ * Budoucí hodnota, když se vklad v půlce cesty změní.
+ *
+ * Počítá se ve dvou úsecích: hodnota v okamžiku zlomu se stane výchozí
+ * hodnotou druhého úseku. Uzavřený tvar platí v obou, takže se nic
+ * nenasčítá navíc.
+ */
+export function futureValueStaged(
+  presentValue: number,
+  monthlyContribution: number,
+  annualReturn: number,
+  months: number,
+  change?: ContributionChange,
+): number {
+  const breakMonth = change ? Math.round(change.afterYears * MONTHS) : 0;
+
+  if (!change || breakMonth <= 0 || months <= breakMonth) {
+    return futureValue(presentValue, monthlyContribution, annualReturn, months);
+  }
+
+  const atBreak = futureValue(presentValue, monthlyContribution, annualReturn, breakMonth);
+  return futureValue(atBreak, change.monthlyContribution, annualReturn, months - breakMonth);
+}
+
+/**
+ * Vložený kapitál k danému měsíci — dnešní hodnota plus všechny vklady.
+ *
+ * Jediná vrstva projekce, která není odhad, takže musí zlom respektovat
+ * stejně jako dráha. Kdyby ho ignorovala, tvrdila by, že jsi vložil víc,
+ * než kolik jsi vložil.
+ */
+export function contributedAt(
+  presentValue: number,
+  monthlyContribution: number,
+  months: number,
+  change?: ContributionChange,
+): number {
+  const breakMonth = change ? Math.round(change.afterYears * MONTHS) : 0;
+
+  if (!change || breakMonth <= 0 || months <= breakMonth) {
+    return presentValue + monthlyContribution * months;
+  }
+
+  return presentValue
+    + monthlyContribution * breakMonth
+    + change.monthlyContribution * (months - breakMonth);
+}
+
+/**
+ * Udržitelná měsíční renta z daného jmění.
+ *
+ * Vstup patří v dnešní kupní síle, výstup vyjde v téže. Míchat nominální
+ * jmění s dnešními výdaji je nejběžnější způsob, jak si o důchodu lhát:
+ * dvacet milionů za sedmnáct let zní jako dost, dokud se nezeptáš, co
+ * za ně bude k mání.
+ */
+export function sustainableMonthlyIncome(
+  realValue: number,
+  rate = SAFE_WITHDRAWAL_RATE,
+): number {
+  if (realValue <= 0) return 0;
+  return (realValue * rate) / MONTHS;
+}
+
+/**
  * Za kolik měsíců projekce dosáhne cíle.
  *
  * Vrací `null`, když cíl při zadaných parametrech nedosáhne nikdy —
@@ -118,15 +213,22 @@ export function monthsToTarget(
   annualReturn: number,
   target: number,
   limitMonths = 100 * MONTHS,
+  change?: ContributionChange,
 ): number | null {
   if (presentValue >= target) return 0;
 
   const i = annualReturn / MONTHS;
+  const breakMonth = change ? Math.round(change.afterYears * MONTHS) : 0;
   let value = presentValue;
 
   for (let month = 1; month <= limitMonths; month += 1) {
     const before = value;
-    value = value * (1 + i) + monthlyContribution;
+    // Po zlomu se přidává nový vklad. Bez toho by odpověď „za jak dlouho"
+    // počítala s penězi, které v té době půjdou na splátku.
+    const pmt = change && breakMonth > 0 && month > breakMonth
+      ? change.monthlyContribution
+      : monthlyContribution;
+    value = value * (1 + i) + pmt;
 
     if (value >= target) return month;
 
@@ -139,7 +241,7 @@ export function monthsToTarget(
 
 /** Roční body projekce, včetně dnešního stavu jako roku 0. */
 export function project(input: ProjectionInput): YearPoint[] {
-  const { presentValue, monthlyContribution, annualReturn, years } = input;
+  const { presentValue, monthlyContribution, annualReturn, years, contributionChange } = input;
 
   // Spodní dráha se nepropadne pod nulu: záporný výnos je jiný scénář
   // než „vyšlo to hůř", a do pásu kolem kladného očekávání nepatří.
@@ -150,14 +252,18 @@ export function project(input: ProjectionInput): YearPoint[] {
 
   for (let year = 0; year <= years; year += 1) {
     const months = year * MONTHS;
-    const value = futureValue(presentValue, monthlyContribution, annualReturn, months);
-    const contributed = presentValue + monthlyContribution * months;
+    const value = futureValueStaged(
+      presentValue, monthlyContribution, annualReturn, months, contributionChange,
+    );
+    const contributed = contributedAt(
+      presentValue, monthlyContribution, months, contributionChange,
+    );
 
     points.push({
       year,
       value,
-      low: futureValue(presentValue, monthlyContribution, low, months),
-      high: futureValue(presentValue, monthlyContribution, high, months),
+      low: futureValueStaged(presentValue, monthlyContribution, low, months, contributionChange),
+      high: futureValueStaged(presentValue, monthlyContribution, high, months, contributionChange),
       contributed,
       growth: value - contributed,
     });
@@ -224,6 +330,8 @@ export function summarise(
     input.monthlyContribution,
     input.annualReturn,
     target,
+    undefined,
+    input.contributionChange,
   );
 
   const years = months === null ? null : Math.floor(months / MONTHS);
@@ -242,5 +350,60 @@ export function summarise(
     targetInTodaysMoney: months === null
       ? null
       : realValue(target, months / MONTHS, inflation),
+  };
+}
+
+/**
+ * Výhled k důchodu.
+ *
+ * Odpovídá na jinou otázku než `summarise`. Ta řeší „za jak dlouho
+ * na částku"; tahle „co budeme mít v den D a co nám to bude vyplácet".
+ * Pro někoho, kdo má pevné datum odchodu, je správná ta druhá — částka
+ * není vstup, ale výsledek.
+ *
+ * `null` znamená, že projekce nedává smysl: odchod už nastal, nebo je
+ * zadaný dřív než dnešek. Nulu vracet nelze — nula je odpověď, tohle není.
+ */
+export interface RetirementOutlook {
+  /** Let do odchodu. */
+  years: number;
+  /** Hodnota portfolia v den odchodu, nominálně. */
+  nominal: number;
+  /** Táž hodnota v dnešní kupní síle. */
+  real: number;
+  /** Kolik z toho tvoří vklady. Fakt, ne odhad. */
+  contributed: number;
+  /** Udržitelná měsíční renta, v dnešních penězích. */
+  monthlyIncome: number;
+}
+
+export function retirementOutlook(
+  input: Omit<ProjectionInput, 'years'>,
+  currentAge: number,
+  retirementAge: number,
+  inflation = DEFAULT_INFLATION,
+  withdrawalRate = SAFE_WITHDRAWAL_RATE,
+): RetirementOutlook | null {
+  const years = retirementAge - currentAge;
+  if (years <= 0) return null;
+
+  const months = years * MONTHS;
+  const nominal = futureValueStaged(
+    input.presentValue,
+    input.monthlyContribution,
+    input.annualReturn,
+    months,
+    input.contributionChange,
+  );
+  const real = realValue(nominal, years, inflation);
+
+  return {
+    years,
+    nominal,
+    real,
+    contributed: contributedAt(
+      input.presentValue, input.monthlyContribution, months, input.contributionChange,
+    ),
+    monthlyIncome: sustainableMonthlyIncome(real, withdrawalRate),
   };
 }

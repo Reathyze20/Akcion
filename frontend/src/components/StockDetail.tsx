@@ -17,6 +17,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Stock } from '../types';
 import { apiClient } from '../api/client';
+import { percent, price } from '../lib/format';
 import {
   GomesHeader,
   SafetyGaugeRow,
@@ -46,6 +47,8 @@ interface EnrichedPosition {
   avg_cost: number | null;  // null = buy price unknown, user must fill in
   current_price: number | null;
   currency?: string;
+  currency_confirmed?: boolean;
+  currency_conflict?: string | null;
   unrealized_pl: number | null;
   unrealized_pl_percent: number | null;
   stock?: Stock;
@@ -134,6 +137,10 @@ export const StockDetail: React.FC<StockDetailProps> = ({
   const [isEditingPosition, setIsEditingPosition] = useState(false);
   const [editShares, setEditShares] = useState('');
   const [editAvgCost, setEditAvgCost] = useState('');
+  /* Měnu jde opravit jen tady. Varování posílá člověka „oprav měnu
+     v detailu pozice" — takže tu to pole musí být, jinak je to
+     pokyn do prázdna. */
+  const [editCurrency, setEditCurrency] = useState('');
   const [isSavingPosition, setIsSavingPosition] = useState(false);
   const [savePositionError, setSavePositionError] = useState<string | null>(null);
   // `position` is a snapshot prop — refreshPortfolios() updates the row
@@ -142,11 +149,32 @@ export const StockDetail: React.FC<StockDetailProps> = ({
   // a successful save, which reads as "it didn't work" (a trust bug).
   const [savedOverride, setSavedOverride] = useState<{ shares_count: number; avg_cost: number } | null>(null);
 
+  /* Potvrzení měny. Kontrola podle přípony tickeru umí říct, že si ticker
+     a měna odporují, ne která z nich je špatně — IMP.V a KUYA.V se drží na
+     evropské lince, zatímco ticker je kanadský symbol z Gomesova trackeru.
+     Odpověď zná jen majitel, tak se ho aplikace zeptá místo hádání. */
+  const [currencyConfirmed, setCurrencyConfirmed] = useState(false);
+  const [confirmingCurrency, setConfirmingCurrency] = useState(false);
+
+  const confirmCurrency = async () => {
+    if (!position) return;
+    setConfirmingCurrency(true);
+    try {
+      await apiClient.updatePosition(position.id, { currency_confirmed: true });
+      setCurrencyConfirmed(true);
+      await onUpdate?.();
+    } catch {
+      /* Ticho by vypadalo jako úspěch — proužek zůstane, dokud to neprojde. */
+      setConfirmingCurrency(false);
+    }
+  };
+
   const startEditingPosition = () => {
     if (!position) return;
     setEditShares((savedOverride?.shares_count ?? position.shares_count).toString());
     const cost = savedOverride ? savedOverride.avg_cost : position.avg_cost;
     setEditAvgCost(cost != null ? cost.toString() : '');
+    setEditCurrency((position.currency || 'USD').toUpperCase());
     setSavePositionError(null);
     setIsEditingPosition(true);
   };
@@ -163,12 +191,22 @@ export const StockDetail: React.FC<StockDetailProps> = ({
       setSavePositionError('Nákupní cena musí být kladné číslo.');
       return;
     }
+    if (!/^[A-Za-z]{3}$/.test(editCurrency.trim())) {
+      setSavePositionError('Měna je třípísmenný kód, například EUR nebo CAD.');
+      return;
+    }
     setIsSavingPosition(true);
     setSavePositionError(null);
     try {
+      const currency = editCurrency.trim().toUpperCase();
       await apiClient.updatePosition(position.id, {
         shares_count: shares,
         avg_cost: avgCost,
+        // Změna měny je odpověď na konflikt s tickerem, takže ho zároveň
+        // uzavírá — jinak by varování svítilo dál nad opravenou pozicí.
+        ...(currency && currency !== (position.currency || 'USD').toUpperCase()
+          ? { currency, currency_confirmed: true }
+          : {}),
       });
       setIsEditingPosition(false);
       setSavedOverride({ shares_count: shares, avg_cost: avgCost });
@@ -182,13 +220,49 @@ export const StockDetail: React.FC<StockDetailProps> = ({
     }
   };
 
-  // If no stock data available, show error state
+  /*
+   * Žádná analýza k tickeru.
+   *
+   * Dřív tu byla slepá ulička: červené „Chybí data akcie" a tlačítko Zavřít.
+   * Jenže u pozice, kterou člověk drží, aplikace čísla MÁ — kusy, nákupní
+   * cenu, kurz, výsledek — jen k nim nemá Gomesovu analýzu. Zavřít okno
+   * s hláškou o chybějících datech nad pozicí za desítky tisíc je nepravda
+   * a zároveň slepá ulička.
+   *
+   * Chybějící analýza se proto pojmenuje jako chybějící analýza a pozice se
+   * ukáže. (Pět z dvanácti pozic 23. 8. 2026 žádnou analýzu nemělo:
+   * DAIO, DBO.TO, ECOR, INFU, RDCM.)
+   */
   if (!stock) {
     return (
-      <div className="fixed inset-0 bg-surface-base/70 flex items-center justify-center z-50 p-4">
-        <div className="bg-primary-surface border border-border rounded-lg p-8 text-center">
-          <p className="text-negative mb-4">Chybí data akcie</p>
-          <button onClick={onClose} className="btn btn-secondary">Zavřít</button>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-surface-base/70 p-4"
+        onClick={onClose}
+      >
+        <div
+          className="w-full max-w-md rounded-card border border-border bg-surface-raised p-5"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <header className="mb-3">
+            <h2 className="font-mono text-lg text-text-primary">
+              {position?.ticker ?? 'Neznámý ticker'}
+            </h2>
+            {position?.company_name && (
+              <p className="text-[12px] text-text-muted">{position.company_name}</p>
+            )}
+          </header>
+
+          <p className="mb-4 rounded-input border border-border-subtle bg-surface-base px-3 py-2 text-[12.5px] leading-relaxed text-text-secondary">
+            K tomuhle tickeru zatím není žádná analýza — chybí konvikční skóre
+            i cenové čáry, takže aplikace k němu nemá co říct. Přidá se
+            vložením přepisu přes Import.
+          </p>
+
+          {position && <BarePosition position={position} />}
+
+          <button onClick={onClose} className="btn btn-secondary mt-4 w-full">
+            Zavřít
+          </button>
         </div>
       </div>
     );
@@ -553,6 +627,20 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                             className="w-full px-3 py-2 bg-surface-base border border-border rounded-lg text-text-primary text-sm placeholder-text-muted focus:outline-none focus:border-positive"
                           />
                         </div>
+                        <div>
+                          <label className="block text-xs text-text-muted mb-1">Měna</label>
+                          <input
+                            type="text"
+                            maxLength={3}
+                            value={editCurrency}
+                            onChange={(e) => setEditCurrency(e.target.value.toUpperCase())}
+                            placeholder="EUR"
+                            className="w-full px-3 py-2 bg-surface-base border border-border rounded-lg text-text-primary text-sm uppercase placeholder-text-muted focus:outline-none focus:border-positive"
+                          />
+                          <span className="mt-1 block text-[11px] text-text-muted">
+                            Ta, ve které to má broker ve výpisu.
+                          </span>
+                        </div>
                       </div>
                       {savePositionError && (
                         <p className="text-xs text-negative">{savePositionError}</p>
@@ -597,6 +685,38 @@ export const StockDetail: React.FC<StockDetailProps> = ({
                     </div>
                   )}
                 </div>
+
+                {position.currency_conflict &&
+                  !position.currency_confirmed &&
+                  !currencyConfirmed && (
+                    <div className="rounded-lg border border-warning-border bg-warning-bg p-4">
+                      <p className="text-[13px] leading-relaxed text-warning">
+                        Ticker <span className="font-mono">{position.ticker}</span>{' '}
+                        ukazuje na burzu, která obchoduje v{' '}
+                        {position.currency_conflict}, ale pozice je vedená v{' '}
+                        {position.currency || 'USD'}. Jedno z toho je špatně a
+                        aplikace neví které.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          onClick={confirmCurrency}
+                          disabled={confirmingCurrency}
+                          className="flex items-center gap-1.5 rounded-lg bg-positive px-3 py-1.5 text-xs font-semibold text-text-inverse transition-colors hover:bg-positive-muted disabled:opacity-50"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          {confirmingCurrency
+                            ? 'Ukládám…'
+                            : `Měna sedí, je to ${position.currency || 'USD'}`}
+                        </button>
+                        <button
+                          onClick={startEditingPosition}
+                          className="rounded-lg bg-surface-hover px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-active"
+                        >
+                          Opravit měnu
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                 {/* P/L Section — unknown cost basis is a prompt, never a number */}
                 <div className="grid grid-cols-2 gap-4">
@@ -695,6 +815,64 @@ const MetricCard: React.FC<MetricCardProps> = ({ label, value, variant = 'defaul
       <p className={`text-sm font-medium ${colorClass}`}>
         {value ?? 'N/A'}
       </p>
+    </div>
+  );
+};
+
+/**
+ * Pozice bez analýzy — čísla, která aplikace opravdu má.
+ *
+ * Prázdné místo tam, kde údaj chybí. Nákupní cena umí být nezadaná (Degiro ji
+ * v exportu neposílá) a napsat místo ní nulu by z pozice udělalo stoprocentní
+ * zisk.
+ */
+const BarePosition: React.FC<{ position: EnrichedPosition }> = ({ position }) => {
+  const currency = position.currency ?? 'USD';
+  const rows: { label: string; value: React.ReactNode }[] = [
+    { label: 'Kusů', value: position.shares_count.toLocaleString('cs-CZ') },
+    {
+      label: 'Nákupní cena',
+      value:
+        position.avg_cost == null ? (
+          <span className="text-text-muted">není zadaná</span>
+        ) : (
+          price(position.avg_cost, currency)
+        ),
+    },
+    {
+      label: 'Aktuální cena',
+      value:
+        position.current_price == null ? (
+          <span className="text-text-muted">nenačtena</span>
+        ) : (
+          price(position.current_price, currency)
+        ),
+    },
+  ];
+
+  const pl = position.unrealized_pl;
+  const plPct = position.unrealized_pl_percent;
+
+  return (
+    <div>
+      <dl className="divide-y divide-border-subtle rounded-input border border-border-subtle">
+        {rows.map(({ label, value }) => (
+          <div key={label} className="flex items-baseline justify-between px-3 py-2">
+            <dt className="text-[12px] text-text-muted">{label}</dt>
+            <dd className="font-mono text-[13px] text-text-primary">{value}</dd>
+          </div>
+        ))}
+        {pl != null && plPct != null && (
+          <div className="flex items-baseline justify-between px-3 py-2">
+            <dt className="text-[12px] text-text-muted">Nerealizovaný výsledek</dt>
+            <dd
+              className={`font-mono text-[13px] ${pl >= 0 ? 'text-positive' : 'text-negative'}`}
+            >
+              {price(pl, currency)} · {percent(plPct, { sign: true })}
+            </dd>
+          </div>
+        )}
+      </dl>
     </div>
   );
 };

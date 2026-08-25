@@ -16,22 +16,29 @@ import {
   Upload, Plus, FileSpreadsheet, Edit3
 } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { canonicalOf, canonicalSet, pickAnalysis } from '../lib/tickers';
 import type { 
+  Band,
   PortfolioSummary, Position, Stock,
   FamilyAuditResponse, BrokerType
 } from '../types';
 import { StockDetail } from './StockDetail';
 import NotificationBell from './NotificationBell';
 import DailyActionWidget from './DailyActionWidget';
+import DecisionBoard from './DecisionBoard';
 import ClearPortfolioButton from './ClearPortfolioButton';
 import RiskMeter from './RiskMeter';
 import Term from './ui/Term';
 import { percent, plural } from '../lib/format';
 import GoalPage from './goal/GoalPage';
+import FindsPage from './finds/FindsPage';
+import RevenueModelsPage from './models/RevenueModelsPage';
 import ThemeToggle from './ui/ThemeToggle';
 import SideRail from './shell/SideRail';
 import ContextPanel from './shell/ContextPanel';
+import RemovePositionDialog from './RemovePositionDialog';
 import PaymentsPage from './payments/PaymentsPage';
+import { GomesIntakeModal } from './GomesIntakeModal';
 
 // ============================================================================
 // TYPES
@@ -49,6 +56,8 @@ type EnrichedPosition = Position & {
   allocation_priority: number;   // Priorita (1 = nejvyšší)
   // Status
   trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
+  /** Pásmo tak, jak ho spočítal engine. Nedopočítává se v prohlížeči. */
+  band?: Band;
   // Whether the analysis behind the numbers above may drive a recommendation
   analysis_usable: boolean;
   analysis_note: string | null;
@@ -95,7 +104,6 @@ const TARGET_WEIGHTS: Record<number, number> = {
 
 // Hard Caps (Gomesova pojistka)
 const MIN_INVESTMENT_CZK = 1000; // Min vklad (kvůli poplatkům)
-const DEFAULT_MONTHLY_CONTRIBUTION = 20000; // Výchozí měsíční vklad v CZK
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -133,12 +141,16 @@ const calculateMonthsToTarget = (
   let value = currentValue;
   let months = 0;
   const maxMonths = 240; // 20 years max
-  
+
   while (value < targetValue && months < maxMonths) {
     value = value * (1 + monthlyReturn) + monthlyContribution;
     months++;
   }
-  return months;
+
+  // Strop není odpověď. Vrátit 240 znamená tvrdit „za dvacet let" i tam,
+  // kde se při nulovém vkladu cíl nesplní nikdy — a to je přesně ta záměna
+  // chybějícího údaje za verdikt, které se tahle aplikace má vyhýbat.
+  return value >= targetValue ? months : Infinity;
 };
 
 const getTargetWeight = (score: number | null): number => {
@@ -284,18 +296,44 @@ const formatPrice = (value: number, currency?: string | null): string => {
  * Where the price sits inside the green/red band. NOT a trend — it says
  * nothing about direction, only about how much of the range is left.
  */
-const getTrendStatus = (
-  stock: Stock | undefined
+/**
+ * Pásmo do sloupce — z API, nikdy z prohlížeče.
+ *
+ * Tady dřív stála vlastní matematika: poloha ceny v rozpětí zelená–červená
+ * s prahy 0,4 a 0,7. Vypadalo to jako pásmo a nebylo. Engine pásmo počítá
+ * proti tomu, co si firma **zaslouží** (`10 − válce`), takže stejná cena u
+ * dvou různě kvalitních firem dá jiné pásmo — a prohlížeč o válcích nevěděl.
+ * Akcie na 28 % rozpětí tak byla U ZELENÉ na obrazovce a PŘEPLACENO v enginu.
+ *
+ * Chybějící řádek je `UNKNOWN`, ne střed. Nemít odpověď a mít neutrální
+ * odpověď jsou dvě různé věci a jen jedna z nich je informace.
+ */
+const bandToTrend = (
+  band: Band | undefined
 ): 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN' => {
-  if (!stock || !stock.current_price || !stock.green_line || !stock.red_line) {
-    return 'UNKNOWN';
+  switch (band) {
+    case 'POD_ZELENOU':
+    case 'NAKUP':
+      return 'BULLISH';
+    case 'DRZET':
+      return 'NEUTRAL';
+    case 'PREPLACENO':
+    case 'NAD_CERVENOU':
+      return 'BEARISH';
+    default:
+      return 'UNKNOWN';
   }
-  const priceRange = stock.red_line - stock.green_line;
-  if (priceRange <= 0) return 'UNKNOWN';
-  const position = (stock.current_price - stock.green_line) / priceRange;
-  if (position <= 0.4) return 'BULLISH';
-  if (position >= 0.7) return 'BEARISH';
-  return 'NEUTRAL';
+};
+
+/** České názvy pásem. Syrový enum se na obrazovku nikdy nedostane. */
+const BAND_LABELS_CS: Record<Band, string> = {
+  POD_ZELENOU: 'POD ZELENOU',
+  NAKUP: 'NÁKUP',
+  DRZET: 'DRŽET',
+  PREPLACENO: 'PŘEPLACENO',
+  NAD_CERVENOU: 'NAD ČERVENOU',
+  NEZNAME: 'NEZNÁMÉ',
+  MIMO_METODIKU: 'MIMO METODIKU',
 };
 
 // ============================================================================
@@ -369,7 +407,8 @@ const PortfolioRow: React.FC<{
   position: EnrichedPosition;
   columns: PositionColumns;
   onClick: () => void;
-}> = ({ position, columns, onClick }) => {
+  onRemove: () => void;
+}> = ({ position, columns, onClick, onRemove }) => {
   const scoreColor = position.conviction_score 
     ? position.conviction_score >= 7 ? 'text-positive' 
       : position.conviction_score >= 5 ? 'text-warning' 
@@ -600,28 +639,37 @@ const PortfolioRow: React.FC<{
         </td>
       )}
 
-      {/* Kde cena leží mezi zelenou a červenou linkou. Není to trend —
-          není v tom směr — a prázdné, když linky nejsou. */}
+      {/* Pásmo z enginu: kde cena leží vůči tomu, co si firma zaslouží
+          (`10 − válce`), ne kde leží v rozpětí. Prázdné, když engine pásmo
+          nevydal — mimo metodiku, neznámé válce, nebo server neodpověděl. */}
       {columns.band && (
         <td className="py-1.5 px-2.5">
-          {/* Prázdno, ne pomlčka. Dvanáct pomlček pod sebou dělá svislý
-              pruh, který táhne oko a není v něm žádná informace; sloupec
-              už stojí jen tehdy, když ho vyplní aspoň pětina řádků. */}
+          {/* Prázdno, ne pomlčka — ale jen když engine neřekl vůbec nic.
+              „MIMO METODIKU" prázdno není: je to odpověď, že Gomes pro tu
+              firmu linku nevydal, takže žádné pásmo neexistuje a nemá smysl
+              ho čekat. Dokud byly prázdné všechny řádky, byl ten rozdíl
+              neviditelný; vedle vyplněných čte prázdná buňka jako rozbitá
+              aplikace. Šedě a bez šipky, aby se nepletlo s pásmem, které
+              o ceně něco tvrdí — barva by z chybějícího údaje udělala verdikt. */}
           <div className="flex flex-col items-center gap-1">
-            {position.trend_status === 'UNKNOWN' ? null : (
-              <>
-                {trendIcon}
-                <span className={`text-[10px] font-medium ${
-                  position.trend_status === 'BULLISH' ? 'text-positive' :
-                  position.trend_status === 'BEARISH' ? 'text-negative' :
-                  'text-text-muted'
-                }`}>
-                  {position.trend_status === 'BULLISH' ? 'U ZELENÉ'
-                    : position.trend_status === 'BEARISH' ? 'U ČERVENÉ'
-                    : 'STŘED'}
+            {position.band ? (
+              position.trend_status !== 'UNKNOWN' ? (
+                <>
+                  {trendIcon}
+                  <span className={`text-[10px] font-medium ${
+                    position.trend_status === 'BULLISH' ? 'text-positive' :
+                    position.trend_status === 'BEARISH' ? 'text-negative' :
+                    'text-text-muted'
+                  }`}>
+                    {BAND_LABELS_CS[position.band]}
+                  </span>
+                </>
+              ) : (
+                <span className="text-[10px] text-text-muted">
+                  {BAND_LABELS_CS[position.band]}
                 </span>
-              </>
-            )}
+              )
+            ) : null}
           </div>
         </td>
       )}
@@ -673,6 +721,21 @@ const PortfolioRow: React.FC<{
             bez nákupní ceny
           </div>
         )}
+      </td>
+
+      {/* „Už nedržím". Vždycky viditelné, ne až po najetí myší: akce, která
+          se objeví jen na hover, je pro někoho, kdo míří hůř, akce, která
+          neexistuje. `stopPropagation` proto, že klik na řádek otevírá
+          detail — a tenhle klik má dělat něco jiného. */}
+      <td className="py-1.5 px-1 text-right">
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="rounded-button p-1.5 text-text-muted transition-colors hover:bg-negative/15 hover:text-negative"
+          title={`Už nedržím ${position.ticker}`}
+          aria-label={`Už nedržím ${position.ticker}`}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </td>
     </tr>
   );
@@ -966,7 +1029,8 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, fa
               <div className="p-3 bg-info/10 border border-info/50 rounded-lg flex items-center gap-3">
                 <Users className="w-5 h-5 text-info" />
                 <span className="text-info">
-                  Cross-Account: Consider adding to <span className="font-bold">{familyGap.missing_from}</span> for balanced exposure
+                  Drží to jen jeden z vás —{' '}
+                  <span className="font-bold">{familyGap.missing_owner}</span> tuhle pozici nemá.
                 </span>
               </div>
             )}
@@ -2477,15 +2541,26 @@ export const InvestmentTerminal: React.FC = () => {
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ EUR: 25, USD: 24 });
-  const [familyGaps, setFamilyGaps] = useState<FamilyAuditResponse | null>(null);
+  /**
+   * Pásmo na ticker, tak jak ho spočítal engine.
+   *
+   * Prázdná mapa znamená „server neodpověděl", ne „žádná akcie nemá pásmo" —
+   * proto se ze scházejícího klíče stane NEZNÁMÉ a ne střed.
+   */
+  const [bandByTicker, setBandByTicker] = useState<Map<string, Band>>(new Map());
   const [selectedPosition, setSelectedPosition] = useState<EnrichedPosition | null>(null);
+  /** Pozice, u které se právě řeší „už ji nedržím". */
+  const [removingPosition, setRemovingPosition] = useState<EnrichedPosition | null>(null);
   const [selectedWatchlistStock, setSelectedWatchlistStock] = useState<Stock | null>(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAddPositionModal, setShowAddPositionModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'weight' | 'score' | 'pl'>('score');
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'cil' | 'splaceni'>('portfolio');
+  // Otevírá se na Rozhodnutí, ne na tabulce. Otázka, kvůli které se sem
+  // chodí, je „co s tím mám dělat", a tabulka pozic na ni neodpovídá —
+  // odpověď byla o jedno kliknutí dál, než kam se člověk podívá.
+  const [activeTab, setActiveTab] = useState<'rozhodnuti' | 'portfolio' | 'watchlist' | 'nalezy' | 'modely' | 'cil' | 'splaceni'>('rozhodnuti');
   
   // Cash editing state
   const [isEditingCash, setIsEditingCash] = useState(false);
@@ -2666,6 +2741,8 @@ export const InvestmentTerminal: React.FC = () => {
   // Available currencies for cash
   const CASH_CURRENCIES = ['CZK', 'EUR', 'USD', 'CAD', 'GBP'];
   
+  const [showIntakeModal, setShowIntakeModal] = useState(false);
+  
   // Refresh portfolios helper
   const refreshPortfolios = async () => {
     const portfolioList = await apiClient.getPortfolios();
@@ -2691,6 +2768,15 @@ export const InvestmentTerminal: React.FC = () => {
         } catch {
           console.warn('Failed to fetch exchange rates, using fallback');
         }
+
+        // Pásma. Selhání tady nesmí shodit portfolio — sloupec zůstane
+        // prázdný, což je poctivější než dopočítat ho v prohlížeči.
+        try {
+          const ladder = await apiClient.getLadder();
+          setBandByTicker(new Map(ladder.items.map((i) => [i.ticker, i.band])));
+        } catch {
+          console.warn('Žebřík pásem se nenačetl — sloupec Pásmo zůstane prázdný');
+        }
         
         // Fetch portfolios
         const portfolioList = await apiClient.getPortfolios();
@@ -2706,17 +2792,13 @@ export const InvestmentTerminal: React.FC = () => {
         }
         setPortfolios(summaries);
 
-        // Fetch stocks for Gomes data
-        const stocksData = await apiClient.getStocks();
+        // Fetch stocks for Gomes data (with enriched price lines & zones)
+        const stocksData = await apiClient.getEnrichedStocks();
         setStocks(stocksData.stocks);
 
-        // Fetch family gaps
-        try {
-          const gaps = await apiClient.getFamilyAudit();
-          setFamilyGaps(gaps);
-        } catch {
-          // No family audit available
-        }
+        // Rozdíly portfolií si načítá PortfolioDiffCard sám, až když si
+        // člověk tu odrážku otevře. Tady to byl dotaz na každé spuštění
+        // aplikace pro panel, který se většinou nezobrazil.
       } catch (err) {
         console.error('Failed to fetch data:', err);
       } finally {
@@ -2743,7 +2825,7 @@ export const InvestmentTerminal: React.FC = () => {
       totalValue += portfolio.total_market_value || 0;
       totalCash += portfolio.cash_balance || 0;
       // Sum up monthly contributions from all portfolios
-      totalMonthlyContribution += portfolio.portfolio.monthly_contribution ?? DEFAULT_MONTHLY_CONTRIBUTION;
+      totalMonthlyContribution += portfolio.portfolio.monthly_contribution ?? 0;
     }
     
     // Include cash in total
@@ -2763,7 +2845,9 @@ export const InvestmentTerminal: React.FC = () => {
     for (const portfolio of portfolios) {
       for (const pos of portfolio.positions) {
         // Find matching stock from Gomes analysis (may not exist)
-        const stock = stocks.find(s => s.ticker.toUpperCase() === pos.ticker.toUpperCase());
+        // Napříč burzami: pozice KUYA.V najde analýzu vedenou jako KUYAF.
+        // Když jsou řádky dva, vyhraje ten od Gomese — viz lib/tickers.ts.
+        const stock = pickAnalysis(stocks, pos);
         const gomesScore = stock?.conviction_score ?? null;
         
         // 1. Cílová váha podle skóre (Target Weight)
@@ -2811,6 +2895,12 @@ export const InvestmentTerminal: React.FC = () => {
           initialOptimalSize = Math.round(gapCZK); // gapCZK is already negative
         }
 
+        const posBand =
+          bandByTicker.get(pos.ticker) ??
+          (pos.canonical_ticker ? bandByTicker.get(pos.canonical_ticker) : undefined) ??
+          (stock?.ticker ? bandByTicker.get(stock.ticker) : undefined) ??
+          (stock?.canonical_ticker ? bandByTicker.get(stock.canonical_ticker) : undefined);
+
         const enriched: EnrichedPosition = {
           ...pos,
           stock,
@@ -2821,7 +2911,8 @@ export const InvestmentTerminal: React.FC = () => {
           gap_czk: gapCZK,
           optimal_size: initialOptimalSize, // Negative for OVERWEIGHT, will be recalculated for UNDERWEIGHT
           allocation_priority: 999, // Will be set after sorting
-          trend_status: getTrendStatus(stock),
+          trend_status: bandToTrend(posBand),
+          band: posBand,
           is_deteriorated: analysisState.usable && gomesScore !== null && gomesScore < 4,
           // "Overweight" against a target we could not compute is not a fact
           // about the position, it is a fact about our data.
@@ -2922,16 +3013,19 @@ export const InvestmentTerminal: React.FC = () => {
       unanalyzedCount,
       riskScore,
     };
-  }, [portfolios, stocks, exchangeRates]);
+  }, [portfolios, stocks, exchangeRates, bandByTicker]);
 
-  // Get tickers that are in portfolio (owned)
+  // Které firmy držíme — kanonicky, ne podle zápisu tickeru. Bez toho se
+  // KUYAF ukazovalo mezi sledovanými, přestože KUYA.V je v portfoliu.
   const ownedTickers = useMemo(() => {
-    return new Set(familyData.allPositions.map(p => p.ticker.toUpperCase()));
+    return canonicalSet(familyData.allPositions);
   }, [familyData.allPositions]);
 
-  // Watchlist: stocks with analysis but NOT owned
+  // Sledované: papíry s analýzou, které nedržíme.
   const watchlistStocks = useMemo(() => {
-    return stocks.filter(s => !ownedTickers.has(s.ticker.toUpperCase()) && s.conviction_score !== null);
+    return stocks.filter(
+      s => !ownedTickers.has(canonicalOf(s)) && s.conviction_score !== null
+    );
   }, [stocks, ownedTickers]);
 
   // Filter and sort positions
@@ -3006,8 +3100,9 @@ export const InvestmentTerminal: React.FC = () => {
     };
   }, [displayedPositions]);
 
-  /** Kolik sloupců se opravdu kreslí — pro colSpan prázdného řádku. */
-  const columnCount = 5
+  /** Kolik sloupců se opravdu kreslí — pro colSpan prázdného řádku.
+      Šest napevno: symbol, pokyn, váha, cena, P/L a sloupec s akcí. */
+  const columnCount = 6
     + (columns.score ? 1 : 0)
     + (columns.size ? 1 : 0)
     + (columns.catalyst ? 1 : 0)
@@ -3052,7 +3147,7 @@ export const InvestmentTerminal: React.FC = () => {
         await apiClient.runDeepDD(transcript, ticker);
       }
       // Refresh data
-      const stocksData = await apiClient.getStocks();
+      const stocksData = await apiClient.getEnrichedStocks();
       setStocks(stocksData.stocks);
     } catch (err) {
       console.error('Analysis failed:', err);
@@ -3090,6 +3185,7 @@ export const InvestmentTerminal: React.FC = () => {
       <SideRail
         active={activeTab}
         onSelect={setActiveTab}
+        onOpenIntake={() => setShowIntakeModal(true)}
         positionCount={familyData.allPositions.length}
         watchlistCount={watchlistStocks.length}
       />
@@ -3122,15 +3218,23 @@ export const InvestmentTerminal: React.FC = () => {
           <div
             className="flex flex-col"
             title={(() => {
-              const months = calculateMonthsToTarget(familyData.totalValue, 500000, 20000, 0.15);
+              const months = calculateMonthsToTarget(
+                familyData.totalValue, 500000, familyData.monthlyContribution, 0.15,
+              );
               if (months <= 0) return 'Cíl 500 tis. Kč je splněn.';
+              if (!Number.isFinite(months)) {
+                return familyData.monthlyContribution > 0
+                  ? 'Při tomhle vkladu se cíl 500 tis. Kč do dvaceti let nesplní.'
+                  : 'Žádný účet nemá zadaný měsíční vklad, takže se cíl neplní.';
+              }
               const years = Math.floor(months / 12);
               const rest = months % 12;
               const casti = [
                 years > 0 ? `${years} ${plural(years, 'rok', 'roky', 'let')}` : '',
                 rest > 0 ? `${rest} ${plural(rest, 'měsíc', 'měsíce', 'měsíců')}` : '',
               ].filter(Boolean).join(' a ');
-              return `Do cíle 500 tis. Kč zbývá ${casti} při 15 % ročně a vkladu 20 tis. Kč měsíčně.`;
+              return `Do cíle 500 tis. Kč zbývá ${casti} při 15 % ročně a vkladu `
+                + `${formatCurrency(familyData.monthlyContribution)} měsíčně.`;
             })()}
           >
             <div className="flex items-baseline gap-2">
@@ -3199,7 +3303,10 @@ export const InvestmentTerminal: React.FC = () => {
                       const rate = exchangeRates[editCashCurrency] || 1;
                       amountInCZK = amount * rate;
                     }
-                    if (portfolios.length > 0) {
+                    // Jen jedno portfolio. Při dvou by se sem uložil součet
+                    // hotovosti obou lidí do účtu toho prvního — pole se proto
+                    // v tom případě vůbec nedá otevřít (viz spouštěč níž).
+                    if (portfolios.length === 1) {
                       await apiClient.updateCashBalance(portfolios[0].portfolio.id, amountInCZK);
                       await refreshPortfolios();
                     }
@@ -3225,24 +3332,53 @@ export const InvestmentTerminal: React.FC = () => {
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => {
-                setEditCashValue(familyData.totalCash.toString());
-                setEditCashCurrency('CZK');
-                setIsEditingCash(true);
-              }}
-              className="group flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-left transition-colors hover:bg-surface-hover"
-              title="Upravit volnou hotovost"
-            >
-              <span className="eyebrow text-text-muted">hotovost</span>
-              <span className="font-mono text-[13px] tabular-nums text-text-primary">
-                {formatCurrency(familyData.totalCash)}
-              </span>
-              <span className="font-mono text-[11px] text-text-muted">
-                {percent(familyData.totalValue > 0 ? (familyData.totalCash / familyData.totalValue) * 100 : 0)}
-              </span>
-              <Edit3 className="h-3 w-3 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
-            </button>
+            /*
+             * Číslo je součet hotovosti přes všechna portfolia, ale zápis umí
+             * mířit jen do jednoho. Dokud je portfolio jediné, je to totéž a
+             * úprava rovnou v pruhu dává smysl. Jakmile jsou dvě, uložení by
+             * hodilo součet obou lidí na účet toho prvního — tichý přesun cizí
+             * hotovosti. Proto se tužka schová a upravuje se po účtech
+             * v záložce Portfolia, kde zápis a čtení míří na tentýž řádek.
+             */
+            (() => {
+              const jedine = portfolios.length === 1;
+              const rozpis = portfolios
+                .map((p) => `${p.portfolio.owner}: ${formatCurrency(p.cash_balance || 0)}`)
+                .join(' · ');
+              const obsah = (
+                <>
+                  <span className="eyebrow text-text-muted">hotovost</span>
+                  <span className="font-mono text-[13px] tabular-nums text-text-primary">
+                    {formatCurrency(familyData.totalCash)}
+                  </span>
+                  <span className="font-mono text-[11px] text-text-muted">
+                    {percent(familyData.totalValue > 0 ? (familyData.totalCash / familyData.totalValue) * 100 : 0)}
+                  </span>
+                </>
+              );
+
+              return jedine ? (
+                <button
+                  onClick={() => {
+                    setEditCashValue((portfolios[0].cash_balance || 0).toString());
+                    setEditCashCurrency('CZK');
+                    setIsEditingCash(true);
+                  }}
+                  className="group flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-left transition-colors hover:bg-surface-hover"
+                  title="Upravit volnou hotovost"
+                >
+                  {obsah}
+                  <Edit3 className="h-3 w-3 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              ) : (
+                <span
+                  className="flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1"
+                  title={`${rozpis} — hotovost se upravuje po účtech v záložce Portfolia.`}
+                >
+                  {obsah}
+                </span>
+              );
+            })()
           )}
 
           {/* Kolik pozic a kolik z nich aplikace neumí posoudit. */}
@@ -3350,6 +3486,16 @@ export const InvestmentTerminal: React.FC = () => {
             Verdikt je úzký sloupec, protože je to pár vět. Vedle něj
             je místo na celou tabulku.
         ============================================================== */}
+        {/* „Co s tím" — jedna karta na firmu, pokyn pro oba účty. Vlastní
+            záložka, protože je to jiná otázka než „co dnes udělat": denní
+            seznam ukazuje nejvýš tři věci, tohle ukazuje stanovisko ke všemu,
+            co držíte, a dá se to přečíst po třech týdnech bez otevření. */}
+        {activeTab === 'rozhodnuti' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <DecisionBoard />
+          </div>
+        )}
+
         {activeTab === 'portfolio' && (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
           <div className="grid min-h-0 flex-1 gap-3 min-[1480px]:grid-cols-[352px_minmax(0,1fr)]">
@@ -3551,6 +3697,7 @@ export const InvestmentTerminal: React.FC = () => {
                   </Th>
                 )}
                 <Th width="w-[108px]" align="right"><Term id="pl">P/L</Term></Th>
+                <Th width="w-[44px]" align="right"><span className="sr-only">Akce</span></Th>
               </tr>
             </thead>
             <tbody>
@@ -3560,6 +3707,7 @@ export const InvestmentTerminal: React.FC = () => {
                   position={pos}
                   columns={columns}
                   onClick={() => setSelectedPosition(pos)}
+                  onRemove={() => setRemovingPosition(pos)}
                 />
               ))}
               {displayedPositions.length === 0 && (
@@ -3675,33 +3823,32 @@ export const InvestmentTerminal: React.FC = () => {
           </div>
         )}
 
-        {/* Family Gaps Alert */}
-        {activeTab === 'portfolio' && familyGaps && familyGaps.gaps.length > 0 && (
-          <div className="mt-6 p-4 bg-info/10 border border-info/30 rounded-xl">
-            <h3 className="text-lg font-bold text-info flex items-center gap-2 mb-3">
-              <Users className="w-5 h-5" />
-              Cross-Account Discrepancies ({familyGaps.gaps.length})
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {familyGaps.gaps.slice(0, 6).map((gap, i) => (
-                <div key={i} className="p-3 bg-surface-raised/50 rounded-lg">
-                  <div className="font-bold text-text-primary">{gap.ticker}</div>
-                  <div className="text-sm text-text-secondary">
-                    <span className="text-info">{gap.holder}</span> holds, 
-                    <span className="text-warning"> {gap.missing_from}</span> does not
-                  </div>
-                  <div className="text-xs text-text-muted mt-1">
-                    Score: {gap.conviction_score}/10 • {gap.action}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Rozdíly portfolií se přestěhovaly mezi podklady (ContextPanel →
+            „Rozdíly portfolií"). Pod tabulkou to byl pruh, který po každém
+            otevření aplikace tvrdil, že se něco našlo — přitom dokud druhý
+            účet nemá pozice, je „rozdílem" celé portfolio toho prvního. */}
 
         {/* CÍL — složené úročení, kam to míří a co to znamená.
             Nahradilo dřívější Freedom a Platby: Freedom byla z poloviny
             gamifikace, Platby pětkrát prázdný stav se zelenou fajfkou. */}
+        {/* ==============================================================
+            NÁLEZY — vlastní nápady, posouzené podle metodiky
+            ============================================================== */}
+        {activeTab === 'nalezy' && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <FindsPage />
+          </div>
+        )}
+
+        {/* ==============================================================
+            MODELY — analytikovy modely tržeb vs. realita
+            ============================================================== */}
+        {activeTab === 'modely' && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+            <RevenueModelsPage />
+          </div>
+        )}
+
         {activeTab === 'cil' && (
           <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
             <GoalPage
@@ -3810,9 +3957,22 @@ export const InvestmentTerminal: React.FC = () => {
           onUpdate={async () => {
             // Refresh portfolio data after position update
             await refreshPortfolios();
-            // Also refresh stocks data for conviction scores
-            const stocksData = await apiClient.getStocks();
+            // Also refresh stocks data for conviction scores and price lines
+            const stocksData = await apiClient.getEnrichedStocks();
             setStocks(stocksData.stocks);
+          }}
+        />
+      )}
+
+      {/* „Už nedržím" — prodej se zapisuje, řádek z importu se maže.
+          Rozdíl mezi tím rozhoduje dialog, ne tohle místo. */}
+      {removingPosition && (
+        <RemovePositionDialog
+          position={removingPosition}
+          onCancel={() => setRemovingPosition(null)}
+          onDone={async () => {
+            setRemovingPosition(null);
+            await refreshPortfolios();
           }}
         />
       )}
@@ -3823,7 +3983,7 @@ export const InvestmentTerminal: React.FC = () => {
           stock={selectedWatchlistStock}
           onClose={() => setSelectedWatchlistStock(null)}
           onUpdate={async () => {
-            const stocksData = await apiClient.getStocks();
+            const stocksData = await apiClient.getEnrichedStocks();
             setStocks(stocksData.stocks);
           }}
         />
@@ -3848,6 +4008,17 @@ export const InvestmentTerminal: React.FC = () => {
           }}
         />
       )}
+
+      {/* Gomes Intake Modal (Gemini 3.7 Flash) */}
+      <GomesIntakeModal
+        isOpen={showIntakeModal}
+        onClose={() => setShowIntakeModal(false)}
+        onSuccess={async () => {
+          await refreshPortfolios();
+          const stocksData = await apiClient.getEnrichedStocks();
+          setStocks(stocksData.stocks);
+        }}
+      />
 
       {/* Add Position Modal */}
       {showAddPositionModal && (

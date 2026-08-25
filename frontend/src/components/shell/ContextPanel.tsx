@@ -17,12 +17,15 @@
  */
 
 import React, { useState } from 'react';
-import { ChevronDown, LineChart, Moon, Wallet } from 'lucide-react';
+import { ChevronDown, LineChart, Moon, Target, Users, Users2, Wallet } from 'lucide-react';
 import MarketGaugeCard from '../MarketGaugeCard';
 import CashHedgeCard from '../CashHedgeCard';
 import AwayModeCard from '../AwayModeCard';
+import ScoreCalibrationCard from '../ScoreCalibrationCard';
+import PortfolioDiffCard from '../PortfolioDiffCard';
+import BreakoutWatchlistCard from '../BreakoutWatchlistCard';
 
-type PanelId = 'trh' | 'hotovost' | 'nepritomnost';
+type PanelId = 'trh' | 'hotovost' | 'nepritomnost' | 'kalibrace' | 'rozdily' | 'breakout';
 
 interface Bullet {
   id: PanelId;
@@ -49,6 +52,24 @@ const BULLETS: Bullet[] = [
     label: 'Nepřítomnost',
     hint: 'co se posílá, když se aplikaci nevěnuješ',
     Icon: Moon,
+  },
+  {
+    id: 'kalibrace',
+    label: 'Kalibrace',
+    hint: 'jestli naše skóre skutečně vydělávala',
+    Icon: Target,
+  },
+  {
+    id: 'rozdily',
+    label: 'Rozdíly portfolií',
+    hint: 'co drží jeden a druhý ne',
+    Icon: Users,
+  },
+  {
+    id: 'breakout',
+    label: 'Breakout',
+    hint: 'kolik podpisů a jaký cíl dává našim jménům druhý zdroj',
+    Icon: Users2,
   },
 ];
 
@@ -151,6 +172,9 @@ export const ContextPanel: React.FC = () => {
           {active === 'trh' && <MarketGaugeCard />}
           {active === 'hotovost' && <CashHedgeCard />}
           {active === 'nepritomnost' && <AwayModeCard />}
+          {active === 'kalibrace' && <ScoreCalibrationCard />}
+          {active === 'rozdily' && <PortfolioDiffCard />}
+          {active === 'breakout' && <BreakoutWatchlistCard />}
         </div>
       )}
     </section>

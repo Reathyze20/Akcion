@@ -10,14 +10,19 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  contributedAt,
   contributionAtHorizon,
   DEFAULT_INFLATION,
   futureValue,
+  futureValueStaged,
   monthsToTarget,
   project,
   realValue,
+  retirementOutlook,
   RETURN_SPREAD_PP,
+  SAFE_WITHDRAWAL_RATE,
   summarise,
+  sustainableMonthlyIncome,
 } from './compound';
 
 describe('futureValue', () => {
@@ -235,5 +240,133 @@ describe('summarise', () => {
     // a aplikace to nesmí zamlčet.
     const summary = summarise(input, 30_000_000, 35);
     expect(summary.targetInTodaysMoney).toBeLessThan(30_000_000);
+  });
+});
+
+describe('futureValueStaged', () => {
+  const change = { afterYears: 5, monthlyContribution: 8_000 };
+
+  it('bez zlomu se chová jako futureValue', () => {
+    expect(futureValueStaged(260_000, 20_000, 0.15, 204)).toBe(
+      futureValue(260_000, 20_000, 0.15, 204),
+    );
+  });
+
+  it('před zlomem se chová jako futureValue', () => {
+    // Zlom v pátém roce nesmí ovlivnit nic, co je před ním.
+    expect(futureValueStaged(260_000, 20_000, 0.15, 48, change)).toBe(
+      futureValue(260_000, 20_000, 0.15, 48),
+    );
+  });
+
+  it('po zlomu je výsledek nižší, když vklad klesne', () => {
+    const bez = futureValueStaged(260_000, 20_000, 0.15, 204);
+    const se = futureValueStaged(260_000, 20_000, 0.15, 204, change);
+    expect(se).toBeLessThan(bez);
+  });
+
+  it('navazuje spojitě — dva úseky dají totéž co jeden při stejném vkladu', () => {
+    const jeden = futureValue(260_000, 20_000, 0.15, 204);
+    const dva = futureValueStaged(260_000, 20_000, 0.15, 204, {
+      afterYears: 5,
+      monthlyContribution: 20_000,
+    });
+    expect(dva).toBeCloseTo(jeden, 6);
+  });
+});
+
+describe('contributedAt', () => {
+  it('sčítá oba úseky, ne jen ten první', () => {
+    // 5 let po 20 000 a 12 let po 8 000, k tomu dnešní hodnota.
+    const change = { afterYears: 5, monthlyContribution: 8_000 };
+    expect(contributedAt(260_000, 20_000, 204, change)).toBe(
+      260_000 + 20_000 * 60 + 8_000 * 144,
+    );
+  });
+
+  it('bez zlomu je to prostý součet', () => {
+    expect(contributedAt(260_000, 20_000, 204)).toBe(260_000 + 20_000 * 204);
+  });
+});
+
+describe('sustainableMonthlyIncome', () => {
+  it('dělí roční výběr na měsíce', () => {
+    expect(sustainableMonthlyIncome(12_000_000, 0.04)).toBeCloseTo(40_000, 6);
+  });
+
+  it('výchozí sazba je nižší než slavná čtyři procenta', () => {
+    // Odchod v padesáti = čtyřicet let výběru, ne třicet.
+    expect(SAFE_WITHDRAWAL_RATE).toBeLessThan(0.04);
+  });
+
+  it('ze záporného nebo nulového jmění nerentuje', () => {
+    expect(sustainableMonthlyIncome(0)).toBe(0);
+    expect(sustainableMonthlyIncome(-1)).toBe(0);
+  });
+});
+
+describe('retirementOutlook', () => {
+  const vstup = { presentValue: 260_000, monthlyContribution: 20_000, annualReturn: 0.15 };
+
+  it('vrací null, když je odchod dnes nebo v minulosti', () => {
+    // Nula by byla odpověď. Tohle není odpověď.
+    expect(retirementOutlook(vstup, 50, 50)).toBeNull();
+    expect(retirementOutlook(vstup, 55, 50)).toBeNull();
+  });
+
+  it('reálná hodnota je nižší než nominální', () => {
+    const v = retirementOutlook(vstup, 33, 50)!;
+    expect(v.years).toBe(17);
+    expect(v.real).toBeLessThan(v.nominal);
+    expect(v.real).toBeCloseTo(realValue(v.nominal, 17, DEFAULT_INFLATION), 6);
+  });
+
+  it('renta se počítá z dnešní kupní síly, ne z nominálu', () => {
+    // Míchat nominální jmění s dnešními výdaji je nejběžnější
+    // způsob, jak si o důchodu lhát.
+    const v = retirementOutlook(vstup, 33, 50)!;
+    expect(v.monthlyIncome).toBeCloseTo(sustainableMonthlyIncome(v.real), 6);
+    expect(v.monthlyIncome).toBeLessThan(sustainableMonthlyIncome(v.nominal));
+  });
+
+  it('hypotéka sníží rentu', () => {
+    const bez = retirementOutlook(vstup, 33, 50)!;
+    const se = retirementOutlook(
+      { ...vstup, contributionChange: { afterYears: 3, monthlyContribution: 8_000 } },
+      33,
+      50,
+    )!;
+    expect(se.monthlyIncome).toBeLessThan(bez.monthlyIncome);
+    expect(se.contributed).toBeLessThan(bez.contributed);
+  });
+});
+
+describe('skutečný scénář domácnosti', () => {
+  /*
+   * Regresní pojistka na číslo, které stojí v hlavičce záložky Cíl.
+   *
+   * Rozsah, ne přesná hodnota: přesnou by rozbila každá záměrná změna
+   * inflace nebo sazby výběru, a test by pak hlídal zaokrouhlení místo
+   * smyslu. Rozsah zachytí to, na čem záleží — že se řádově nepohnulo
+   * něco, co lidem říká, kolik budou mít v důchodu.
+   */
+  const vstup = {
+    presentValue: 260_000,      // dnešní portfolio
+    monthlyContribution: 20_000,
+    annualReturn: 0.15,
+  };
+
+  it('při 15 % vyjde renta v desítkách tisíc, ne ve stovkách', () => {
+    const v = retirementOutlook(vstup, 33, 50)!;
+    expect(v.nominal).toBeGreaterThan(20_000_000);
+    expect(v.nominal).toBeLessThan(23_000_000);
+    expect(v.monthlyIncome).toBeGreaterThan(38_000);
+    expect(v.monthlyIncome).toBeLessThan(46_000);
+  });
+
+  it('při 10 % je renta zhruba poloviční — proto ta druhá karta', () => {
+    const strizlivy = retirementOutlook({ ...vstup, annualReturn: 0.10 }, 33, 50)!;
+    const cilovy = retirementOutlook(vstup, 33, 50)!;
+    expect(strizlivy.monthlyIncome).toBeLessThan(cilovy.monthlyIncome * 0.6);
   });
 });

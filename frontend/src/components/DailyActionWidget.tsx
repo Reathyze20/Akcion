@@ -80,7 +80,15 @@ const ACTION_STYLE: Record<string, { border: string; badge: string; label: strin
   SELL: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Prodat — snížit riziko' },
   SELL_WAIT_TIME: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Prodat — kapitál nepracuje' },
   LIQUIDATE_HEAVY: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Zlikvidovat pozici' },
+  /*
+   * Rozpor není pokyn. Nese varovný tón a níž se u něj nevykresluje
+   * tlačítko — provést se nedá něco, co aplikace sama nerozhodla.
+   */
+  ROZPOR: { border: 'border-warning-border', badge: 'bg-warning-bg text-warning', label: 'Rozpor — rozhodni ty' },
 };
+
+/** Pokyny, které se dají provést. Cokoli jinde je otázka, ne příkaz. */
+const EXECUTABLE = (actionType: string): boolean => actionType !== 'ROZPOR';
 
 const SOURCE_LABEL: Record<string, string> = {
   GOMES: 'Gomes',
@@ -118,6 +126,9 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
   useEffect(() => {
     fetchActions();
   }, [fetchActions, refreshKey]);
+
+  const toDo = (data?.actions ?? []).filter((a) => EXECUTABLE(a.action_type)).length;
+  const questions = (data?.actions ?? []).length - toDo;
 
   const handleExecute = (action: DailyAction) => {
     const handled = onExecuteAction?.(action) ?? false;
@@ -205,9 +216,19 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
       ) : (
         /* State B: 1-3 ranked actions */
         <div className="px-5 py-4">
+          {/*
+            * Nadpis počítá jen to, co se dá provést. Rozpory jsou otázky a
+            * počítat je mezi úkoly by znamenalo tvrdit, že aplikace ví, co
+            * dělat — přesně to, co u nich netvrdí.
+            */}
           <h2 className="text-lg font-black text-text-primary mb-3 flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-accent" />
-            CO MÁM DNES UDĚLAT ({data.actions.length})
+            {toDo > 0 ? `CO MÁM DNES UDĚLAT (${toDo})` : 'DNES NIC K PROVEDENÍ'}
+            {questions > 0 && (
+              <span className="text-[11px] font-bold uppercase tracking-wider text-warning">
+                · {questions} {plural(questions, 'rozpor', 'rozpory', 'rozporů')} k rozhodnutí
+              </span>
+            )}
           </h2>
           <div className="space-y-3">
             {data.actions.map((action, index) => {
@@ -228,7 +249,7 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
                         <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-surface-hover text-text-secondary">
                           {SOURCE_LABEL[action.source_key] ?? action.source_key}
                         </span>
-                        {action.review_required && (
+                        {action.review_required && action.action_type !== 'ROZPOR' && (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-warning/20 text-warning">
                             ⚠️ ZKONTROLUJ — zdroje v konfliktu
                           </span>
@@ -241,13 +262,20 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
                       </div>
                       <p className="text-xs text-text-secondary mt-1">{action.reason}</p>
                     </div>
-                    <button
-                      onClick={() => handleExecute(action)}
-                      className="shrink-0 px-4 py-2 bg-accent hover:bg-accent/80 text-text-primary rounded-lg text-sm font-bold flex items-center gap-1.5 transition-colors"
-                    >
-                      Provést
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+                    {EXECUTABLE(action.action_type) ? (
+                      <button
+                        onClick={() => handleExecute(action)}
+                        className="shrink-0 px-4 py-2 bg-accent hover:bg-accent/80 text-text-primary rounded-lg text-sm font-bold flex items-center gap-1.5 transition-colors"
+                      >
+                        Provést
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <span className="shrink-0 max-w-[9rem] text-[11px] leading-snug text-warning">
+                        Nic k provedení — rozhodni se sám a pak to zaznamenej
+                        v detailu pozice.
+                      </span>
+                    )}
                   </div>
                 </div>
               );

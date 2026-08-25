@@ -36,16 +36,15 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
     fetchAudit();
   }, []);
 
-  const getActionColor = (action: string) => {
-    switch (action) {
-      case 'KOUPIT': return 'text-positive bg-positive/20';
-      case 'PRODAT': return 'text-negative bg-negative/20';
-      case 'PŘIDAT': return 'text-positive bg-positive/20';
-      default: return 'text-text-secondary bg-surface-active/20';
-    }
-  };
+  // Backend posílá `priority` (HIGH/MEDIUM), ne pokyn ke koupi. Widget dřív
+  // četl `action`, což je pole, které API nikdy neposlalo.
+  const getPriorityColor = (priority: string) =>
+    priority === 'HIGH'
+      ? 'text-warning bg-warning/20'
+      : 'text-text-secondary bg-surface-active/20';
 
-  const getScoreColor = (score: number) => {
+  const getScoreColor = (score: number | null) => {
+    if (score === null) return 'text-text-muted';
     if (score >= 8) return 'text-positive';
     if (score >= 5) return 'text-warning';
     return 'text-negative';
@@ -98,10 +97,10 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
       {audit && !loading && (
         <>
           <div className="flex items-center justify-center gap-2 mb-4 text-sm text-text-secondary">
-            {audit.portfolios_compared.map((name, i) => (
+            {(audit.owners_analyzed ?? []).map((name: string, i: number) => (
               <React.Fragment key={name}>
                 <span className="px-3 py-1 bg-surface-hover rounded-lg text-text-primary">{name}</span>
-                {i < audit.portfolios_compared.length - 1 && (
+                {i < (audit.owners_analyzed ?? []).length - 1 && (
                   <ArrowRight className="w-4 h-4" />
                 )}
               </React.Fragment>
@@ -125,27 +124,29 @@ export const FamilyAuditWidget: React.FC<FamilyAuditWidgetProps> = ({ onClose })
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-lg
                                      ${getScoreColor(gap.conviction_score)} bg-surface-raised`}>
-                      {gap.conviction_score}
+                      {gap.conviction_score ?? '—'}
                     </div>
                     <div>
                       <div className="font-bold text-text-primary">{gap.ticker}</div>
                       <div className="text-xs text-text-secondary">
-                        <span className="text-accent">{gap.holder}</span> má, 
-                        <span className="text-warning"> {gap.missing_from}</span> nemá
+                        <span className="text-accent">{gap.owner_with_position}</span> má,
+                        <span className="text-warning"> {gap.missing_owner}</span> nemá
                       </div>
                     </div>
                   </div>
                   
-                  <span className={`px-3 py-1 rounded-lg text-sm font-semibold ${getActionColor(gap.action)}`}>
-                    {gap.action}
+                  <span className={`px-3 py-1 rounded-lg text-sm font-semibold ${getPriorityColor(gap.priority)}`}>
+                    {gap.priority === 'HIGH' ? 'přednostně' : 'k zvážení'}
                   </span>
                 </div>
               ))}
 
               {/* Summary */}
-              <div className="mt-4 p-3 bg-accent/10 rounded-lg border border-accent/30 text-sm text-text-secondary">
-                {audit.summary}
-              </div>
+              {audit.message && (
+                <div className="mt-4 p-3 bg-accent/10 rounded-lg border border-accent/30 text-sm text-text-secondary">
+                  {audit.message}
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-8">
