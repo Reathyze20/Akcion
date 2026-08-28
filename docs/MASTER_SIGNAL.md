@@ -1,3 +1,9 @@
+> ⚠️ **Stav: historické, neaktuální.** Master Signal (`app/trading/master_signal.py`)
+> byl 24. 8. 2026 odpojen z appky — soupeřící engine, jehož "Weinstein fáze" četla
+> zelenou čáru jako klouzavý průměr. Weinstein je dnes 0% váhy, jen informační
+> odznak. Viz [`DOMAIN_MODEL.md`](DOMAIN_MODEL.md) a
+> [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) bod 26.
+
 # Master Signal v2.0 - 3-Pillar System
 
 ## 🎯 Přehled

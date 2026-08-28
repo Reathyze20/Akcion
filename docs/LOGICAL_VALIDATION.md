@@ -1,3 +1,8 @@
+> ⚠️ **Status: historical, stale.** Anchored on `gomes_score` and
+> `StockDetailModalGomes.tsx`, neither of which exists in the current codebase.
+> Current buy-gate logic: [`DOMAIN_MODEL.md`](DOMAIN_MODEL.md) — the Buy Guard
+> section.
+
 # Logical Validation System
 
 **Automatic Detection of Investment Logic Errors**

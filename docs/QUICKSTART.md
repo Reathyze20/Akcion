@@ -1,3 +1,7 @@
+> ⚠️ **Stav: historické, neaktuální.** Špatný port (8000 místo 8002), špatný název
+> API klíče, špatné entry pointy. Aktuální provoz: [`OPERATIONS.md`](OPERATIONS.md),
+> spuštění appky: `docs/SETUP_GUIDE.md` nebo `../CLAUDE.md`.
+
 # Quick Start Guide
 
 # ==================

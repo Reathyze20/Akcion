@@ -1,3 +1,7 @@
+> ⚠️ **Stav: historické, neaktuální.** Předchází nullable `avg_cost`, varování o
+> shodě měny a opravám poctivosti kurzů. Aktuální:
+> [`DATA_MODEL.md`](DATA_MODEL.md) sekce „avg_cost nullable".
+
 # 💰 Automatický výpočet P/L s Yahoo Finance
 
 ## ✅ Co bylo integrováno

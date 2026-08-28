@@ -1,3 +1,8 @@
+> ⚠️ **Stav: historické k lednu/únoru 2026, neaktuální.** Popisuje React 18, Gemini
+> 2.0 Flash, ML/backtesting engine a Docker/systemd nasazení — nic z toho v repu
+> dnes není. Aktuální: [`README.md`](README.md) (rejstřík), začni u
+> [`ARCHITECTURE.md`](ARCHITECTURE.md) a [`DOMAIN_MODEL.md`](DOMAIN_MODEL.md).
+
 # 📚 AKCION - Complete System Documentation
 
 ## Trading Intelligence Module for Critical Investment Decisions

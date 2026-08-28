@@ -1,3 +1,6 @@
+> ⚠️ **Stav: neaktuální.** Port a cesty neplatí. Aktuální: `../docs/API_REFERENCE.md`
+> (entrypointy a porty) a `../docs/OPERATIONS.md`.
+
 # Akcion Backend - FastAPI Server
 
 ## Overview

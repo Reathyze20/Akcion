@@ -1,3 +1,8 @@
+> ⚠️ **Stav: historické, neaktuální.** Dokumentuje neexistující proměnné
+> `SMTP_FROM_EMAIL`/`SMTP_TO_EMAIL` (zjištěno, že appce trvale rozbíjejí
+> `NotificationService.from_env()`), port 8000 a systemd jednotku, která se nikdy
+> nepoužívala. Aktuální: [`OPERATIONS.md`](OPERATIONS.md) sekce Notifications.
+
 # Notification System - Documentation
 
 # =====================================

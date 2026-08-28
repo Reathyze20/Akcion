@@ -1,3 +1,6 @@
+> ⚠️ **Status: stale.** Claims React 18 and still has Vite template boilerplate.
+> Current: `../docs/FRONTEND.md`.
+
 # Akcion Frontend - React + TypeScript + Tailwind
 
 Modern React frontend for the Akcion Investment Analysis Platform, featuring a premium dark fintech UI inspired by Bloomberg Terminal.

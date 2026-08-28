@@ -1,4 +1,9 @@
- Universal Intelligence Unit
+> ⚠️ **Status: historical, stale.** The specific reliability percentages (Filing
+> 100% / Analyst 60% / Chat 30%) are from the Gemini era. The underlying idea —
+> tiering source reliability — survives as `source_key` and the dual-source cap
+> matrix. See [`DOMAIN_MODEL.md`](DOMAIN_MODEL.md) — "Two sources".
+
+# Universal Intelligence Unit
 
 **Multi-Source Context-Aware Analysis System**
 

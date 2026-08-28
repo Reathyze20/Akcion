@@ -1,3 +1,7 @@
+> ⚠️ **Stav: historické k únoru 2026, neaktuální.** Popisuje 5fázový lifecycle
+> (kánon má 3) a 15% strop podle conviction skóre (aktuální je 10% strop Primary
+> tieru). Aktuální metodika: [`DOMAIN_MODEL.md`](DOMAIN_MODEL.md).
+
 # 🎯 AKCION - Product Overview
 
 **Verze:** 2.0.0 | **Datum:** Únor 2026
