@@ -11,13 +11,15 @@ Date: 2026-01-17
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
+from app.models.analyze_ticker import AnalyzeTickerState
+from app.services.analyze_ticker_throttle import MIN_ANALYZE_INTERVAL, should_analyze
 from app.schemas.gomes import (
     AnalyzeTickerRequest,
     AnalyzeTickerResponse,
@@ -28,7 +30,6 @@ from app.schemas.gomes import (
     GomesStockItem,
     GomesStocksListResponse,
     GomesVerdictResponse,
-    ImageLinesImportResponse,
     LifecyclePhaseResponse,
     MarketAlertResponse,
     PositionSizeResponse,
@@ -39,6 +40,7 @@ from app.schemas.gomes import (
     WatchlistScanResponse,
 )
 from app.services.gomes_intelligence import GomesIntelligenceService
+from app.services.score_journal import SOURCE_TICKER_ANALYSIS, record_score
 from app.models.stock import Stock
 from app.trading.gomes_logic import (
     MarketAlert,
@@ -354,27 +356,6 @@ def set_price_lines(
             is_overvalued=lines.is_overvalued,
             price_zone=price_zone,
             source=lines.source
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/price-lines/import-images", response_model=ImageLinesImportResponse)
-def import_price_lines_from_images(db: Session = Depends(get_db)):
-    """
-    Import price lines from screenshot images.
-    
-    Loads pre-extracted lines from img/ folder screenshots.
-    """
-    try:
-        service = GomesIntelligenceService(db)
-        results = service.load_price_lines_from_images()
-        
-        return ImageLinesImportResponse(
-            imported_count=len(results),
-            tickers=[r.ticker for r in results],
-            message=f"Successfully imported {len(results)} price lines from images"
         )
         
     except Exception as e:
@@ -733,7 +714,14 @@ def get_dashboard(db: Session = Depends(get_db)):
 async def analyze_ticker_from_transcript(
     request: AnalyzeTickerRequest,
     db: Session = Depends(get_db),
-    use_universal_prompt: bool = Query(True, description="Use Universal Intelligence Unit (multi-source support)")
+    use_universal_prompt: bool = Query(True, description="Use Universal Intelligence Unit (multi-source support)"),
+    force: bool = Query(
+        False,
+        description=(
+            "Analyze even if the cooldown has not elapsed. For a real new "
+            "video/filing — never for a loop."
+        ),
+    ),
 ):
     """
     Analyze specific ticker from transcript/video with intelligent source detection.
@@ -754,7 +742,31 @@ async def analyze_ticker_from_transcript(
     try:
         logger.info(f"=== ANALYZE TICKER START: {request.ticker} ===")
         logger.info(f"Source: {request.source_type}, Universal: {use_universal_prompt}")
-        
+
+        ticker_upper = request.ticker.upper()
+        throttle = (
+            db.query(AnalyzeTickerState)
+            .filter(AnalyzeTickerState.ticker == ticker_upper)
+            .first()
+        )
+        if not force and not should_analyze(throttle.last_attempt_at if throttle else None):
+            next_allowed = throttle.last_attempt_at + MIN_ANALYZE_INTERVAL
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"{ticker_upper} byl analyzován nedávno — další pokus je "
+                    f"možný až {next_allowed.isoformat()} (nebo force=true)."
+                ),
+            )
+        if throttle is None:
+            throttle = AnalyzeTickerState(ticker=ticker_upper)
+            db.add(throttle)
+        throttle.last_attempt_at = datetime.now(timezone.utc)
+        # Committed now, separately from the rest of this request: a failed
+        # LLM call below must still count as an attempt, or a source that is
+        # erroring gets retried just as fast as one that is healthy.
+        db.commit()
+
         if use_universal_prompt:
             from app.core.prompts_universal_intelligence import (
                 UNIVERSAL_INTELLIGENCE_PROMPT,
@@ -943,10 +955,26 @@ async def analyze_ticker_from_transcript(
         
         stock.max_allocation_cap = data.get("max_allocation_cap", 10.0)
         stock.last_updated = datetime.utcnow()
-        
+
+        # Journal this scoring event before the flush, so the before_flush
+        # safety net sees it and does not add a duplicate `unattributed` row.
+        # No price is attached: a quote cannot be fetched here without
+        # YahooFinanceCache committing this half-written transaction, and the
+        # evaluator resolves a better baseline anyway — the actual close on
+        # the day the score was issued.
+        record_score(
+            db,
+            ticker=stock.ticker,
+            score=conviction_score,
+            source=SOURCE_TICKER_ANALYSIS,
+            stock=stock,
+            action_signal=recommendation,
+        )
+
+        throttle.last_success_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(stock)
-        
+
         # 8. Calculate warning level (mode-dependent)
         if use_universal_prompt:
             from app.core.prompts_universal_intelligence import get_sentiment_alert_level

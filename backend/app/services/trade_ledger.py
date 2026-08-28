@@ -35,12 +35,14 @@ Honesty rules encoded here (see docs/EFFICIENT_INVESTING_PLAYBOOK.md)
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum
 
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.models.portfolio import InvestmentLog, InvestmentLogType, Position
+from app.trading.gomes_logic import RiskRewardCalculator
 
 
 class TradeSide(str, Enum):
@@ -161,12 +163,30 @@ def record_trade(
     price: float,
     emotion_tag: str | None = None,
     note: str | None = None,
+    trade_date: date | None = None,
+    green_line: float | None = None,
+    red_line: float | None = None,
+    cylinders: int | None = None,
+    line_currency: str | None = None,
 ) -> tuple[Position, InvestmentLog, TradeOutcome]:
     """
     Append a ledger row and move the position, in one transaction.
 
     Either both land or neither does — a ledger that can drift from the
     positions it describes is not evidence of anything.
+
+    Args:
+        trade_date: the day it happened at the broker. Omit only when it is
+            genuinely unknown — recording an old sale without it makes the
+            behaviour brakes read it as today's.
+        green_line, red_line, cylinders, line_currency: the valuation this
+            trade was made at. From these the R/R score at entry is computed
+            and stored, which is what makes the canon's 3-point rule (§5)
+            possible at all: that rule fires on a 3-point move FROM ENTRY, and
+            price alone cannot express it because the analyst moves the lines
+            underneath the price. Omit them and the columns stay NULL — the
+            rule then stays silent for this position rather than dating the
+            move from a starting point that never existed.
 
     Raises:
         LookupError: no such position.
@@ -184,6 +204,11 @@ def record_trade(
         price=price,
     )
 
+    # The valuation this trade was made at. `calculate_rr_score` returns None
+    # on missing or degenerate lines, so an unknown band produces an unknown
+    # entry score rather than a fabricated one.
+    entry_score = RiskRewardCalculator.calculate_rr_score(price, green_line, red_line)
+
     log = InvestmentLog(
         portfolio_id=position.portfolio_id,
         log_type=InvestmentLogType.BUY if side is TradeSide.BUY else InvestmentLogType.SELL,
@@ -194,8 +219,18 @@ def record_trade(
         cost_basis=outcome.cost_basis,
         realized_pl=outcome.realized_pl,
         currency=position.currency,
+        rr_score_at_entry=entry_score,
+        green_line_at_entry=green_line,
+        red_line_at_entry=red_line,
+        cylinders_at_entry=cylinders,
+        line_currency=line_currency,
         emotion_tag=emotion_tag,
         note=note,
+        # Left NULL when the caller does not say. NULL means "unknown" and
+        # readers fall back to created_at; stamping today would turn every
+        # late-recorded sale into a trade that happened today, which is how
+        # three bookkeeping entries set off the over-trading brake.
+        trade_date=trade_date,
     )
 
     try:

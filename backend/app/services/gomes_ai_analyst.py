@@ -12,6 +12,27 @@ This service:
 
 The AI follows strict prompts to maintain consistency with Gomes philosophy.
 
+NOT IMPLEMENTED (stated here because it did not used to be)
+-----------------------------------------------------------
+`analyze_document` has never called a model. Until 2026-08-23 it silently
+returned `_generate_mock_analysis` — invented numbers: $25.5 M of cash,
+a $2.1 M quarterly burn, twelve months of runway, a catalyst dated
+30. 6. 2026, and a Conviction Score of 5 or 7 depending on whether the word
+"revenue" appeared in the text. `POST /api/gomes/update-stock-ai/{ticker}`
+wrote all of that into the real `stocks` row, answered `"success": true`, and
+journalled the invented score into `conviction_score_history`, where the
+calibration card would eventually grade the app against predictions nobody
+had made.
+
+KUYA.V carries those numbers today. It is also how the app broke: the invented
+catalyst date was the first real DATE in the table, and it hit an annotation in
+`StockResponse` that had been wrong since the column was added.
+
+So the service now REFUSES. An analyst with no model behind it returns an
+error, not a plausible number — see `AnalystNotImplemented`. Real analysis
+reaches the app through the paths that actually work: pasting a transcript
+(`claim_extraction`) or the deep DD service.
+
 Author: GitHub Copilot with Claude Sonnet 4.5
 Date: 2026-01-25
 """
@@ -164,6 +185,15 @@ OUTPUT: JSON only, no markdown, no explanations outside JSON.
 # AI INTEGRATION SERVICE
 # ============================================================================
 
+class AnalystNotImplemented(NotImplementedError):
+    """
+    No model is wired up, so there is no analysis.
+
+    Raised instead of returning something that looks like one. The caller must
+    surface this; it must never be turned into a stored number.
+    """
+
+
 class GomesAIAnalyst:
     """
     Service for AI-powered stock analysis.
@@ -214,20 +244,31 @@ class GomesAIAnalyst:
             document_text=document_text[:8000]  # Truncate to avoid token limits
         )
         
-        # TODO: Actual LLM call when implementing
-        # For now, return mock data
-        logger.info(f"AI Analysis requested for {ticker} ({source_type})")
-        
-        # Mock response (replace with actual OpenAI call)
-        mock_output = self._generate_mock_analysis(ticker, document_text)
-        
-        return mock_output
+        # TODO: Actual LLM call when implementing.
+        #
+        # Until then this raises. It used to return `_generate_mock_analysis`,
+        # and the caller wrote that straight into the portfolio — see the
+        # module docstring. A stub that answers plausibly is worse than one
+        # that answers not at all, because only the second one can be noticed.
+        logger.warning(
+            "AI Analysis requested for %s (%s) — no model is wired up, refusing",
+            ticker,
+            source_type,
+        )
+        raise AnalystNotImplemented(
+            "Gomes AI Analyst nemá napojený model, takže žádnou analýzu "
+            "nevrací. Vlož přepis ručně (importér přepisů) nebo použij "
+            "hloubkovou DD."
+        )
     
     def _generate_mock_analysis(self, ticker: str, text: str) -> GomesAnalystOutput:
         """
-        Generate mock analysis for testing.
-        
-        TODO: Replace with actual LLM integration.
+        The invented analysis this service used to return. Unreachable now.
+
+        Kept only so the fingerprints stay readable: any `stocks` row holding
+        $25.5 M of cash, a −$2.1 M burn, twelve months of runway or a catalyst
+        dated 30. 6. 2026 got them from here, not from a report. Nothing calls
+        this method; `analyze_document` raises instead.
         """
         
         # Simple heuristics for demo

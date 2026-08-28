@@ -35,6 +35,22 @@ from ..config.settings import Settings
 #: The model. One definition, app-wide — see the module docstring.
 MODEL: Final[str] = "claude-opus-5"
 
+#: The cheap model, for work that is CONSTRAINED and VERIFIED afterwards.
+#:
+#: Not a downgrade to save money on judgment. It exists for one shape of task:
+#: the input is a structured dossier the app assembled itself, the output is
+#: schema-bound, and every claim is mechanically checked before anyone sees it
+#: (`find_explainer.verify_points` — citations must resolve, numbers must occur
+#: in the cited facts). Where a wrong answer gets caught by arithmetic rather
+#: than by the reader, paying for the strongest model buys little.
+#:
+#: Never use this where the model's judgement IS the product — SEC red flags,
+#: claim extraction from a transcript, deep due diligence.
+MODEL_CHEAP: Final[str] = "claude-haiku-4-5-20251001"
+
+#: The middle rung, when the cheap one demonstrably loses something.
+MODEL_MID: Final[str] = "claude-sonnet-5"
+
 #: Generous by default. The ceiling is not a budget: the model stops when it has
 #: said what it has to say, so a high limit costs nothing on short answers and
 #: prevents a long analysis being truncated mid-sentence. A truncated JSON
@@ -56,6 +72,8 @@ class LLMError(Exception):
 def complete(
     prompt: str,
     *,
+    model: str | None = None,
+    thinking: bool = True,
     system: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     api_key: str | None = None,
@@ -106,11 +124,19 @@ def complete(
             "format": {"type": "json_schema", "schema": schema}
         }
 
+    # Thinking tokens are billed as output, and on a task whose answer is
+    # already constrained by a schema and checked afterwards they are mostly
+    # paid deliberation about wording. Callers that need the deliberation keep
+    # the default; callers that do not can say so.
+    if thinking:
+        kwargs["thinking"] = {"type": "adaptive"}
+
+    chosen = model or MODEL
+
     try:
         with client.messages.stream(
-            model=MODEL,
+            model=chosen,
             max_tokens=max_tokens,
-            thinking={"type": "adaptive"},
             messages=[{"role": "user", "content": prompt}],
             **kwargs,
         ) as stream:
@@ -148,7 +174,7 @@ def complete(
 
     logger.info(
         "LLM {}: {} in / {} out tokenů",
-        MODEL,
+        chosen,
         getattr(usage, "input_tokens", "?") if usage else "?",
         out_tokens,
     )
@@ -215,6 +241,8 @@ def _strip_code_fence(text: str) -> str:
 def complete_json(
     prompt: str,
     *,
+    model: str | None = None,
+    thinking: bool = True,
     system: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     api_key: str | None = None,
@@ -230,8 +258,8 @@ def complete_json(
             much more expensive statement than "the answer was unreadable".
     """
     raw = complete(
-        prompt, system=system, max_tokens=max_tokens,
-        api_key=api_key, schema=schema,
+        prompt, model=model, thinking=thinking, system=system,
+        max_tokens=max_tokens, api_key=api_key, schema=schema,
     )
     payload = _strip_code_fence(raw)
 

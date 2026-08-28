@@ -137,25 +137,11 @@ async def place_order(
     }
 
 
-@router.get("/signals", response_model=List[TradingSignalResponse])
-async def get_trading_signals(
-    limit: int = 20,
-    db: Session = Depends(get_db)
-):
-    """
-    Get active trading signals with Kelly position sizing
-    
-    Returns list of actionable BUY signals sorted by Kelly size (best opportunities first)
-    """
-    try:
-        signal_gen = SignalGenerator(db)
-        signals = signal_gen.get_active_signals(limit=limit)
-        
-        return signals
-        
-    except Exception as e:
-        logger.error(f"Error fetching trading signals: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# `GET /api/trading/signals` stood here: BUY signals with Kelly sizing, produced
+# by `trading/signals.SignalGenerator` from ML predictions that were dropped
+# from the method (docs/MASTER_SIGNAL.md). It was a sixth answer to the question
+# `/api/trading/daily-actions` answers with the cylinders, the semafor, the
+# per-account caps and the pacing rules attached — and no screen ever called it.
 
 
 @router.post("/sync/watchlist", response_model=WatchlistSyncResponse)

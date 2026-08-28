@@ -11,12 +11,16 @@ Clean Code Principles Applied:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+
+from app.core.tickers import canonical_ticker as to_canonical
+from app.services.currency import currency_mismatch
 
 from ..models.portfolio import BrokerType, MarketStatusEnum
+from app.schemas.responses import EarningsInfo
 
 
 # ==============================================================================
@@ -30,7 +34,7 @@ class PortfolioBase(BaseModel):
     owner: str = Field(..., description="Portfolio owner (e.g., 'Já', 'Přítelkyně')")
     broker: BrokerType = Field(..., description="Broker type")
     cash_balance: float = Field(default=0.0, description="Available cash for investments")
-    monthly_contribution: float = Field(default=20000.0, description="Monthly contribution amount in CZK")
+    monthly_contribution: float = Field(default=0.0, description="Monthly contribution in CZK; zero until set")
 
 
 class PortfolioCreate(PortfolioBase):
@@ -67,6 +71,33 @@ class PositionBase(BaseModel):
     )
     currency: str = Field(default="USD", description="Currency code (USD, EUR, HKD, etc.)")
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def canonical_ticker(self) -> str:
+        """
+        The symbol to match analysis on. See `app/core/tickers.py`.
+
+        Sent alongside `ticker`, never instead of it: four positions are held
+        on a Canadian exchange while every analysis names the US OTC listing,
+        and the app used to treat those as two companies. The broker's symbol
+        stays the one on screen.
+        """
+        return to_canonical(self.ticker)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def currency_conflict(self) -> str | None:
+        """
+        Měna, kterou napovídá přípona tickeru, když nesedí s uloženou.
+
+        `None` znamená buď že sedí, nebo že se to říct nedá — a ty dva stavy
+        se schválně nerozlišují, protože „nevíme" se nesmí hlásit jako
+        „v pořádku". Počítá to backend, aby tabulka burz a měn nežila na dvou
+        místech a nerozešla se.
+        """
+        conflict = currency_mismatch(self.ticker, self.currency)
+        return None if conflict is None else conflict[0]
+
 
 class PositionCreate(PositionBase):
     """Schema for creating a new position."""
@@ -82,6 +113,14 @@ class PositionUpdate(BaseModel):
     currency: str | None = None
     company_name: str | None = None
     ticker: str | None = None
+    currency_confirmed: bool | None = Field(
+        default=None,
+        description=(
+            "Majitel potvrdil, že měna sedí s tím, co má u brokera. "
+            "Umlčí kontrolu podle přípony tickeru, která u IMP.V a KUYA.V "
+            "hlásí konflikt, přestože EUR je správně."
+        ),
+    )
 
 
 class TradeRequest(BaseModel):
@@ -103,6 +142,14 @@ class TradeRequest(BaseModel):
         description="Why, in the owner's words — 'bál jsem se, ale koupil jsem dip'",
     )
     note: str | None = Field(default=None, max_length=500)
+    trade_date: date | None = Field(
+        default=None,
+        description=(
+            "Den, kdy obchod proběhl u brokera. Vynech jen když ho opravdu "
+            "neznáš — bez něj se zpětný zápis starého prodeje počítá jako "
+            "dnešní obchod a spustí brzdu proti přeobchodování."
+        ),
+    )
 
 
 class TradeResponse(BaseModel):
@@ -131,6 +178,7 @@ class PositionResponse(PositionBase):
     
     id: int
     portfolio_id: int
+    currency_confirmed: bool = False
     current_price: float | None = None
     last_price_update: datetime | None = None
     cost_basis: float | None = None
@@ -139,6 +187,14 @@ class PositionResponse(PositionBase):
     unrealized_pl_percent: float | None = None
     created_at: datetime
     updated_at: datetime
+    #: Next earnings and the countdown to it, same shape and same wording as
+    #: the watchlist uses. None means no date from any tier.
+    earnings: EarningsInfo | None = None
+    #: A CRITICAL or HIGH finding from the company's own SEC filing (going
+    #: concern, controls not effective, restatement...). Computed on read from
+    #: `sec_findings`, same source `SecFilingsCard` reads in the position
+    #: detail — this is what lets the holdings row show it without a click.
+    sec_material_finding: bool = False
 
     model_config = {
         "from_attributes": True,
@@ -203,6 +259,19 @@ class MarketStatusUpdate(BaseModel):
     status: MarketStatusEnum = Field(..., description="Market condition")
     note: str | None = Field(None, description="Optional explanation")
 
+    # §V3: ORANGE and RED are claims about a CAUSE, not about how dear the
+    # market is. Setting one without naming what is happening is refused —
+    # not to be strict, but because a cause is the only thing that can later
+    # be reviewed, and nothing else in this app ever lowers the semafor.
+    catalyst_description: str | None = Field(
+        None,
+        description="What is happening. Required to set ORANGE or RED.",
+    )
+    catalyst_severity_known: bool = Field(
+        False,
+        description="False = ORANGE (size unknown). True = RED (known severe).",
+    )
+
 
 class MarketStatusResponse(BaseModel):
     """Schema for market status response."""
@@ -211,6 +280,15 @@ class MarketStatusResponse(BaseModel):
     status: MarketStatusEnum
     last_updated: datetime
     note: str | None = None
+
+    catalyst_description: str | None = None
+    catalyst_identified_at: datetime | None = None
+    catalyst_severity_known: bool = False
+    #: Whether the grade on the field is backed by what is on record, and what
+    #: to say about it. Computed, not stored — see `market_catalyst.check`.
+    catalyst_supported: bool = True
+    catalyst_stale: bool = False
+    catalyst_message_cs: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -276,9 +354,22 @@ class MatchAnalysisResponse(BaseModel):
 # Portfolio Summary Schemas
 # ==============================================================================
 
+class UnconvertiblePosition(BaseModel):
+    """
+    A holding excluded from the totals above because its currency has no
+    known CZK rate. The old code let an unrateable currency fall through to
+    a default of the USD rate, which once valued an ILS holding at 3.3x its
+    worth — this is the warning that incident was meant to leave on screen.
+    """
+
+    ticker: str
+    currency: str
+    reason: str
+
+
 class PortfolioSummaryResponse(BaseModel):
     """Schema for portfolio summary with all positions and totals."""
-    
+
     portfolio: PortfolioResponse
     positions: list[PositionResponse]
     total_cost_basis: float
@@ -287,3 +378,6 @@ class PortfolioSummaryResponse(BaseModel):
     total_unrealized_pl_percent: float
     cash_balance: float = 0.0
     last_price_update: datetime | None
+    #: Non-empty means the totals above are incomplete, and by how much is
+    #: not knowable — the screen must say so, not present a partial sum as whole.
+    unconvertible_positions: list[UnconvertiblePosition] = Field(default_factory=list)

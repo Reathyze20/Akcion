@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
-import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Any, Final
@@ -38,7 +38,10 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 
 REQUEST_TIMEOUT_SECONDS: Final[int] = 10
-RATE_LIMIT_DELAY_SECONDS: Final[float] = 0.1
+# Kept small on purpose: the DB pool is 5 + 10 overflow, and the price
+# providers rate-limit. Enough to hide the latency, not enough to look like
+# a burst.
+PRICE_FETCH_WORKERS: Final[int] = 8
 DEFAULT_MAX_AGE_HOURS: Final[int] = 24
 
 
@@ -231,6 +234,39 @@ class MarketDataService:
     # ==========================================================================
 
     @staticmethod
+    def _price_from_yahoo_cache(db: Session, ticker: str) -> tuple[float | None, bool]:
+        """
+        Read a price out of the Yahoo cache.
+
+        Returns:
+            (price, is_stale). A stale price is one the cache kept because the
+            Yahoo refresh failed — it is old, and the caller must not hand it
+            on as a live quote. Callers go to a live source instead; the price
+            is still returned so they can decide.
+        """
+        try:
+            cache = YahooFinanceCache(db)
+            data = cache.get_stock_data(
+                ticker, data_types=["market"], force_refresh=False
+            )
+        except Exception as e:
+            logger.warning(f"Yahoo Cache failed for {ticker}: {e}")
+            return None, False
+
+        if not data or not data.get("current_price"):
+            return None, False
+
+        price = float(data["current_price"])
+        if data.get("is_stale"):
+            logger.warning(
+                f"{ticker}: cena z Yahoo cache je zastaralá "
+                f"({data.get('stale_reason')}) — jdu pro živou"
+            )
+            return price, True
+
+        return price, False
+
+    @staticmethod
     def get_current_price(ticker: str, retry_count: int = 2, db: Session | None = None) -> float | None:
         """
         Fetch current price for a single ticker using Yahoo Cache.
@@ -246,20 +282,18 @@ class MarketDataService:
         Returns:
             Current price or None if all sources fail
         """
-        # Try Yahoo Cache first (if db session available)
-        if db:
-            try:
-                from ..services.yahoo_cache import YahooFinanceCache
-                cache = YahooFinanceCache(db)
-                data = cache.get_stock_data(ticker, data_types=["market"], force_refresh=False)
-                
-                if data and data.get("current_price"):
-                    price = float(data["current_price"])
-                    logger.info(f"{ticker}: ${price:.2f} (Yahoo Cache)")
-                    return price
-            except Exception as e:
-                logger.warning(f"Yahoo Cache failed for {ticker}: {e}")
-        
+        # Yahoo Cache first (if db session available). A fresh row wins
+        # outright; a stale one is held back and only used if every live
+        # source fails, so cache staleness never outranks a real quote.
+        stale_price: float | None = None
+        if db is not None:
+            price, is_stale = MarketDataService._price_from_yahoo_cache(db, ticker)
+            if price is not None and not is_stale:
+                logger.info(f"{ticker}: ${price:.2f} (Yahoo Cache)")
+                return price
+            if is_stale:
+                stale_price = price
+
         # Fallback to Finnhub (global) — a live quote, so it goes before the
         # close-based source. The old order asked for yesterday's close first.
         price = MarketDataService._get_price_from_finnhub(ticker)
@@ -273,30 +307,75 @@ class MarketDataService:
             logger.info(f"{ticker}: ${price:.2f} (Massive — VČEREJŠÍ close)")
             return price
         
+        # Every live source failed. An old price beats no price — but it is
+        # logged as old, never passed off as a quote from just now.
+        if stale_price is not None:
+            logger.warning(
+                f"{ticker}: ${stale_price:.2f} — ZASTARALÁ cena z cache, "
+                f"žádný živý zdroj neodpověděl"
+            )
+            return stale_price
+
         logger.warning(f"No price data for {ticker} from any source")
         return None
 
     @staticmethod
-    def get_multiple_prices(tickers: list[str]) -> dict[str, float | None]:
+    def get_multiple_prices(
+        tickers: list[str],
+        db: Session | None = None,
+    ) -> dict[str, float | None]:
         """
         Fetch current prices for multiple tickers.
-        
-        Uses individual API calls (no batch endpoint on Starter plans).
-        
+
+        There is no batch endpoint on the Starter plans, so this is one lookup
+        per ticker. Done in sequence that cost the portfolio screen ~40 s for
+        41 holdings: a cache hit takes ~20 ms, but any ticker whose market data
+        aged past its TTL pays a live Yahoo call of 0.8-2.4 s, and they queued
+        up behind each other. The lookups do not depend on one another, so they
+        run on a small pool instead and the wall clock is the slowest single
+        ticker rather than the sum of all of them.
+
         Args:
             tickers: List of ticker symbols
-            
+            db: Marks the Yahoo cache as available. Each worker opens its own
+                session (SQLAlchemy sessions are not thread-safe), so this one
+                is a flag, not the session they use. Without it the cache is
+                skipped and every ticker goes out over the network.
+
         Returns:
             Dict mapping ticker to current price (or None if failed)
         """
-        prices: dict[str, float | None] = {}
-        
-        for ticker in tickers:
-            price = MarketDataService.get_current_price(ticker, retry_count=1)
-            prices[ticker] = price
-            time.sleep(RATE_LIMIT_DELAY_SECONDS)
-        
-        return prices
+        if not tickers:
+            return {}
+
+        use_cache = db is not None
+
+        def fetch_one(ticker: str) -> tuple[str, float | None]:
+            if not use_cache:
+                return ticker, MarketDataService.get_current_price(
+                    ticker, retry_count=1
+                )
+
+            from ..database.connection import get_session
+
+            session = get_session()
+            if session is None:
+                return ticker, MarketDataService.get_current_price(
+                    ticker, retry_count=1
+                )
+            try:
+                return ticker, MarketDataService.get_current_price(
+                    ticker, retry_count=1, db=session
+                )
+            except Exception as e:
+                logger.warning(f"Price fetch failed for {ticker}: {e}")
+                return ticker, None
+            finally:
+                session.close()
+
+        workers = min(PRICE_FETCH_WORKERS, len(tickers))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return dict(pool.map(fetch_one, tickers))
 
     # ==========================================================================
     # Ticker Validation & Resolution

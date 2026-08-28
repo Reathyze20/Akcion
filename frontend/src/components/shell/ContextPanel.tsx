@@ -17,12 +17,33 @@
  */
 
 import React, { useState } from 'react';
-import { ChevronDown, LineChart, Moon, Wallet } from 'lucide-react';
+import { ChevronDown, LineChart, Moon, PieChart, Target, Users, Users2, Wallet } from 'lucide-react';
 import MarketGaugeCard from '../MarketGaugeCard';
 import CashHedgeCard from '../CashHedgeCard';
 import AwayModeCard from '../AwayModeCard';
+import ScoreCalibrationCard from '../ScoreCalibrationCard';
+import PortfolioDiffCard from '../PortfolioDiffCard';
+import BreakoutWatchlistCard from '../BreakoutWatchlistCard';
+import RiskMeter from '../RiskMeter';
 
-type PanelId = 'trh' | 'hotovost' | 'nepritomnost';
+type PanelId = 'trh' | 'hotovost' | 'nepritomnost' | 'kalibrace' | 'rozdily' | 'breakout' | 'skladba';
+
+interface RiskMeterData {
+  rocketCount: number;
+  anchorCount: number;
+  waitTimeCount: number;
+  unanalyzedCount: number;
+  riskScore: number;
+}
+
+interface ContextPanelProps {
+  /**
+   * Podíl růstových pozic (dřív vlastní dlaždice nad tabulkou portfolia).
+   * Bez tohohle propu se odrážka „Skladba" vůbec nenabízí — panel zůstává
+   * použitelný i tam, kde volající tahle čísla nemá.
+   */
+  riskMeter?: RiskMeterData;
+}
 
 interface Bullet {
   id: PanelId;
@@ -49,6 +70,30 @@ const BULLETS: Bullet[] = [
     label: 'Nepřítomnost',
     hint: 'co se posílá, když se aplikaci nevěnuješ',
     Icon: Moon,
+  },
+  {
+    id: 'kalibrace',
+    label: 'Kalibrace',
+    hint: 'jestli naše skóre skutečně vydělávala',
+    Icon: Target,
+  },
+  {
+    id: 'rozdily',
+    label: 'Rozdíly portfolií',
+    hint: 'co drží jeden a druhý ne',
+    Icon: Users,
+  },
+  {
+    id: 'breakout',
+    label: 'Breakout',
+    hint: 'kolik podpisů a jaký cíl dává našim jménům druhý zdroj',
+    Icon: Users2,
+  },
+  {
+    id: 'skladba',
+    label: 'Skladba',
+    hint: 'jak velký podíl portfolia stojí na růstových sázkách',
+    Icon: PieChart,
   },
 ];
 
@@ -81,9 +126,13 @@ function remember(key: string, value: string): void {
   }
 }
 
-export const ContextPanel: React.FC = () => {
+export const ContextPanel: React.FC<ContextPanelProps> = ({ riskMeter }) => {
   const [open, setOpen] = useState(readOpen);
   const [active, setActive] = useState<PanelId>(readTab);
+
+  // 'skladba' bez dat by otevřela prázdný panel — odrážka se proto ukáže,
+  // jen když volající ta čísla skutečně poslal.
+  const bullets = riskMeter ? BULLETS : BULLETS.filter((b) => b.id !== 'skladba');
 
   const select = (id: PanelId) => {
     /* Klik na už otevřenou odrážku ji zavře. Druhá cesta ven než šipka —
@@ -101,7 +150,7 @@ export const ContextPanel: React.FC = () => {
       aria-label="Podklady"
     >
       <div className="flex items-center gap-1 px-1.5 py-1.5">
-        {BULLETS.map(({ id, label, hint, Icon }) => {
+        {bullets.map(({ id, label, hint, Icon }) => {
           const on = open && active === id;
           return (
             <button
@@ -151,6 +200,10 @@ export const ContextPanel: React.FC = () => {
           {active === 'trh' && <MarketGaugeCard />}
           {active === 'hotovost' && <CashHedgeCard />}
           {active === 'nepritomnost' && <AwayModeCard />}
+          {active === 'kalibrace' && <ScoreCalibrationCard />}
+          {active === 'rozdily' && <PortfolioDiffCard />}
+          {active === 'breakout' && <BreakoutWatchlistCard />}
+          {active === 'skladba' && riskMeter && <RiskMeter {...riskMeter} />}
         </div>
       )}
     </section>

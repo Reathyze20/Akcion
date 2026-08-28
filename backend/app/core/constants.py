@@ -199,3 +199,14 @@ class ErrorMessages:
 
 
 ERROR_MESSAGES: Final[ErrorMessages] = ErrorMessages()
+
+# ==============================================================================
+# Trade Size Floor
+# ==============================================================================
+# Below this a purchase is eaten by the broker's fee: on a few hundred crowns a
+# flat commission is a double-digit percentage of the position before it has
+# done anything. Held here rather than in either caller because the Daily
+# Action engine and the allocator must agree — two floors that drift apart
+# would let one of them propose a trade the other calls pointless.
+
+MIN_TRADE_CZK: int = 1000

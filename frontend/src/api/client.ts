@@ -7,6 +7,8 @@
 import axios, { type AxiosInstance, type AxiosError } from 'axios';
 import { handleApiError } from '../utils/errorHandling';
 import type {
+  BoardResponse,
+  LadderResponse,
   Stock,
   AnalysisRequest,
   YouTubeAnalysisRequest,
@@ -19,6 +21,7 @@ import type {
   Portfolio,
   PortfolioSummary,
   Position,
+  OwnerIntent,
   EnrichedStock,
   MatchAnalysisResponse,
   CSVUploadResponse,
@@ -51,6 +54,9 @@ import type {
   DeepDDResponse,
   StockUpdateResponse,
   PriceUpdateResponse,
+  OhlcvResponse,
+  IntakeAnalysisResult,
+  IntakeCommitResponse,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002';
@@ -294,6 +300,17 @@ class ApiClient {
   }
 
   // ==========================================================================
+  // Owner intent — a standing instruction the phase gate cannot see
+  // ==========================================================================
+
+  async getOwnerIntent(ticker: string): Promise<OwnerIntent | null> {
+    const response = await this.client.get<OwnerIntent | null>(
+      `/api/gomes/owner-intent/${encodeURIComponent(ticker)}`
+    );
+    return response.data;
+  }
+
+  // ==========================================================================
   // SEC EDGAR — results, outlook, insiders
   // ==========================================================================
 
@@ -344,6 +361,38 @@ class ApiClient {
   // Market gauge — where the S&P sits on its 40-year chart
   // ==========================================================================
 
+  /**
+   * Pásmo pro každou firmu v portfoliu, včetně dvou limitních cen.
+   *
+   * Jeden řádek na FIRMU, ne na účet: pásmo je vlastnost byznysu, takže dva
+   * lidé držící tutéž akcii mají číst totéž. Co s tím má kdo udělat, závisí na
+   * jeho nákupní ceně a hotovosti, a to počítá denní seznam.
+   */
+  /**
+   * Tabule „co s tímhle" — jedna karta na firmu, pokyn pro každý účet.
+   *
+   * Pásmo se počítá jednou (je to vlastnost firmy), pokyn jednou na účet
+   * a nikdy proti součtu obou — ten součet je účet, který nikdo nedrží.
+   */
+  async getBoard(): Promise<BoardResponse> {
+    const response = await this.client.get<BoardResponse>('/api/trading/board');
+    return response.data;
+  }
+
+  /** Denní svíčky z `ohlcv_data`. 404, když je pro ticker ještě nemáme. */
+  async getOhlcv(ticker: string, days = 180): Promise<OhlcvResponse> {
+    const response = await this.client.get<OhlcvResponse>(
+      `/api/trading/ohlcv/${encodeURIComponent(ticker)}`,
+      { params: { days } }
+    );
+    return response.data;
+  }
+
+  async getLadder(): Promise<LadderResponse> {
+    const response = await this.client.get<LadderResponse>('/api/gomes/ladder');
+    return response.data;
+  }
+
   async getMarketGauge(refresh = false): Promise<MarketGauge> {
     const response = await this.client.get<MarketGauge>(
       '/api/market-gauge', { params: { refresh } }
@@ -362,6 +411,25 @@ class ApiClient {
     return response.data;
   }
 
+  // ==========================================================================
+  // Breakout Investors — druhý zdroj: ukazuje se, neposlouchá se
+  // ==========================================================================
+
+  async getBreakoutWatchlist(days?: number): Promise<BreakoutWatchlist> {
+    const response = await this.client.get<BreakoutWatchlist>(
+      '/api/breakout/watchlist', { params: days ? { days } : undefined }
+    );
+    return response.data;
+  }
+
+  /** Přečte zdroj hned, mimo denní interval. Jen na stisk tlačítka. */
+  async refreshBreakoutWatchlist(days?: number): Promise<BreakoutWatchlist> {
+    const response = await this.client.post<BreakoutWatchlist>(
+      '/api/breakout/refresh', null, { params: days ? { days } : undefined }
+    );
+    return response.data;
+  }
+
   async deletePosition(positionId: number): Promise<void> {
     await this.client.delete(`/api/portfolio/positions/${positionId}`);
   }
@@ -375,6 +443,8 @@ class ApiClient {
       currency?: string;
       company_name?: string;
       ticker?: string;
+      /** Potvrzení, že měna sedí s výpisem od brokera. */
+      currency_confirmed?: boolean;
     }
   ): Promise<Position> {
     const response = await this.client.put<Position>(
@@ -905,12 +975,143 @@ class ApiClient {
   }
 
   /**
+   * Kalibrace — jak dopadla skóre, která aplikace vydala.
+   *
+   * `sufficient: false` znamená, že měření zatím není dost; pole s mediány
+   * jsou pak prázdná záměrně, ne kvůli chybě.
+   */
+  async getScoreCalibration(horizon = 90): Promise<ScoreCalibration> {
+    const response = await this.client.get<ScoreCalibration>(
+      '/api/intelligence/score-calibration',
+      { params: { horizon } }
+    );
+    return response.data;
+  }
+
+  /**
    * Daily Action list — "Co mám dnes udělat?" (max 3 actions or Nic. Drž.)
    */
   async getDailyActions(): Promise<DailyActionsResponse> {
     const response = await this.client.get<DailyActionsResponse>(
       '/api/trading/daily-actions'
     );
+    return response.data;
+  }
+
+  /**
+   * Gemini 3.7 Flash - Blesková analýza videa nebo textu
+   */
+  async analyzeIntake(request: {
+    text?: string;
+    url?: string;
+    source_type?: string;
+  }): Promise<IntakeAnalysisResult> {
+    const response = await this.client.post<IntakeAnalysisResult>(
+      '/api/intake/analyze',
+      request
+    );
+    return response.data;
+  }
+
+  /**
+   * Uložit ověřený výsledek analýzy do databáze
+   */
+  async commitIntake(data: IntakeAnalysisResult): Promise<IntakeCommitResponse> {
+    const response = await this.client.post<IntakeCommitResponse>(
+      '/api/intake/commit',
+      data
+    );
+    return response.data;
+  }
+
+  // ==========================================================================
+  // Nálezy — vlastní nápady
+  //
+  // Jediná placená cesta je `explainFind`. Zbytek je čtení z databáze nebo
+  // bezplatný sběr veřejných dat.
+  // ==========================================================================
+
+  async getFinds(includeClosed = false): Promise<Find[]> {
+    const response = await this.client.get<Find[]>('/api/finds', {
+      params: { include_closed: includeClosed },
+    });
+    return response.data;
+  }
+
+  /**
+   * Založit nález. Sbírá data ze sítě (Yahoo, EDGAR, Finnhub), takže
+   * u neznámého tickeru trvá pár sekund — proto delší timeout než výchozí.
+   */
+  async createFind(body: {
+    symbol: string;
+    note: string;
+    found_at?: string;
+  }): Promise<FindDetail> {
+    const response = await this.client.post<FindDetail>('/api/finds', body, {
+      timeout: 120_000,
+    });
+    return response.data;
+  }
+
+  async getFind(id: number): Promise<FindDetail> {
+    const response = await this.client.get<FindDetail>(`/api/finds/${id}`);
+    return response.data;
+  }
+
+  /** Dotáhnout data znovu a připsat další posudek. Zdarma. */
+  async refreshFind(id: number): Promise<FindDetail> {
+    const response = await this.client.post<FindDetail>(
+      `/api/finds/${id}/refresh`, null, { timeout: 120_000 },
+    );
+    return response.data;
+  }
+
+  /**
+   * Nechat vysvětlit poslední posudek. **Placené volání.**
+   *
+   * Výchozích 60 s nestačí: model přemýšlí a odpověď je dlouhá. Kdyby to
+   * spadlo na timeout, majitel by viděl chybu u volání, které už zaplatil.
+   */
+  async explainFind(id: number, force = false): Promise<FindAssessment> {
+    const response = await this.client.post<FindAssessment>(
+      `/api/finds/${id}/explain`, null,
+      { params: { force }, timeout: 300_000 },
+    );
+    return response.data;
+  }
+
+  // ==========================================================================
+  // Analytikovy modely tržeb — model vs. realita
+  //
+  // Žádná placená cesta. `compareRevenueModel` sahá na SEC EDGAR (zdarma),
+  // proto delší timeout a proto je to samostatná akce, ne něco na GETu.
+  // ==========================================================================
+
+  async getRevenueModels(ticker?: string): Promise<RevenueModelSummary[]> {
+    const response = await this.client.get<RevenueModelSummary[]>('/api/revenue-models', {
+      params: ticker ? { ticker } : undefined,
+    });
+    return response.data;
+  }
+
+  async getRevenueModel(id: number): Promise<RevenueModelDetail> {
+    const response = await this.client.get<RevenueModelDetail>(`/api/revenue-models/${id}`);
+    return response.data;
+  }
+
+  /** Dotáhne aktuální výkazy z SEC a postaví je vedle modelu. Zdarma, ale síť. */
+  async compareRevenueModel(id: number): Promise<RevenueModelComparison> {
+    const response = await this.client.post<RevenueModelComparison>(
+      `/api/revenue-models/${id}/compare`, null, { timeout: 60_000 },
+    );
+    return response.data;
+  }
+
+  async updateFind(
+    id: number,
+    body: { note?: string; status?: string; close_reason?: string },
+  ): Promise<Find> {
+    const response = await this.client.patch<Find>(`/api/finds/${id}`, body);
     return response.data;
   }
 }
@@ -975,8 +1176,41 @@ export interface ScoreHistoryItem {
   id: number;
   score: number;
   source: string | null;
-  note: string | null;
-  created_at: string | null;
+  thesis_status: string | null;
+  action_signal: string | null;
+  /** Kdy skóre padlo. Dřív se tu čekalo `created_at`, které backend nikdy
+      neposílal — pole bylo vždy undefined a nikdo si toho nevšiml, protože
+      graf kreslí jen skóre. */
+  recorded_at: string | null;
+}
+
+/** Jedno pásmo skóre v kalibračním přehledu. */
+export interface CalibrationBand {
+  label: string;
+  score_min: number;
+  score_max: number;
+  n_evaluated: number;
+  n_pending: number;
+  n_unable: number;
+  n_with_benchmark: number;
+  median_excess_pct: number | null;
+  median_return_pct: number | null;
+  share_positive_excess: number | null;
+  /** Má pásmo dost změřených výsledků na medián? Rozhoduje backend. */
+  sufficient: boolean;
+}
+
+/** Jak si vedla skóre, která aplikace vydala. */
+export interface ScoreCalibration {
+  horizon_days: number;
+  min_sample: number;
+  sufficient: boolean;
+  n_evaluated: number;
+  n_pending: number;
+  n_unable: number;
+  /** Datum, kdy dozraje první čekající měření. */
+  first_result_expected: string | null;
+  bands: CalibrationBand[];
 }
 
 // Daily Action list (Path 1: "Co mám dnes udělat?")
@@ -984,7 +1218,8 @@ export interface DailyAction {
   id: string;
   ticker: string;
   source_key: 'GOMES' | 'BREAKOUT_INVESTORS' | 'COMBINED';
-  action_type: 'BUY' | 'TRIM' | 'SELL' | 'SELL_WAIT_TIME' | 'LIQUIDATE_HEAVY';
+  /** ROZPOR není pokyn — je to spor dvou motorů předaný k rozhodnutí. */
+  action_type: 'BUY' | 'TRIM' | 'SELL' | 'SELL_WAIT_TIME' | 'LIQUIDATE_HEAVY' | 'ROZPOR';
   current_price: number;
   currency: string;
   target_price: number | null;
@@ -995,12 +1230,31 @@ export interface DailyAction {
   review_required: boolean;
 }
 
+/**
+ * How much of the portfolio sits in companies with a known problem, and how
+ * much sits in companies nobody can read at all — `app/services/concentration.py`.
+ * A range rather than one number: `material_pct` is the floor of what is
+ * known to be wrong, `upper_bound_pct` is what it could be if the unreadable
+ * share is as bad as the readable share turned out to be.
+ */
+export interface ConcentrationReading {
+  total_czk: number;
+  material_pct: number;
+  unassessed_pct: number;
+  upper_bound_pct: number;
+  material_tickers: string[];
+  unassessed_tickers: string[];
+}
+
 export interface DailyActionsResponse {
   market_alert: 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED' | 'UNKNOWN';
   available_cash_czk: number;
   status: 'HOLD_HOLD_HOLD' | 'ACTION_REQUIRED';
   actions: DailyAction[];
   warnings: string[];
+  //: null when the reading could not be made, or no position had a knowable
+  //: value — absent, never a reassuring zero.
+  concentration: ConcentrationReading | null;
   generated_at: string;
 }
 
@@ -1184,6 +1438,337 @@ export interface CashHedgePlan {
   /** Proof that UCITS inverse ETFs exist — explicitly not a substitute. */
   ucits_example?: CashHedgeLeg | null;
   gaps: string[];
+}
+
+/** Vztah jména na jejich watchlistu k našemu portfoliu. */
+export type BreakoutRelation = 'OWNED' | 'WATCHED' | 'THEIRS';
+
+/** Kam jejich cíl padne v Gomesově valuačním pásmu. */
+export type BreakoutVsGomes = 'ABOVE_RED' | 'IN_BAND' | 'BELOW_GREEN';
+
+export interface BreakoutEntry {
+  symbol: string;
+  company_name?: string | null;
+  relation: BreakoutRelation;
+  /** Kolik jejich členů jméno podepsalo. */
+  endorsements: number;
+  /** Jejich očekávaný růst v procentech. null = nezveřejněný. */
+  upside_pct?: number | null;
+  price_at_read?: number | null;
+  /**
+   * Jejich cílová cena, dopočítaná z kurzu a očekávaného růstu.
+   * null vždy, když jeden ze vstupů chyběl — nikdy nula, nikdy stará hodnota.
+   */
+  implied_target?: number | null;
+  gomes_green_line?: number | null;
+  gomes_red_line?: number | null;
+  vs_gomes?: BreakoutVsGomes | null;
+  /** Kdy jméno přidali ONI. */
+  added_at?: string | null;
+  /** Kdy jsme ho poprvé viděli MY. */
+  first_seen_at?: string | null;
+}
+
+export interface BreakoutChange {
+  symbol: string;
+  relation: BreakoutRelation;
+  kind: 'ADDED' | 'REMOVED' | 'ENDORSEMENTS' | 'UPSIDE';
+  detail_cs: string;
+  detected_at: string;
+}
+
+/** Jedno jejich jméno od prvního čtení po dnešek. */
+export interface BreakoutScoredName {
+  symbol: string;
+  days_watched: number;
+  price_then: number;
+  target_then: number;
+  price_now?: number | null;
+  upside_then_pct: number;
+  move_pct?: number | null;
+  /** Kolik z cesty k cíli uběhlo. null, když cíl neleží nad cenou. */
+  progress_pct?: number | null;
+  reached?: boolean | null;
+}
+
+/**
+ * Jak si vedou jejich cíle — nebo věta, proč se to ještě neříká.
+ *
+ * `too_early` je celý smysl téhle struktury a UI ho musí respektovat:
+ * úspěšnost spočítaná po týdnu měří šum a četla by se jako výsledek. Pod
+ * horizontem je `reached_total` null a vykresluje se jen průběh.
+ */
+export interface BreakoutScorecard {
+  median_days?: number | null;
+  too_early: boolean;
+  measurable: number;
+  reached_total?: number | null;
+  min_horizon_days: number;
+  verdict_cs: string;
+  names: BreakoutScoredName[];
+}
+
+export interface BreakoutWatchlist {
+  last_attempt_at?: string | null;
+  last_success_at?: string | null;
+  last_error?: string | null;
+  /** Přes 48 h bez úspěšného čtení — čísla níž jsou stará. */
+  stale: boolean;
+  /** Zdroj nebyl nikdy přečtený. Prázdno není „žádná jména". */
+  never_read: boolean;
+  entries_total: number;
+  ours_total: number;
+  entries: BreakoutEntry[];
+  changes: BreakoutChange[];
+  scorecard: BreakoutScorecard;
+}
+
+// ============================================================================
+// Nálezy — vlastní nápady a jejich posudky
+// ============================================================================
+
+export type FindLayer =
+  | 'VLASTNI'
+  | 'GOMES'
+  | 'FIT'
+  | 'BREAKOUT'
+  | 'FUNDAMENTY'
+  | 'METODIKA'
+  | 'TRH';
+export type FactDirection = 'PRO' | 'PROTI' | 'NEUTRAL';
+export type PointSide = 'PRO' | 'PROTI';
+export type PointWeight = 'ROZHODUJICI' | 'PODSTATNY' | 'DROBNY';
+
+export interface FindFact {
+  id: string;
+  layer: FindLayer | string;
+  text_cs: string;
+  source: string;
+  as_of?: string | null;
+  /** Doslovný citát, když to někdo řekl. Jinak null. */
+  quote?: string | null;
+  /** Určuje backend podle pravidla, které fakt vyrobilo — nikdy model. */
+  direction: FactDirection | string;
+}
+
+export interface FindGap {
+  id: string;
+  layer: FindLayer | string;
+  text_cs: string;
+  /** Co s tím jde udělat. null = ten údaj prostě neexistuje. */
+  fixable_cs?: string | null;
+}
+
+export interface FindMethod {
+  band: string;
+  band_reason_cs: string;
+  rr_score?: number | null;
+  deserved?: number | null;
+  buy_below?: number | null;
+  sell_above?: number | null;
+  green_line?: number | null;
+  red_line?: number | null;
+  line_currency?: string | null;
+  /** Válce, které potvrdil člověk. null = pásmo se spočítat nedá. */
+  cylinders_confirmed?: number | null;
+  /** Návrh rubriky. Neautorizuje nic. */
+  cylinders_proposed?: number | null;
+  if_cylinders_cs?: string | null;
+  phase_proposed?: string | null;
+  /** Vždy true — fáze je návrh, ne potvrzený stav. */
+  phase_is_proposal: boolean;
+  phase_rough_patch?: boolean;
+  market_alert?: string | null;
+  market_alert_stale: boolean;
+  gate_passed?: boolean | null;
+  gate_code?: string | null;
+  /** Věta brány česky. Syrový kód na obrazovku nepatří. */
+  gate_reason_cs: string;
+}
+
+export interface FindDossier {
+  ticker: string;
+  symbol: string;
+  company_name?: string | null;
+  as_of: string;
+  price?: number | null;
+  price_currency?: string | null;
+  price_is_stale: boolean;
+  facts: FindFact[];
+  gaps: FindGap[];
+  method: FindMethod;
+}
+
+/**
+ * Jeden díl skóre pozornosti.
+ *
+ * `ceiling` je strop při dnešní znalosti, `max_points` strop při plné
+ * znalosti. Rozdíl mezi nimi jsou body, které se získat NEDAJÍ — a to je
+ * jediné, co odlišuje slabou firmu od neprozkoumané.
+ */
+export interface FindPillar {
+  key: string;
+  label_cs: string;
+  points: number;
+  ceiling: number;
+  max_points: number;
+  reason_cs: string;
+  missing_cs?: string | null;
+  /** DOPLNIT_DATA | POTVRDIT_VALCE | VYSVETLIT — musí mít tlačítko na obrazovce. */
+  action?: string | null;
+}
+
+/**
+ * Skóre pozornosti. Odpovídá „mám tomu věnovat čas", ne „smím to koupit".
+ *
+ * Nikdy se nevykresluje bez `ceiling`: samotné body se čtou jako známka ze
+ * sta a rubrika se tím změní ve verdikt, kterým být nemá.
+ */
+export interface FindAttention {
+  points: number;
+  ceiling: number;
+  total: number;
+  verdict_cs: string;
+  lever_cs?: string | null;
+  lever_action?: string | null;
+  if_cylinders_cs?: string | null;
+  pillars: FindPillar[];
+}
+
+export interface FindPoint {
+  side: PointSide | string;
+  headline_cs: string;
+  body_cs: string;
+  fact_ids: string[];
+  canon_ref: string;
+  /** Znění pravidla doplňuje server — kánon se nepřevypravuje modelem. */
+  canon_text_cs: string;
+  check_yourself_cs: string;
+  weight: PointWeight | string;
+}
+
+export interface FindExplanation {
+  one_line_cs: string;
+  points: FindPoint[];
+  own_reason_cs: string;
+  own_reason_verdict: string;
+  lesson_cs: string;
+}
+
+export interface FindAssessment {
+  id: number;
+  assessed_at: string;
+  price_at_assessment?: number | null;
+  price_currency?: string | null;
+  price_is_stale: boolean;
+  band?: string | null;
+  gate_code?: string | null;
+  gate_reason_cs?: string | null;
+  explanation?: FindExplanation | null;
+  explanation_model?: string | null;
+  explained_at?: string | null;
+  /** Kolik bodů od AI citovalo neexistující fakt. Nenulové patří na obrazovku. */
+  points_dropped: number;
+  dossier?: FindDossier | null;
+  attention?: FindAttention | null;
+}
+
+export interface Find {
+  id: number;
+  ticker: string;
+  symbol: string;
+  company_name?: string | null;
+  note: string;
+  found_at: string;
+  status: string;
+  closed_at?: string | null;
+  close_reason?: string | null;
+  assessment_count: number;
+  last_assessed_at?: string | null;
+  last_band?: string | null;
+  last_price?: number | null;
+  last_one_line_cs?: string | null;
+  /** Vždy v páru se stropem — bez něj by to v seznamu byla známka ze sta. */
+  attention_points?: number | null;
+  attention_ceiling?: number | null;
+  attention_verdict_cs?: string | null;
+}
+
+export interface FindDetail {
+  find: Find;
+  dossier: FindDossier;
+  /**
+   * Ze kterého posudku spis pochází.
+   *
+   * Není to metadata pro metadata: spis se dřív při každém otevření skládal
+   * znovu, vycházel slabší (bez výkazů) a přečísloval id faktů — takže čipy
+   * s doklady pod body od AI ukazovaly na jiná fakta. Teď se posílá zapsaný
+   * snímek a tohle říká který.
+   */
+  dossier_from_assessment_id?: number | null;
+  assessments: FindAssessment[];
+  collect_notes_cs: string[];
+  collect_errors_cs: string[];
+}
+
+// ==============================================================================
+// Analytikovy modely tržeb
+// ==============================================================================
+
+export interface RevenueModelPeriodTotal {
+  period_label: string;
+  total: number;
+  currency: string;
+  /** Kolik řádků nemá přečtenou barvu (LOCKED/ESTIMATE) z originálu. */
+  unrated_lines: number;
+  line_count: number;
+}
+
+export interface RevenueModelSummary {
+  id: number;
+  ticker: string;
+  company_name?: string | null;
+  source_name: string;
+  model_name: string;
+  document_date?: string | null;
+  notes?: string | null;
+  line_count: number;
+  period_totals: RevenueModelPeriodTotal[];
+}
+
+export interface RevenueModelLine {
+  id: number;
+  category: string;
+  item_name: string;
+  period_label: string;
+  quantity?: number | null;
+  price_per_unit?: number | null;
+  amount?: number | null;
+  resolved_amount?: number | null;
+  currency: string;
+  /** LOCKED | ESTIMATE | null — appka barvu z PDF sama nepřečte. */
+  confidence?: string | null;
+  note?: string | null;
+}
+
+export interface RevenueModelDetail extends RevenueModelSummary {
+  lines: RevenueModelLine[];
+}
+
+export interface RevenueModelPeriodComparison {
+  period_label: string;
+  model_total: number;
+  currency: string;
+  actual?: number | null;
+  variance_pct?: number | null;
+  /** Proč actual chybí, když chybí. */
+  gap_cs?: string | null;
+}
+
+export interface RevenueModelComparison {
+  model_id: number;
+  ticker: string;
+  comparisons: RevenueModelPeriodComparison[];
 }
 
 // Export singleton instance

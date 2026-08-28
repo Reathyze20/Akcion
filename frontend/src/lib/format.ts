@@ -92,6 +92,27 @@ export function price(value: number, currency?: string | null): string {
   return symbol ? `${symbol} ${text}` : text;
 }
 
+/**
+ * Odhad ve svojí vlastní měně (ne v korunách) — pro modely tržeb v USD/CAD.
+ * Stejná stupnice jako `estimate()`, jen bez pevné vazby na koruny.
+ */
+export function bigMoney(value: number, currency: string): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '−' : '';
+  const symbol = CURRENCY_SYMBOL[currency] ?? currency;
+
+  if (abs >= 1_000_000_000) {
+    return `${sign}${symbol} ${(abs / 1_000_000_000).toLocaleString(CS, { maximumFractionDigits: 2 })} mld.`;
+  }
+  if (abs >= 1_000_000) {
+    return `${sign}${symbol} ${(abs / 1_000_000).toLocaleString(CS, { maximumFractionDigits: 2 })} mil.`;
+  }
+  if (abs >= 1_000) {
+    return `${sign}${symbol} ${Math.round(abs / 1_000).toLocaleString(CS)} tis.`;
+  }
+  return `${sign}${symbol} ${Math.round(abs).toLocaleString(CS)}`;
+}
+
 const CURRENCY_SYMBOL: Record<string, string> = {
   USD: '$',
   EUR: '€',
@@ -166,5 +187,144 @@ export function alertDot(alert: string | null | undefined): string {
     case 'ORANGE': return 'bg-signal-orange';
     case 'RED': return 'bg-signal-red';
     default: return 'bg-text-muted';
+  }
+}
+
+/**
+ * České názvy cenových pásem.
+ *
+ * Jediný překlad, který v aplikaci existoval, seděl v mrtvé komponentě
+ * `StockCard.tsx`, zatímco živé obrazovky vypisovaly syrové enumy
+ * (`DEEP_VALUE`, `BUY_NOW`). Enum je klíč do kódu, ne slovo pro člověka —
+ * a tuhle obrazovku čtou dva lidé, z nichž ani jeden kánon nezná.
+ */
+const BAND_CS: Record<string, string> = {
+  POD_ZELENOU: 'POD ZELENOU',
+  NAKUP: 'NÁKUP',
+  DRZET: 'DRŽET',
+  PREPLACENO: 'PŘEPLACENO',
+  NAD_CERVENOU: 'NAD ČERVENOU',
+  NEZNAME: 'NEZNÁMÉ',
+  MIMO_METODIKU: 'MIMO METODIKU',
+};
+
+export function bandName(band: string | null | undefined): string {
+  if (!band) return 'NEZNÁMÉ';
+  return BAND_CS[band.toUpperCase()] ?? band;
+}
+
+/**
+ * Barva pásma. Zelená a červená jen tam, kde jde o cenu vůči kvalitě —
+ * `MIMO METODIKU` a `NEZNÁMÉ` musí zůstat šedé, protože to nejsou špatné
+ * zprávy, ale chybějící údaj, a barva by z chybějícího údaje udělala verdikt.
+ */
+export function bandTone(band: string | null | undefined): {
+  text: string;
+  pill: string;
+  marker: string;
+} {
+  switch ((band ?? '').toUpperCase()) {
+    case 'POD_ZELENOU':
+    case 'NAKUP':
+      return {
+        text: 'text-positive',
+        pill: 'bg-positive-bg text-positive border-positive-border',
+        marker: 'bg-positive',
+      };
+    case 'PREPLACENO':
+    case 'NAD_CERVENOU':
+      return {
+        text: 'text-negative',
+        pill: 'bg-negative-bg text-negative border-negative-border',
+        marker: 'bg-negative',
+      };
+    case 'DRZET':
+      return {
+        text: 'text-text-secondary',
+        pill: 'bg-surface-active text-text-secondary border-border-subtle',
+        marker: 'bg-text-secondary',
+      };
+    default:
+      return {
+        text: 'text-text-muted',
+        pill: 'bg-surface-active text-text-muted border-border-subtle',
+        marker: 'bg-text-muted',
+      };
+  }
+}
+
+/**
+ * České názvy cenových pásem ze Sledovaných (`price_zone`).
+ *
+ * Jiný enum než `band` — `price_zone` je DEEP_VALUE/BUY_ZONE/ACCUMULATE/
+ * FAIR_VALUE/SELL_ZONE/OVERVALUED, `band` je POD_ZELENOU/NAKUP/…. Násilné
+ * mapování jednoho na druhý by tvrdilo něco, co appka neměří — proto
+ * samostatná dvojice funkcí, ne převod na `bandName`/`bandTone`.
+ */
+const ZONE_CS: Record<string, string> = {
+  DEEP_VALUE: 'HLUBOKÁ HODNOTA',
+  BUY_ZONE: 'KUPNÍ PÁSMO',
+  ACCUMULATE: 'PŘIKUPOVAT',
+  FAIR_VALUE: 'SPRAVEDLIVÁ CENA',
+  SELL_ZONE: 'PRODEJNÍ PÁSMO',
+  OVERVALUED: 'PŘEHODNOCENO',
+};
+
+export function zoneName(zone: string | null | undefined): string {
+  if (!zone) return 'MIMO METODIKU';
+  return ZONE_CS[zone.toUpperCase()] ?? zone;
+}
+
+/** Chybějící/neznámé pásmo zůstává šedé ze stejného důvodu jako u `bandTone()`. */
+export function zoneTone(zone: string | null | undefined): { text: string; pill: string } {
+  switch ((zone ?? '').toUpperCase()) {
+    case 'DEEP_VALUE':
+    case 'BUY_ZONE':
+      return { text: 'text-positive', pill: 'bg-positive-bg text-positive border-positive-border' };
+    case 'ACCUMULATE':
+      return { text: 'text-accent', pill: 'bg-accent-bg text-accent border-accent-border' };
+    case 'FAIR_VALUE':
+    case 'SELL_ZONE':
+      return { text: 'text-warning', pill: 'bg-warning-bg text-warning border-warning-border' };
+    case 'OVERVALUED':
+      return { text: 'text-negative', pill: 'bg-negative-bg text-negative border-negative-border' };
+    default:
+      return { text: 'text-text-muted', pill: 'bg-surface-active text-text-muted border-border-subtle' };
+  }
+}
+
+/**
+ * České názvy verdiktu ze Sledovaných (`action_verdict`) — třetí, opět jiný
+ * enum (BUY_NOW/ACCUMULATE/WATCH_LIST/TRIM/SELL/AVOID), stejný důvod pro
+ * samostatnou dvojici funkcí jako u `zoneName`/`zoneTone`.
+ */
+const VERDICT_CS: Record<string, string> = {
+  BUY_NOW: 'KOUPIT TEĎ',
+  ACCUMULATE: 'PŘIKUPOVAT',
+  WATCH_LIST: 'SLEDOVAT',
+  TRIM: 'ODEBRAT',
+  SELL: 'PRODAT',
+  AVOID: 'VYHNOUT SE',
+};
+
+export function verdictName(verdict: string | null | undefined): string {
+  if (!verdict) return 'MIMO METODIKU';
+  return VERDICT_CS[verdict.toUpperCase()] ?? verdict;
+}
+
+export function verdictTone(verdict: string | null | undefined): { text: string; pill: string } {
+  switch ((verdict ?? '').toUpperCase()) {
+    case 'BUY_NOW':
+    case 'ACCUMULATE':
+      return { text: 'text-positive', pill: 'bg-positive-bg text-positive border-positive-border' };
+    case 'WATCH_LIST':
+      return { text: 'text-accent', pill: 'bg-accent-bg text-accent border-accent-border' };
+    case 'TRIM':
+      return { text: 'text-warning', pill: 'bg-warning-bg text-warning border-warning-border' };
+    case 'SELL':
+    case 'AVOID':
+      return { text: 'text-negative', pill: 'bg-negative-bg text-negative border-negative-border' };
+    default:
+      return { text: 'text-text-muted', pill: 'bg-surface-active text-text-muted border-border-subtle' };
   }
 }

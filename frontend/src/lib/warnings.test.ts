@@ -51,6 +51,32 @@ describe('extractTickers', () => {
 });
 
 describe('groupWarnings', () => {
+  it('pozná i nové znění varování o měně', () => {
+    // Text se 23. 8. 2026 přepsal: kontrola umí říct, že si ticker a měna
+    // odporují, ne která z nich je špatně. Stará věta tvrdila, že hodnota
+    // portfolia je vedle — u IMP.V a KUYA.V to nebyla pravda.
+    const nove =
+      'MĚNA VS. TICKER: IMP.V (EUR→CAD?) — přípona tickeru ukazuje na jinou '
+      + 'burzu, než v jaké měně je pozice vedená. Jestli měna sedí s výpisem '
+      + 'od brokera, potvrď ji v detailu pozice; jestli ne, hodnota v CZK je '
+      + 'o poměr těch měn vedle';
+    const [skupina] = groupWarnings([nove]);
+
+    expect(skupina.kind).toBe('MENA');
+    expect(skupina.tickers).toEqual(['IMP.V']);
+    expect(skupina.consequence).not.toContain('celé portfolio');
+  });
+
+  it('staré i nové znění padnou do jedné skupiny', () => {
+    // Řádky zapsané před přepisem textu se nesmí rozpadnout na dvě hromádky.
+    const g = groupWarnings([
+      'MĚNA NESEDÍ S BURZOU: KUYA.V (EUR→CAD?) — hodnota v CZK je o tenhle poměr vedle',
+      'MĚNA VS. TICKER: IMP.V (EUR→CAD?) — přípona tickeru ukazuje na jinou burzu',
+    ]);
+    expect(g).toHaveLength(1);
+    expect(g[0].tickers).toEqual(['KUYA.V', 'IMP.V']);
+  });
+
   it('z devíti vět udělá čtyři skupiny', () => {
     const g = groupWarnings(SKUTECNA);
     expect(g).toHaveLength(4);

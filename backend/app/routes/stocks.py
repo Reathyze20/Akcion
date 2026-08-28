@@ -16,14 +16,18 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..database.connection import get_db
 from ..database.repositories import StockRepository
 from ..models.stock import Stock
-from ..schemas.responses import StockPortfolioResponse, StockResponse
+from ..schemas.responses import EarningsInfo, StockPortfolioResponse, StockResponse
+from ..services.earnings_lookup import badges as earnings_badges
 from ..services.market_data import MarketDataService
-from ..trading.price_lines_data import EXTRACTED_LINES
+from ..services.score_journal import SOURCE_MANUAL, record_score, trusted_price
+from ..core.sources import InvestmentSource
+from ..core.tickers import variants_of
 
 
 logger = logging.getLogger(__name__)
@@ -35,16 +39,44 @@ router = APIRouter(prefix="/api/stocks", tags=["Portfolio"])
 # Price Data Helpers
 # ==============================================================================
 
-def get_price_lines_for_ticker(ticker: str) -> dict:
-    """Get price lines data for a ticker from extracted data."""
-    for line in EXTRACTED_LINES:
-        if line.ticker.upper() == ticker.upper():
-            return {
-                "green_line": line.green_line,
-                "red_line": line.red_line,
-                "grey_line": line.grey_line,
-            }
-    return {"green_line": None, "red_line": None, "grey_line": None}
+def get_price_lines_for_ticker(db: Session, ticker: str) -> dict:
+    """
+    The Green and Red Lines for a ticker, from the database.
+
+    Until 2026-08-23 this read `EXTRACTED_LINES`, a list transcribed by hand
+    from January screenshots. Those numbers had drifted badly from the source
+    they were copied from — CXDO stood at 4.50/19.00 against the tracker's
+    3.25/15.50, CELH at 23.50/137.50 against 18.00/110.00 — so the app was
+    scoring positions against a band the analyst had already replaced. The file
+    is gone; `tracker_sync` now fills these columns from where the lines
+    actually live.
+
+    Matched across listings: a position held as `KUYA.V` carries its analysis
+    under `KUYAF`, and looking up the literal symbol would find nothing.
+
+    Returns all-None when no band is known, which is the honest answer and the
+    one every caller downstream already handles.
+    """
+    symbols = variants_of(ticker)
+    if not symbols:
+        return {"green_line": None, "red_line": None, "grey_line": None}
+
+    row = (
+        db.query(Stock)
+        .filter(Stock.ticker.in_(symbols))
+        .filter(Stock.source_key == InvestmentSource.GOMES.value)
+        .filter(Stock.green_line.isnot(None))
+        .order_by(desc(Stock.created_at))
+        .first()
+    )
+    if row is None:
+        return {"green_line": None, "red_line": None, "grey_line": None}
+
+    return {
+        "green_line": float(row.green_line) if row.green_line is not None else None,
+        "red_line": float(row.red_line) if row.red_line is not None else None,
+        "grey_line": float(row.grey_line) if row.grey_line is not None else None,
+    }
 
 
 def calculate_price_position(current_price: float | None, green_line: float | None, red_line: float | None) -> tuple[float | None, str | None]:
@@ -98,18 +130,22 @@ def calculate_price_position(current_price: float | None, green_line: float | No
     return round(position_pct, 1), zone
 
 
-def enrich_stock_with_price_data(stock_response: StockResponse, prices_cache: dict[str, float | None] = None) -> StockResponse:
+def enrich_stock_with_price_data(
+    db: Session,
+    stock_response: StockResponse,
+    prices_cache: dict[str, float | None] = None,
+) -> StockResponse:
     """Enrich stock response with current price and price lines data."""
     ticker = stock_response.ticker
-    
+
     # Get price lines
-    price_lines = get_price_lines_for_ticker(ticker)
+    price_lines = get_price_lines_for_ticker(db, ticker)
     
     # Get current price (from cache or fetch)
     if prices_cache and ticker in prices_cache:
         current_price = prices_cache[ticker]
     else:
-        current_price = MarketDataService.get_current_price(ticker)
+        current_price = MarketDataService.get_current_price(ticker, db=db)
     
     # Calculate position
     position_pct, zone = calculate_price_position(
@@ -166,8 +202,23 @@ async def get_stocks(
         if speaker:
             stocks = [s for s in stocks if s.speaker and speaker.lower() in s.speaker.lower()]
         
-        # Convert to response models
-        stock_responses = [StockResponse.model_validate(stock) for stock in stocks]
+        # Convert to response models and fill missing price lines from canonical Gomes source
+        # One calendar read for the whole list, not one per row.
+        countdowns = earnings_badges(db, [s.ticker for s in stocks])
+
+        stock_responses = []
+        for stock in stocks:
+            resp = StockResponse.model_validate(stock)
+            if resp.green_line is None or resp.red_line is None:
+                lines = get_price_lines_for_ticker(db, stock.ticker)
+                if lines["green_line"] is not None:
+                    resp.green_line = lines["green_line"]
+                    resp.red_line = lines["red_line"]
+                    resp.grey_line = lines["grey_line"]
+            found = countdowns.get(stock.ticker)
+            if found is not None:
+                resp.earnings = EarningsInfo(**found.as_dict())
+            stock_responses.append(resp)
         
         filters_applied = {}
         if sentiment:
@@ -216,13 +267,13 @@ async def get_enriched_stocks(
         
         # Batch fetch prices
         logger.info(f"Fetching prices for {len(tickers)} tickers")
-        prices_cache = MarketDataService.get_multiple_prices(tickers)
+        prices_cache = MarketDataService.get_multiple_prices(tickers, db=db)
         
         # Convert to response models and enrich
         stock_responses = []
         for stock in stocks:
             response = StockResponse.model_validate(stock)
-            enriched = enrich_stock_with_price_data(response, prices_cache)
+            enriched = enrich_stock_with_price_data(db, response, prices_cache)
             stock_responses.append(enriched)
         
         return StockPortfolioResponse(
@@ -526,9 +577,14 @@ async def update_stock_score(
     Use this for quick score updates without running full Deep DD.
     """
     try:
+        # Before anything is modified: YahooFinanceCache commits (and on error
+        # rolls back) this very session, so a quote taken mid-write would
+        # either commit a half-applied score or discard it.
+        baseline_price = trusted_price(db, ticker)
+
         # Find or create stock
         stock = db.query(Stock).filter(Stock.ticker == ticker.upper()).first()
-        
+
         if not stock:
             # Create new stock entry
             stock = Stock(
@@ -550,7 +606,22 @@ async def update_stock_score(
             if score_data.company_name:
                 stock.company_name = score_data.company_name
             logger.info(f"Updated score for {ticker}: {score_data.conviction_score}/10")
-        
+
+        # Journal the scoring event, including a score set to its previous
+        # value: entering the same number by hand is a fresh judgement, and
+        # the before_flush safety net deliberately cannot see it as one.
+        # Recorded before the flush so the net finds this row and does not
+        # add a second, unattributed one.
+        record_score(
+            db,
+            ticker=ticker,
+            score=score_data.conviction_score,
+            source=SOURCE_MANUAL,
+            stock=stock,
+            price=baseline_price,
+            action_signal=stock.action_verdict,
+        )
+
         db.commit()
         db.refresh(stock)
         

@@ -31,9 +31,10 @@ with and change.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Final
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models.portfolio import InvestmentLog, InvestmentLogType
@@ -81,21 +82,57 @@ class Brake:
 # Reading the ledger
 # ==============================================================================
 
-def _recent_trades(
+def trade_day(log: InvestmentLog) -> date:
+    """
+    When the trade happened, falling back to when it was written down.
+
+    These brakes are about behaviour over time, so they need the day of the
+    ACT, not of the bookkeeping — recording an old sale today must not read as
+    trading today. NULL falls back rather than dropping the row: a trade whose
+    date nobody recorded still happened.
+    """
+    if log.trade_date is not None:
+        return log.trade_date
+    return log.created_at.date()
+
+
+def recent_trades(
     db: Session,
     since: datetime,
     portfolio_id: int | None = None,
 ) -> list[InvestmentLog]:
-    """Every recorded BUY/SELL since `since`, newest first."""
+    """
+    Every recorded BUY/SELL traded since `since`, newest first.
+
+    The two-branch filter is deliberate and is NOT the same as
+    `coalesce(trade_date, cast(created_at AS date))`. SQLite applies numeric
+    affinity to a CAST it does not recognise, so that expression turns
+    '2026-08-23 12:00' into the integer 2026 and silently drops every row with
+    no trade date. Postgres gets it right, which is the worst kind of
+    difference: the tests would pass and production would be wrong, or the
+    reverse. Spelling both branches out behaves the same everywhere.
+
+    Ordering happens in Python for the same reason — NULLS FIRST/LAST is not
+    portable either, and the window holds a handful of rows.
+    """
     query = db.query(InvestmentLog).filter(
-        InvestmentLog.created_at >= since,
+        or_(
+            and_(
+                InvestmentLog.trade_date.isnot(None),
+                InvestmentLog.trade_date >= since.date(),
+            ),
+            and_(
+                InvestmentLog.trade_date.is_(None),
+                InvestmentLog.created_at >= since,
+            ),
+        ),
         InvestmentLog.log_type.in_(
             [InvestmentLogType.BUY, InvestmentLogType.SELL]
         ),
     )
     if portfolio_id is not None:
         query = query.filter(InvestmentLog.portfolio_id == portfolio_id)
-    return query.order_by(InvestmentLog.created_at.desc()).all()
+    return sorted(query.all(), key=trade_day, reverse=True)
 
 
 # ==============================================================================
@@ -121,7 +158,7 @@ def check_reentry(
     now = now or datetime.utcnow()
     ticker = ticker.upper()
 
-    for trade in _recent_trades(db, now - REENTRY_WINDOW, portfolio_id):
+    for trade in recent_trades(db, now - REENTRY_WINDOW, portfolio_id):
         if trade.log_type != InvestmentLogType.SELL:
             continue
         if (trade.ticker or "").upper() != ticker:
@@ -159,7 +196,7 @@ def check_burst(
     revenge trading takes, and it is invisible from inside.
     """
     now = now or datetime.utcnow()
-    trades = _recent_trades(db, now - BURST_WINDOW, portfolio_id)
+    trades = recent_trades(db, now - BURST_WINDOW, portfolio_id)
 
     if len(trades) < BURST_THRESHOLD:
         return None
@@ -195,7 +232,7 @@ def check_recent_loss(
         # against. Guessing a threshold would be inventing the finding.
         return None
 
-    for trade in _recent_trades(db, now - LOSS_COOLDOWN, portfolio_id):
+    for trade in recent_trades(db, now - LOSS_COOLDOWN, portfolio_id):
         if trade.log_type != InvestmentLogType.SELL:
             continue
         if trade.realized_pl is None or trade.realized_pl >= 0:

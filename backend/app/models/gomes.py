@@ -18,6 +18,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     ForeignKey,
     Index,
     Integer,
@@ -113,10 +114,70 @@ class StockLifecycleModel(Base):
         doc="GREAT_FIND, WAIT_TIME, GOLD_MINE, UNKNOWN"
     )
     
+    # ------------------------------------------------------------------
+    # The ratchet, and the flag that replaces the demotion it blocks.
+    #
+    # GOMES_VIDEO_ADDENDUM.md §V1: Gold Mine is an ABSORBING stage. A proven
+    # company having a bad run is in a "rough patch", which is a temporary fact
+    # about trading, not a return to Wait Time. `phase` is what every tier and
+    # de-risking rule reads; `phase_reached` is the high-water mark that stops
+    # `phase` from ever moving backwards.
+    #
+    # `rough_patch_since` is not decoration. The Buy Guard compares it with the
+    # cylinder confirmation date: quality agreed BEFORE the business slowed is
+    # not evidence about the business now, and buying on it would be exactly
+    # the stale-input mistake this app keeps finding.
+    # ------------------------------------------------------------------
+    phase_reached = Column(
+        String(20), nullable=True,
+        doc="Furthest stage ever reached. GOLD_MINE here can never be undone by a reading.",
+    )
+    rough_patch = Column(
+        Boolean, nullable=False, default=False,
+        doc="Proven company currently trading through a slowdown. Not a stage.",
+    )
+    rough_patch_since = Column(
+        TIMESTAMP(timezone=True), nullable=True,
+        doc="When the slowdown was first recorded. Invalidates older cylinder confirmations.",
+    )
+    rough_patch_until = Column(
+        Date, nullable=True,
+        doc="Known expected end, when there is one. The VTSI case: 'six months, they told us'.",
+    )
+    rough_patch_note = Column(
+        Text, nullable=True,
+        doc="Why, in one Czech sentence. A flag nobody can check is a rumour.",
+    )
+
     # Investability
     is_investable = Column(Boolean, nullable=False, default=True)
     firing_on_all_cylinders = Column(Boolean, nullable=True)
     cylinders_count = Column(Integer, nullable=True)
+
+    # ------------------------------------------------------------------
+    # Proposal versus confirmation.
+    #
+    # The rubric in `app/services/cylinders.py` computes a number from named,
+    # dated facts. It still does not authorise anything: the Buy Guard reads
+    # only a CONFIRMED count, because a rubric nobody checked, with thresholds
+    # nobody validated, spending real money is the same invented input the app
+    # keeps finding — just one storey up.
+    #
+    # An expired confirmation is kept, never deleted. The selling side goes on
+    # reading it: stale data may make this app more cautious and never less.
+    # ------------------------------------------------------------------
+    cylinders_confirmed_at = Column(
+        TIMESTAMP(timezone=True), nullable=True,
+        doc="When the owner agreed. NULL = proposal only, authorises nothing.",
+    )
+    cylinders_confirmed_by = Column(
+        String(100), nullable=True,
+        doc="Who agreed — two people use this app and their judgement may differ.",
+    )
+    cylinders_valid_until = Column(
+        TIMESTAMP(timezone=True), nullable=True,
+        doc="When the agreement lapses. Expired blocks buying, never disarms selling.",
+    )
     
     # Detection
     phase_signals = Column(JSONB, default={})
@@ -138,6 +199,10 @@ class StockLifecycleModel(Base):
     
     __table_args__ = (
         CheckConstraint("phase IN ('GREAT_FIND', 'WAIT_TIME', 'GOLD_MINE', 'UNKNOWN')", name='check_lifecycle_phase'),
+        CheckConstraint(
+            "phase_reached IS NULL OR phase_reached IN ('GREAT_FIND', 'WAIT_TIME', 'GOLD_MINE')",
+            name='check_lifecycle_phase_reached',
+        ),
         CheckConstraint('cylinders_count >= 0 AND cylinders_count <= 10', name='check_cylinders'),
         CheckConstraint("confidence IN ('HIGH', 'MEDIUM', 'LOW')", name='check_lifecycle_confidence'),
         Index('idx_lifecycle_ticker', 'ticker', 'detected_at'),
@@ -508,9 +573,19 @@ class GomesAlert(Base):
 
 class GomesScoreHistory(Base):
     """
-    Historical tracking of conviction score changes.
-    
-    Used for thesis drift analysis and trend detection.
+    DEPRECATED — do not write to this table.
+
+    The app ended up with two score-history tables, `gomes_score_history` and
+    `conviction_score_history`, both empty. `conviction_score_history` is the
+    canonical one: it is what the API and the frontend read, and what
+    `app/services/score_journal.py` writes. This model is kept only so that
+    `models/__init__.py` and any existing import keep resolving; nothing
+    references it any more.
+
+    Note for anyone tempted to revive it: `migrations/add_score_history.sql`
+    declares the column as `gomes_score` while this model declares
+    `conviction_score`. The live database matches the model, so that migration
+    file is stale too.
     """
     __tablename__ = "gomes_score_history"
     

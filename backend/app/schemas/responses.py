@@ -11,9 +11,33 @@ Clean Code Principles Applied:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+
+from app.core.tickers import canonical_ticker as to_canonical
+
+
+class EarningsInfo(BaseModel):
+    """
+    When this company reports next, and how well that is known.
+
+    Sent on both the holdings table and the watchlist so the countdown reads
+    identically in each. `confirmed` is the field that must never be dropped:
+    an announced date and a pattern this app worked out are both actionable and
+    are not the same claim, and `label_cs` already carries the difference in
+    words ("za 78 dní" against "asi za 98 dní") so a cell cannot lose it.
+    """
+
+    next_date: date
+    window_end: date | None = None
+    days: int
+    confirmed: bool
+    source: str
+    label_cs: str
+    detail_cs: str
+    #: Inside the fourteen days the Buy Guard refuses purchases in.
+    blackout: bool
 
 
 class StockAnalysisResult(BaseModel):
@@ -51,12 +75,18 @@ class StockResponse(BaseModel):
     company_name: str | None = None
     source_type: str | None = None
     speaker: str | None = None
+    #: GOMES / BREAKOUT_INVESTORS / OTHER. Sent because a ticker can hold one
+    #: row per source, and the frontend has to know which take it is looking
+    #: at before it picks one to show.
+    source_key: str | None = None
     sentiment: str | None = None
-    conviction_score: int | None = None
     conviction_score: int | None = None
     price_target: str | None = None
     time_horizon: str | None = None
     edge: str | None = None
+    #: Next earnings and the countdown to it. None means no date from any
+    #: tier — which the table shows as a dash, not as "no earnings coming".
+    earnings: EarningsInfo | None = None
     catalysts: str | None = None
     risks: str | None = None
     raw_notes: str | None = None
@@ -91,7 +121,13 @@ class StockResponse(BaseModel):
     total_cash: float | None = None
     inflection_status: str | None = None  # WAIT_TIME, UPCOMING, ACTIVE_GOLD_MINE
     primary_catalyst: str | None = None
-    catalyst_date: str | None = None
+    #: `date`, not `str`. The column is DATE, and typing it as a string here
+    #: meant the schema validated only while every row happened to be NULL.
+    #: The first real date turned GET /api/stocks into a 500, the frontend read
+    #: an empty stock list, and the app reported "12 pozic bez konvikčního
+    #: skóre" — a confident claim that no analysis existed, made out of a type
+    #: annotation. See tests/test_stock_schema_types.py.
+    catalyst_date: date | None = None
     thesis_narrative: str | None = None
     price_floor: float | None = None
     price_target_24m: float | None = None
@@ -111,6 +147,18 @@ class StockResponse(BaseModel):
     upside_to_ceiling_pct: float | None = None
     trading_zone_signal: str | None = None  # AGGRESSIVE_BUY, BUY, HOLD, SELL, STRONG_SELL
     
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def canonical_ticker(self) -> str:
+        """
+        The symbol to match a position on. See `app/core/tickers.py`.
+
+        `KUYA.V` and `KUYAF` are one company holding two rows in this table.
+        Without a shared key the frontend listed the second one under
+        "Sledované" while the owner held the first.
+        """
+        return to_canonical(self.ticker)
+
     model_config = {"from_attributes": True}
 
 

@@ -2,6 +2,12 @@
 
 **Trading Intelligence pro kritická investiční rozhodnutí**
 
+> ⚠️ **Stav: historické k lednu 2026, neaktuální.** Tento soubor popisuje starší verzi
+> appky (React 18, Google Gemini jako hlavní LLM, port 8000) — nic z toho už neplatí.
+> Aktuální dokumentace: [`docs/README.md`](docs/README.md) je rejstřík; začni u
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/INVARIANTS.md`](docs/INVARIANTS.md)
+> a [`docs/DOMAIN_MODEL.md`](docs/DOMAIN_MODEL.md). Vygenerováno 2026-08-28.
+
 ---
 
 ## 📋 Přehled

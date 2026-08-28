@@ -1,0 +1,854 @@
+{
+  "generated_at": "2026-08-24",
+  "source": "priority_ideas.csv (231 řádků, PDF z 24. 8. 2026), mtime 2026-08-24",
+  "cohort": {
+    "era": "MODERN_LONG",
+    "instrument": "LONG_EQUITY",
+    "n_rows": 40,
+    "n_tickers": 25,
+    "n_open": 9,
+    "first_entry": "2021-01-07",
+    "last_entry": "2026-08-13",
+    "excluded": {
+      "NO_DATA_BEFORE_ENTRY": 18,
+      "RENAMED_UNRESOLVED": 29,
+      "MISMATCH_UNEXPLAINED": 3,
+      "NO_DATA_DELISTED": 14
+    },
+    "supports_neighbours": true
+  },
+  "features": {
+    "drawdown_from_52w_high_pct": {
+      "n": 40,
+      "min": -74.40191401438841,
+      "p10": -49.45165389951847,
+      "p25": -37.633547008547005,
+      "median": -26.120435120435115,
+      "p75": -12.471050123340298,
+      "p90": -3.9381273006263706,
+      "max": -0.244798041615657
+    },
+    "pct_of_52w_range": {
+      "n": 40,
+      "min": 3.71516959090951,
+      "p10": 26.723028579979054,
+      "p25": 38.50365767671426,
+      "median": 65.18313555295896,
+      "p75": 83.57771260997069,
+      "p90": 93.60204081632654,
+      "max": 99.59758551307849
+    },
+    "ret_6m_pct": {
+      "n": 40,
+      "min": -60.51660681703678,
+      "p10": -8.721412235563172,
+      "p25": 1.474909595659446,
+      "median": 54.12698412698411,
+      "p75": 97.59680267262964,
+      "p90": 292.6788263283109,
+      "max": 942.3076923076924
+    },
+    "vol_60d_annualised_pct": {
+      "n": 40,
+      "min": 31.46307679085907,
+      "p10": 43.99905012789352,
+      "p25": 61.11999933935018,
+      "median": 86.55607085602833,
+      "p75": 118.1502036314688,
+      "p90": 149.2745451638826,
+      "max": 193.27098911190174
+    },
+    "median_dollar_volume_20d": {
+      "n": 40,
+      "min": 8019.0,
+      "p10": 18990.35,
+      "p25": 125587.70375,
+      "median": 331682.75,
+      "p75": 3078396.375,
+      "p90": 9433850.32219,
+      "max": 18336706788.395
+    },
+    "price_level": {
+      "n": 40,
+      "min": 0.399,
+      "p10": 0.853,
+      "p25": 3.2575,
+      "median": 6.095,
+      "p75": 12.84,
+      "p90": 23.079,
+      "max": 268.799988
+    },
+    "gauge_z_at_entry": {
+      "n": 40,
+      "min": -0.16529793074638774,
+      "p10": 0.2470982441062807,
+      "p25": 0.6502167288104101,
+      "median": 0.9250629439204804,
+      "p75": 0.9995795888043056,
+      "p90": 1.2023372998124116,
+      "max": 1.4643262672565627
+    }
+  },
+  "entries": [
+    {
+      "row_id": 175,
+      "ticker": "VTSI",
+      "entry_date": "2021-01-07",
+      "exit_date": "2021-03-30",
+      "exit_kind": "DECISION",
+      "exit_reason": "RR_PRAVIDLO",
+      "note": "Open 10:00AM / Profits (R/R) @ 9 / Back in at 5 !!",
+      "sheet_return_pct": 147.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -29.245283,
+        "gauge_z_at_entry": 0.593855,
+        "median_dollar_volume_20d": 88428.815,
+        "pct_of_52w_range": 53.030303,
+        "price_level": 3.75,
+        "ret_6m_pct": 1.882794,
+        "vol_60d_annualised_pct": 40.03813
+      }
+    },
+    {
+      "row_id": 176,
+      "ticker": "VTSI",
+      "entry_date": "2021-04-07",
+      "exit_date": "2021-10-11",
+      "exit_kind": "DECISION",
+      "exit_reason": "RR_PRAVIDLO",
+      "note": "$5 reentry (see entry above)... R/R @ 11.45",
+      "sheet_return_pct": 129.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -49.852507,
+        "gauge_z_at_entry": 0.981509,
+        "median_dollar_volume_20d": 137974.0,
+        "pct_of_52w_range": 37.943696,
+        "price_level": 5.1,
+        "ret_6m_pct": 34.920635,
+        "vol_60d_annualised_pct": 133.950249
+      }
+    },
+    {
+      "row_id": 177,
+      "ticker": "VTSI",
+      "entry_date": "2021-11-24",
+      "exit_date": "2023-12-04",
+      "exit_kind": "DECISION",
+      "exit_reason": "RR_PRAVIDLO",
+      "note": "Stock Talk LIVE Friday. Taking some profits (bought more on 11/10/23).",
+      "sheet_return_pct": 24.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -44.790812,
+        "gauge_z_at_entry": 1.104658,
+        "median_dollar_volume_20d": 903893.5,
+        "pct_of_52w_range": 37.919272,
+        "price_level": 6.73,
+        "ret_6m_pct": 19.326241,
+        "vol_60d_annualised_pct": 88.012252
+      }
+    },
+    {
+      "row_id": 182,
+      "ticker": "TPCS",
+      "entry_date": "2021-02-04",
+      "exit_date": "2024-02-16",
+      "exit_kind": "DECISION",
+      "exit_reason": "UNKNOWN",
+      "note": "Open 11:45AM",
+      "sheet_return_pct": -37.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -6.976744,
+        "gauge_z_at_entry": 0.669004,
+        "median_dollar_volume_20d": 67665.0,
+        "pct_of_52w_range": 83.333333,
+        "price_level": 6.4,
+        "ret_6m_pct": 37.931034,
+        "vol_60d_annualised_pct": 50.244407
+      }
+    },
+    {
+      "row_id": 184,
+      "ticker": "DTEA",
+      "entry_date": "2021-02-26",
+      "exit_date": "2021-06-16",
+      "exit_kind": "DECISION",
+      "exit_reason": "UNKNOWN",
+      "note": "Open 1:30PM / Closed 11AM",
+      "sheet_return_pct": 43.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -50.469799,
+        "gauge_z_at_entry": 0.669004,
+        "median_dollar_volume_20d": 3333393.0,
+        "pct_of_52w_range": 47.302032,
+        "price_level": 3.69,
+        "ret_6m_pct": 280.412371,
+        "vol_60d_annualised_pct": 152.558601
+      }
+    },
+    {
+      "row_id": 185,
+      "ticker": "IRIX",
+      "entry_date": "2021-03-03",
+      "exit_date": "2021-04-26",
+      "exit_kind": "DECISION",
+      "exit_reason": "ALERT",
+      "note": "Open 10:45AM / Closed via Yellow Alert",
+      "sheet_return_pct": 35.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -13.308458,
+        "gauge_z_at_entry": 0.806859,
+        "median_dollar_volume_20d": 983620.0,
+        "pct_of_52w_range": 84.31085,
+        "price_level": 6.97,
+        "ret_6m_pct": 236.714976,
+        "vol_60d_annualised_pct": 148.931188
+      }
+    },
+    {
+      "row_id": 186,
+      "ticker": "SMSI",
+      "entry_date": "2021-03-12",
+      "exit_date": "2024-09-17",
+      "exit_kind": "BATCH",
+      "exit_reason": "UNKNOWN",
+      "note": "Open 12:15PM",
+      "sheet_return_pct": -86.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -16.521743,
+        "gauge_z_at_entry": 0.806859,
+        "median_dollar_volume_20d": 1917448.439594,
+        "pct_of_52w_range": 72.117395,
+        "price_level": 268.799988,
+        "ret_6m_pct": 80.160853,
+        "vol_60d_annualised_pct": 70.408883
+      }
+    },
+    {
+      "row_id": 187,
+      "ticker": "AEHR",
+      "entry_date": "2021-07-19",
+      "exit_date": "2021-09-24",
+      "exit_kind": "DECISION",
+      "exit_reason": "RR_PRAVIDLO",
+      "note": "Email @ 12:35PM... R/R @ 12-15 (13.50)... back in @ 13",
+      "sheet_return_pct": 318.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -5.333333,
+        "gauge_z_at_entry": 1.084827,
+        "median_dollar_volume_20d": 662061.0,
+        "pct_of_52w_range": 93.571429,
+        "price_level": 6.39,
+        "ret_6m_pct": 198.598131,
+        "vol_60d_annualised_pct": 152.364758
+      }
+    },
+    {
+      "row_id": 188,
+      "ticker": "AEHR",
+      "entry_date": "2021-10-04",
+      "exit_date": "2021-12-27",
+      "exit_kind": "DECISION",
+      "exit_reason": "UNKNOWN",
+      "note": "See entry above.",
+      "sheet_return_pct": 76.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -21.910448,
+        "gauge_z_at_entry": 1.172524,
+        "median_dollar_volume_20d": 29817130.0,
+        "pct_of_52w_range": 76.474359,
+        "price_level": 13.08,
+        "ret_6m_pct": 403.076923,
+        "vol_60d_annualised_pct": 193.270989
+      }
+    },
+    {
+      "row_id": 189,
+      "ticker": "GAIA",
+      "entry_date": "2021-11-04",
+      "exit_date": "2023-05-26",
+      "exit_kind": "DECISION",
+      "exit_reason": "UNKNOWN",
+      "note": "Open 1:30PM / Closed on YouTube LIVE",
+      "sheet_return_pct": -75.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -29.880478,
+        "gauge_z_at_entry": 1.104658,
+        "median_dollar_volume_20d": 441714.0,
+        "pct_of_52w_range": 26.829268,
+        "price_level": 10.56,
+        "ret_6m_pct": -5.206463,
+        "vol_60d_annualised_pct": 44.409746
+      }
+    },
+    {
+      "row_id": 194,
+      "ticker": "CELH",
+      "entry_date": "2022-06-24",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "UNKNOWN",
+      "note": "https://www.youtube.com/watch?v=9tSdrvRfpzY",
+      "sheet_return_pct": 33.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -39.112684,
+        "gauge_z_at_entry": 0.131873,
+        "median_dollar_volume_20d": 56291773.81095,
+        "pct_of_52w_range": 40.050063,
+        "price_level": 22.370001,
+        "ret_6m_pct": -5.332197,
+        "vol_60d_annualised_pct": 100.543447
+      }
+    },
+    {
+      "row_id": 197,
+      "ticker": "TPCS",
+      "entry_date": "2022-09-14",
+      "exit_date": "2024-02-16",
+      "exit_kind": "DECISION",
+      "exit_reason": "UKLID",
+      "note": "Should only have one TPCS entry (the other is below) 2/16",
+      "sheet_return_pct": -40.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -38.034188,
+        "gauge_z_at_entry": -0.165298,
+        "median_dollar_volume_20d": 19574.0,
+        "pct_of_52w_range": 13.592233,
+        "price_level": 5.8,
+        "ret_6m_pct": -8.805031,
+        "vol_60d_annualised_pct": 31.878462
+      }
+    },
+    {
+      "row_id": 200,
+      "ticker": "PESI",
+      "entry_date": "2023-03-10",
+      "exit_date": "2024-02-16",
+      "exit_kind": "DECISION",
+      "exit_reason": "WAIT_TIME",
+      "note": "Made for great trades and +10% as an investment... but Wait Time now!",
+      "sheet_return_pct": 10.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -0.244798,
+        "gauge_z_at_entry": 0.237655,
+        "median_dollar_volume_20d": 388238.0,
+        "pct_of_52w_range": 99.597586,
+        "price_level": 8.15,
+        "ret_6m_pct": 66.666667,
+        "vol_60d_annualised_pct": 64.365189
+      }
+    },
+    {
+      "row_id": 201,
+      "ticker": "SMSI",
+      "entry_date": "2023-03-20",
+      "exit_date": "2023-08-11",
+      "exit_kind": "DECISION",
+      "exit_reason": "RR_PRAVIDLO",
+      "note": "Bought more as a trade. Sold the trading shares for a nice profit.",
+      "sheet_return_pct": 70.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -74.401914,
+        "gauge_z_at_entry": 0.237655,
+        "median_dollar_volume_20d": 615344.374977,
+        "pct_of_52w_range": 3.71517,
+        "price_level": 42.799999,
+        "ret_6m_pct": -60.516607,
+        "vol_60d_annualised_pct": 115.241402
+      }
+    },
+    {
+      "row_id": 204,
+      "ticker": "ATGN",
+      "entry_date": "2023-08-11",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "UNKNOWN",
+      "note": "Via StockTwits after my LIVE (3:58PM)",
+      "sheet_return_pct": -15.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -31.496063,
+        "gauge_z_at_entry": 0.479895,
+        "median_dollar_volume_20d": 12000.0,
+        "pct_of_52w_range": 52.941176,
+        "price_level": 0.87,
+        "ret_6m_pct": 58.181818,
+        "vol_60d_annualised_pct": 62.956341
+      }
+    },
+    {
+      "row_id": 205,
+      "ticker": "NVDA",
+      "entry_date": "2023-08-18",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "UNKNOWN",
+      "note": "https://www.youtube.com/watch?v=YKBA_81XenY&t=3486s",
+      "sheet_return_pct": 233.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -9.958827,
+        "gauge_z_at_entry": 0.479895,
+        "median_dollar_volume_20d": 18336706788.395,
+        "pct_of_52w_range": 87.152244,
+        "price_level": 43.299,
+        "ret_6m_pct": 96.795737,
+        "vol_60d_annualised_pct": 59.800287
+      }
+    },
+    {
+      "row_id": 206,
+      "ticker": "TPCS",
+      "entry_date": "2023-09-08",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "UNKNOWN",
+      "note": "\"Super Mega Buy\"! (StockTwits 10:50AM)",
+      "sheet_return_pct": -46.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -32.806691,
+        "gauge_z_at_entry": 0.248148,
+        "median_dollar_volume_20d": 230883.0,
+        "pct_of_52w_range": 33.646617,
+        "price_level": 7.23,
+        "ret_6m_pct": -8.712121,
+        "vol_60d_annualised_pct": 31.463077
+      }
+    },
+    {
+      "row_id": 207,
+      "ticker": "IRIX",
+      "entry_date": "2023-09-29",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "UNKNOWN",
+      "note": "Article releaased at 2:00PM ET",
+      "sheet_return_pct": -16.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -7.29927,
+        "gauge_z_at_entry": 0.248148,
+        "median_dollar_volume_20d": 148006.5,
+        "pct_of_52w_range": 86.013986,
+        "price_level": 2.54,
+        "ret_6m_pct": 23.902439,
+        "vol_60d_annualised_pct": 100.532051
+      }
+    },
+    {
+      "row_id": 208,
+      "ticker": "VTSI",
+      "entry_date": "2023-11-10",
+      "exit_date": "2024-02-15",
+      "exit_kind": "DECISION",
+      "exit_reason": "UNKNOWN",
+      "note": "Added more LIVE on Nov 10 (already in EZ Money)",
+      "sheet_return_pct": 150.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -42.25844,
+        "gauge_z_at_entry": 0.455548,
+        "median_dollar_volume_20d": 168762.0,
+        "pct_of_52w_range": 25.766871,
+        "price_level": 4.96,
+        "ret_6m_pct": -8.146447,
+        "vol_60d_annualised_pct": 44.922262
+      }
+    },
+    {
+      "row_id": 210,
+      "ticker": "ATGN",
+      "entry_date": "2024-03-15",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "UNKNOWN",
+      "note": "Via Stock Talk LIVE @ 2:20PM",
+      "sheet_return_pct": -7.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -24.786325,
+        "gauge_z_at_entry": 0.911803,
+        "median_dollar_volume_20d": 64518.0,
+        "pct_of_52w_range": 61.333333,
+        "price_level": 0.88,
+        "ret_6m_pct": 6.024096,
+        "vol_60d_annualised_pct": 69.187953
+      }
+    },
+    {
+      "row_id": 211,
+      "ticker": "GKPRF",
+      "entry_date": "2024-03-22",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "UNKNOWN",
+      "note": "Via Stock Talk LIVE @ 2:45PM",
+      "sheet_return_pct": -24.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -2.608696,
+        "gauge_z_at_entry": 0.911803,
+        "median_dollar_volume_20d": 10017.1,
+        "pct_of_52w_range": 96.519722,
+        "price_level": 0.56,
+        "ret_6m_pct": 100.0,
+        "vol_60d_annualised_pct": 89.931071
+      }
+    },
+    {
+      "row_id": 212,
+      "ticker": "ALAR",
+      "entry_date": "2024-04-17",
+      "exit_date": "2024-06-27",
+      "exit_kind": "DECISION",
+      "exit_reason": "ZTRATA_ZAJMU",
+      "note": "6/27/24 -- No longer interested until further notice.",
+      "sheet_return_pct": 90.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -24.641071,
+        "gauge_z_at_entry": 0.705877,
+        "median_dollar_volume_20d": 6839480.0,
+        "pct_of_52w_range": 73.736652,
+        "price_level": 22.57,
+        "ret_6m_pct": 467.085427,
+        "vol_60d_annualised_pct": 120.402401
+      }
+    },
+    {
+      "row_id": 213,
+      "ticker": "VTSI",
+      "entry_date": "2024-04-26",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "1/9/26 -- IVAS showing progress; could be good for VTSI's recoil kits.",
+      "sheet_return_pct": -75.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -22.21567,
+        "gauge_z_at_entry": 0.705877,
+        "median_dollar_volume_20d": 2993397.5,
+        "pct_of_52w_range": 70.477688,
+        "price_level": 13.2,
+        "ret_6m_pct": 190.10989,
+        "vol_60d_annualised_pct": 98.440004
+      }
+    },
+    {
+      "row_id": 215,
+      "ticker": "EVLV",
+      "entry_date": "2024-05-10",
+      "exit_date": "2024-10-31",
+      "exit_kind": "DECISION",
+      "exit_reason": "TEZE_SE_ZLOMILA",
+      "note": "10/31/24 -- R/R says buy. Great product/biz, but CEO had to go. WILL revisit soon.",
+      "sheet_return_pct": 7.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -71.566265,
+        "gauge_z_at_entry": 0.86815,
+        "median_dollar_volume_20d": 3650509.0,
+        "pct_of_52w_range": 5.564388,
+        "price_level": 2.36,
+        "ret_6m_pct": -43.809524,
+        "vol_60d_annualised_pct": 131.887449
+      }
+    },
+    {
+      "row_id": 216,
+      "ticker": "GEODF",
+      "entry_date": "2024-05-13",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "5/13/24 -- Good quarter announced. Bad news is behind us!",
+      "sheet_return_pct": 35.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -32.793522,
+        "gauge_z_at_entry": 0.86815,
+        "median_dollar_volume_20d": 8019.0,
+        "pct_of_52w_range": 39.097744,
+        "price_level": 1.66,
+        "ret_6m_pct": 28.682171,
+        "vol_60d_annualised_pct": 40.302788
+      }
+    },
+    {
+      "row_id": 217,
+      "ticker": "ALAR",
+      "entry_date": "2024-06-18",
+      "exit_date": "2024-06-27",
+      "exit_kind": "DECISION",
+      "exit_reason": "ZTRATA_ZAJMU",
+      "note": "6/27/24 -- No longer interested until further notice.",
+      "sheet_return_pct": 39.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -32.437712,
+        "gauge_z_at_entry": 0.976309,
+        "median_dollar_volume_20d": 13326726.7219,
+        "pct_of_52w_range": 65.834836,
+        "price_level": 27.66,
+        "ret_6m_pct": 537.327189,
+        "vol_60d_annualised_pct": 117.399471
+      }
+    },
+    {
+      "row_id": 218,
+      "ticker": "KRKNF",
+      "entry_date": "2024-06-21",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "RR_PRAVIDLO",
+      "note": "1/3/25 -- Sold most of my shares, but \"afraid\" it will just keep going. Anduril connection!",
+      "sheet_return_pct": 172.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -17.647059,
+        "gauge_z_at_entry": 0.976309,
+        "median_dollar_volume_20d": 87187.7,
+        "pct_of_52w_range": 74.619289,
+        "price_level": 0.7,
+        "ret_6m_pct": 55.555556,
+        "vol_60d_annualised_pct": 47.499119
+      }
+    },
+    {
+      "row_id": 219,
+      "ticker": "TSSI",
+      "entry_date": "2024-07-10",
+      "exit_date": "2025-05-02",
+      "exit_kind": "DECISION",
+      "exit_reason": "RR_PRAVIDLO",
+      "note": "2/11/25 -- R/R rules say get out around $18-20 !",
+      "sheet_return_pct": 255.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -15.576324,
+        "gauge_z_at_entry": 0.989879,
+        "median_dollar_volume_20d": 240779.0,
+        "pct_of_52w_range": 83.164983,
+        "price_level": 2.71,
+        "ret_6m_pct": 942.307692,
+        "vol_60d_annualised_pct": 145.833293
+      }
+    },
+    {
+      "row_id": 220,
+      "ticker": "CXDO",
+      "entry_date": "2024-07-12",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "8/12/26 - I've been a strong buyer since earnings around these levels.",
+      "sheet_return_pct": 60.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -49.407115,
+        "gauge_z_at_entry": 0.989879,
+        "median_dollar_volume_20d": 175491.0,
+        "pct_of_52w_range": 38.52459,
+        "price_level": 3.84,
+        "ret_6m_pct": -20.661157,
+        "vol_60d_annualised_pct": 69.88787
+      }
+    },
+    {
+      "row_id": 221,
+      "ticker": "ITMSF",
+      "entry_date": "2024-07-19",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "7/22/25 -- Awaiting binary outcome on Indonesia contract.",
+      "sheet_return_pct": 88.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -37.5,
+        "gauge_z_at_entry": 0.989879,
+        "median_dollar_volume_20d": 13737.5,
+        "pct_of_52w_range": 38.636364,
+        "price_level": 0.45,
+        "ret_6m_pct": 7.142857,
+        "vol_60d_annualised_pct": 86.469358
+      }
+    },
+    {
+      "row_id": 222,
+      "ticker": "ECOR",
+      "entry_date": "2024-10-21",
+      "exit_date": "2025-05-02",
+      "exit_kind": "DECISION",
+      "exit_reason": "TEZE_SE_ZLOMILA",
+      "note": "5/2/25 -- Avoid. Not performing as management projected.",
+      "sheet_return_pct": 6.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -0.55371,
+        "gauge_z_at_entry": 1.023631,
+        "median_dollar_volume_20d": 245421.0,
+        "pct_of_52w_range": 98.753117,
+        "price_level": 8.98,
+        "ret_6m_pct": 59.786477,
+        "vol_60d_annualised_pct": 49.592735
+      }
+    },
+    {
+      "row_id": 223,
+      "ticker": "EVLV",
+      "entry_date": "2024-11-26",
+      "exit_date": "2025-01-03",
+      "exit_kind": "BATCH",
+      "exit_reason": "GRADUACE",
+      "note": "1/3/25 -- \"Graduated\" but a great company at the right price (R/R)!",
+      "sheet_return_pct": 17.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -39.965096,
+        "gauge_z_at_entry": 1.218482,
+        "median_dollar_volume_20d": 7107492.0,
+        "pct_of_52w_range": 38.44086,
+        "price_level": 3.44,
+        "ret_6m_pct": 27.407407,
+        "vol_60d_annualised_pct": 126.018349
+      }
+    },
+    {
+      "row_id": 224,
+      "ticker": "GKPRF",
+      "entry_date": "2025-05-16",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "8/12/26 - Broke through the 200DMA resistance. Stock should be much higher.",
+      "sheet_return_pct": 249.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -27.454545,
+        "gauge_z_at_entry": 0.938323,
+        "median_dollar_volume_20d": 26108.4,
+        "pct_of_52w_range": 55.192878,
+        "price_level": 0.399,
+        "ret_6m_pct": 0.251256,
+        "vol_60d_annualised_pct": 68.650906
+      }
+    },
+    {
+      "row_id": 225,
+      "ticker": "TSSI",
+      "entry_date": "2025-05-23",
+      "exit_date": "2025-06-06",
+      "exit_kind": "DECISION",
+      "exit_reason": "UNKNOWN",
+      "note": "8/12/26 - Bought some as a trade for tomorrow's earnings. Street looks too low, but IDK for sure.",
+      "sheet_return_pct": 59.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -27.820372,
+        "gauge_z_at_entry": 0.938323,
+        "median_dollar_volume_20d": 9001308.5,
+        "pct_of_52w_range": 69.976359,
+        "price_level": 13.18,
+        "ret_6m_pct": 64.134496,
+        "vol_60d_annualised_pct": 161.863478
+      }
+    },
+    {
+      "row_id": 226,
+      "ticker": "IDN",
+      "entry_date": "2025-05-23",
+      "exit_date": "2025-11-13",
+      "exit_kind": "DECISION",
+      "exit_reason": "RR_PRAVIDLO",
+      "note": "11/13/25 -- Great earnings last night, but +50% reaction feels too aggressive. Want to rebuy lower.",
+      "sheet_return_pct": 57.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -3.974895,
+        "gauge_z_at_entry": 0.938323,
+        "median_dollar_volume_20d": 214821.0,
+        "pct_of_52w_range": 93.356643,
+        "price_level": 4.59,
+        "ret_6m_pct": 90.456432,
+        "vol_60d_annualised_pct": 86.90176
+      }
+    },
+    {
+      "row_id": 227,
+      "ticker": "TPCS",
+      "entry_date": "2025-08-01",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "1/9/26 -- Trump pushing for more defense spending.",
+      "sheet_return_pct": 37.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -3.607214,
+        "gauge_z_at_entry": 1.200543,
+        "median_dollar_volume_20d": 211544.0,
+        "pct_of_52w_range": 93.877551,
+        "price_level": 4.81,
+        "ret_6m_pct": 52.698413,
+        "vol_60d_annualised_pct": 79.018726
+      }
+    },
+    {
+      "row_id": 228,
+      "ticker": "IZEA",
+      "entry_date": "2025-10-10",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "10/10/25 -- AI should benefit social media influencers greatly.",
+      "sheet_return_pct": -24.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -6.666667,
+        "gauge_z_at_entry": 1.362432,
+        "median_dollar_volume_20d": 275127.5,
+        "pct_of_52w_range": 90.196078,
+        "price_level": 4.9,
+        "ret_6m_pct": 184.883721,
+        "vol_60d_annualised_pct": 86.642784
+      }
+    },
+    {
+      "row_id": 229,
+      "ticker": "WATT",
+      "entry_date": "2026-03-27",
+      "exit_date": "2026-08-12",
+      "exit_kind": "DECISION",
+      "exit_reason": "UNKNOWN",
+      "note": "8/13/26 - Speaking with Mgt tomorrow AM.",
+      "sheet_return_pct": 27.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -29.199219,
+        "gauge_z_at_entry": 0.991562,
+        "median_dollar_volume_20d": 5275414.0,
+        "pct_of_52w_range": 64.531435,
+        "price_level": 14.5,
+        "ret_6m_pct": 76.829268,
+        "vol_60d_annualised_pct": 111.166445
+      }
+    },
+    {
+      "row_id": 230,
+      "ticker": "RDCM",
+      "entry_date": "2026-06-18",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "8/12/26 - I was a strong buyer this AM.",
+      "sheet_return_pct": -18.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -23.775388,
+        "gauge_z_at_entry": 1.446309,
+        "median_dollar_volume_20d": 2170783.5,
+        "pct_of_52w_range": 37.124803,
+        "price_level": 12.76,
+        "ret_6m_pct": -1.619121,
+        "vol_60d_annualised_pct": 61.559904
+      }
+    },
+    {
+      "row_id": 231,
+      "ticker": "CVV",
+      "entry_date": "2026-08-13",
+      "exit_date": "",
+      "exit_kind": "STILL_OPEN",
+      "exit_reason": "",
+      "note": "8/13/2026 - New priority idea for the research queue.",
+      "sheet_return_pct": 5.0,
+      "features": {
+        "drawdown_from_52w_high_pct": -17.472527,
+        "gauge_z_at_entry": 1.464326,
+        "median_dollar_volume_20d": 879317.0,
+        "pct_of_52w_range": 74.921136,
+        "price_level": 7.51,
+        "ret_6m_pct": 76.705882,
+        "vol_60d_annualised_pct": 80.653854
+      }
+    }
+  ]
+}

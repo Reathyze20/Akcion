@@ -1,0 +1,29 @@
+# Datovane trzni udalosti z listu "Priority Ideas". Jedina znama sada, proti
+# ktere jde app/services/market_gauge.py overit jinak nez proti 1999 a 2009.
+#
+# Kazdy radek nese doslovny citat nebo doslovny popis z listu a row_id, aby sel
+# overit okem proti priority_ideas.csv -- stejna kazen jako app/core/tickers.py.
+#
+# label          HEDGE_OPEN   otevrel inverzni ETF nebo short indexu
+#                HEDGE_CLOSE  zavrel ho
+#                ALERT_SET    poznamka doslova vyhlasuje stupen
+#                ALERT_LIFTED poznamka doslova rusi stupen
+# claimed_level  vyplneno JEN tam, kde poznamka stupen doslova jmenuje.
+#                Prazdne u hedgi -- otevreny hedge je cin, ne vyhlaseny stupen,
+#                a doplnit k nemu stupen by znamenalo vymyslet si data.
+#
+# POZOR na rozliseni: market_gauge cte MESICNI zaverecne kurzy, takze dotaz
+# k 14. 2. 2020 pristane na baru z 1. 2. 2020. U udalosti uvnitr mesice je
+# zpozdeni az 30 dni a scorecard ho musi hlasit, ne schovat.
+event_date,label,claimed_level,evidence_row_id,evidence_quote
+2016-04-28,HEDGE_OPEN,,68,"Short S&P ETF *** (SH) otevren; tyz den i RWM a short XBI"
+2017-10-11,HEDGE_CLOSE,,68,"SH zavren po 531 dnech na -22 %; tyz den RWM a XBI"
+2020-02-14,HEDGE_OPEN,,154,"RUSSELL SHORT ETF (RWM) otevren dva radky, oba 14. 2. 2020"
+2020-03-09,ALERT_LIFTED,GREEN,154,"ORANGE (LEVEL 2) ALERT LIFTED @ 7:30PM"
+2020-04-13,HEDGE_OPEN,,164,"HEDGE - Open 11:27AM"
+2020-06-18,ALERT_SET,YELLOW,155,"NOW AT YELLOW ALERT"
+2021-01-05,HEDGE_OPEN,,174,"HEDGE - Open 12:50PM"
+2021-11-30,HEDGE_CLOSE,,174,"RWM zavren po 329 dnech na -15 %"
+2022-02-03,HEDGE_OPEN,,191,"HEDGE - Open 12:17PM (short IWM)"
+2022-03-16,HEDGE_OPEN,,193,"HEDGE - Open 12:20PM (short XLY)"
+2022-04-25,HEDGE_CLOSE,,191,"IWM i XLY zavreny tyz den"

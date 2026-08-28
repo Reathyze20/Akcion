@@ -1,3 +1,6 @@
+> ⚠️ **Stav: historické, částečně neaktuální.** Viz `../docs/YAHOO_CACHE.md` pro
+> stejnou poznámku a `../docs/OPERATIONS.md` pro aktuální chování.
+
 # 🚀 Yahoo Finance Smart Cache - Quick Start
 
 ## ✅ Co bylo implementováno

@@ -9,6 +9,7 @@ Author: GitHub Copilot with Claude Sonnet 4.5
 Date: 2026-01-17
 """
 
+import logging
 from typing import List, Optional
 from datetime import datetime, date
 
@@ -27,7 +28,10 @@ from app.trading.gomes_analyzer import (
 from app.models.trading import ActiveWatchlist
 from app.models.stock import Stock
 from app.models.analysis import AnalystTranscript, TickerMention
+from app.services.score_journal import SOURCE_AI_ANALYST, record_score
 from app.config.settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -1325,7 +1329,7 @@ async def update_stock_with_ai_analyst(
             }
         }
     """
-    from app.services.gomes_ai_analyst import GomesAIAnalyst
+    from app.services.gomes_ai_analyst import AnalystNotImplemented, GomesAIAnalyst
     
     try:
         # Get or create stock
@@ -1354,21 +1358,25 @@ async def update_stock_with_ai_analyst(
         # Update stock with AI results
         await analyst.update_stock_from_analysis(stock, analysis)
         
-        # Track score history if score changed
-        if analysis.score_delta != 0:
-            from app.models.score_history import ConvictionScoreHistory
-            
-            history_record = ConvictionScoreHistory(
-                ticker=ticker.upper(),
-                conviction_score=stock.conviction_score,
-                thesis_status=stock.inflection_status,
-                action_signal=None,  # Could derive from GomesLogicEngine
-                price_at_analysis=stock.current_price,
-                analysis_source=request_body.source_type,
-                recorded_at=datetime.utcnow()
-            )
-            db.add(history_record)
-        
+        # Journal the scoring event — unconditionally, not only when the score
+        # moved. A reaffirmed nine is as much a prediction as a changed one,
+        # and recording only the changes would leave the calibration sample
+        # made of nothing but volatile tickers.
+        #
+        # `thesis_status` stays empty: the column's vocabulary is
+        # IMPROVED/STABLE/DETERIORATED/BROKEN and `inflection_status` speaks a
+        # different one, so copying it across would file wrong values under a
+        # right-looking name.
+        record_score(
+            db,
+            ticker=ticker,
+            score=stock.conviction_score,
+            source=request_body.source_type or SOURCE_AI_ANALYST,
+            stock=stock,
+            price=None,
+            action_signal=None,
+        )
+
         db.commit()
         db.refresh(stock)
         
@@ -1397,6 +1405,13 @@ async def update_stock_with_ai_analyst(
             ]
         }
         
+    except AnalystNotImplemented as e:
+        # 501, not 500: nothing failed. There is no analyst behind this
+        # endpoint, and the rollback matters — the handler creates the `stocks`
+        # row before asking, so without it a refusal would still leave a new
+        # empty ticker in the portfolio.
+        db.rollback()
+        raise HTTPException(status_code=501, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Validation error: {str(e)}")
     except Exception as e:
@@ -1425,57 +1440,39 @@ def get_score_history(
         limit: Max number of records (default 30)
         
     Returns:
-        List of score history records with timestamps
+        List of score history records with timestamps. An empty list means the
+        journal holds nothing for this ticker yet — it is not padded from
+        anywhere else.
+
+    There used to be a fallback here that read the `stocks` row and returned
+    it as a history entry dated `created_at`. That invented a past: one
+    current score, stamped with a day on which nobody claims it was issued,
+    rendered as a trend line. The journal
+    (`app/services/score_journal.py`) is now the only source, and a query
+    failure is allowed to surface as a 500 rather than being disguised as
+    "this ticker has no history".
     """
     from sqlalchemy import desc
-    
-    try:
-        # Try to get from score_history table first
-        from app.models.score_history import ConvictionScoreHistory
-        
-        history = db.query(ConvictionScoreHistory).filter(
-            ConvictionScoreHistory.ticker == ticker.upper()
-        ).order_by(desc(ConvictionScoreHistory.recorded_at)).limit(limit).all()
-        
-        if history:
-            return {
-                "ticker": ticker.upper(),
-                "count": len(history),
-                "history": [
-                    {
-                        "date": h.recorded_at.isoformat() if h.recorded_at else None,
-                        "conviction_score": h.conviction_score,
-                        "thesis_status": h.thesis_status,
-                        "action_signal": h.action_signal,
-                        "price_at_analysis": float(h.price_at_analysis) if h.price_at_analysis else None,
-                        "source": h.analysis_source,
-                    }
-                    for h in history
-                ]
-            }
-    except Exception:
-        pass  # Table may not exist yet, fall back to stocks table
-    
-    # Fallback: Get historical scores from stocks table (versioned records)
-    from app.models.stock import Stock
-    
-    stocks = db.query(Stock).filter(
-        Stock.ticker == ticker.upper()
-    ).order_by(desc(Stock.created_at)).limit(limit).all()
-    
+
+    from app.models.score_history import ConvictionScoreHistory
+
+    history = db.query(ConvictionScoreHistory).filter(
+        ConvictionScoreHistory.ticker == ticker.upper()
+    ).order_by(desc(ConvictionScoreHistory.recorded_at)).limit(limit).all()
+
     return {
         "ticker": ticker.upper(),
-        "count": len(stocks),
+        "count": len(history),
         "history": [
             {
-                "date": s.created_at.isoformat() if s.created_at else None,
-                "conviction_score": s.conviction_score,
-                "thesis_status": None,  # Not tracked in stocks table
-                "action_signal": s.action_verdict,
-                "price_at_analysis": None,
-                "source": s.source_type,
+                "date": h.recorded_at.isoformat() if h.recorded_at else None,
+                "conviction_score": h.conviction_score,
+                "thesis_status": h.thesis_status,
+                "action_signal": h.action_signal,
+                "price_at_analysis": float(h.price_at_analysis) if h.price_at_analysis is not None else None,
+                "source": h.analysis_source,
             }
-            for s in stocks
+            for h in history
         ]
     }
 
@@ -1705,122 +1702,599 @@ def send_weekly_summary_email_endpoint(
         )
 
 
+# `GET /api/gomes/analyze-position/{ticker}` stood here and published a second
+# set of verdicts over the same holdings the band engine judges — HARD_EXIT,
+# SELL, TRIM, HOLD, ACCUMULATE, SNIPER — computed by `GomesLogicEngine`, whose
+# rule 5 was unreachable and whose rule 4 always fired first. The band engine
+# behind `/api/trading/daily-actions` answers the same question with the
+# cylinders, the semafor, the per-account caps and the pacing rules attached.
+
+
 # ============================================================================
-# GOMES LOGIC ENGINE - Position Analysis
+# TRACKER SYNC — the feed that gives the bands their numbers
 # ============================================================================
 
-class GomesDecisionResponse(BaseModel):
-    """Response from Gomes Logic Engine"""
-    ticker: str
-    max_allocation_cap: float
-    action_signal: str  # HARD_EXIT, SELL, TRIM, HOLD, ACCUMULATE, SNIPER
-    warnings: List[str]
-    metrics: dict  # Raw metrics used for calculation
-    decision_log: str  # Human-readable explanation
+class TrackerSyncResponse(BaseModel):
+    """
+    What one read of the tracker did.
+
+    `status` is kept separate from `error` on purpose: TOO_SOON is not a
+    failure and UNAVAILABLE is not a bug, and flattening the three outcomes
+    into "did it work" would hide the only one worth acting on.
+    """
+
+    status: str = Field(..., description="SYNCED | TOO_SOON | UNAVAILABLE")
+    picks_read: int = 0
+    created: List[str] = Field(default_factory=list)
+    band_updated: List[str] = Field(default_factory=list)
+    price_updated: List[str] = Field(default_factory=list)
+    #: Bands the analyst has moved. Every score computed before one of these
+    #: was measured against a chart that no longer exists.
+    changes: List[str] = Field(default_factory=list)
+    summary_cs: str
+    error: Optional[str] = None
+    synced_at: Optional[datetime] = None
 
 
-@router.get("/analyze-position/{ticker}", response_model=GomesDecisionResponse)
-async def analyze_position_with_gomes_logic(
-    ticker: str,
-    portfolio_id: int = Query(..., description="Portfolio ID to analyze position in"),
-    db: Session = Depends(get_db)
+@router.post("/tracker/sync", response_model=TrackerSyncResponse)
+def sync_gomes_tracker(
+    force: bool = Query(
+        False,
+        description=(
+            "Read even if the 12-hour minimum has not elapsed. For a first run "
+            "or to check an announced change — never for a loop."
+        ),
+    ),
+    db: Session = Depends(get_db),
 ):
     """
-    Apply Gomes Logic Engine to a position.
-    
-    Calculates:
-    - Max allocation cap (based on asset class, score, runway)
-    - Action signal (HARD_EXIT, SELL, TRIM, HOLD, ACCUMULATE, SNIPER)
-    - Risk warnings
-    
-    This is the core algorithm - hard-coded rules, no AI interpretation.
+    Read the Gomes tracker and write its bands onto the GOMES stock rows.
+
+    Three outcomes, kept distinct because collapsing them would hide the one
+    that matters: SYNCED (we looked), TOO_SOON (we did not look), UNAVAILABLE
+    (we looked and could not see). An unreachable source is not an error here —
+    it is recorded and reported, so an outage never becomes a retry loop
+    against somebody else's server.
+
+    What it will not touch: `cylinders`, which the tracker does not publish and
+    which the Buy Guard requires. A synced band alone therefore still cannot
+    produce a BUY, and that is the correct outcome rather than a gap.
     """
-    from app.core.gomes_logic import GomesLogicEngine, StockMetrics, AssetClass
-    from app.models.portfolio import Position
-    
-    # Get stock
-    stock = db.query(Stock).filter(Stock.ticker == ticker).first()
-    if not stock:
-        raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
-    
-    # Get position
-    position = db.query(Position).filter(
-        Position.ticker == ticker,
-        Position.portfolio_id == portfolio_id
-    ).first()
-    
-    if not position:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"Position {ticker} not found in portfolio {portfolio_id}"
-        )
-    
-    # Calculate total portfolio value
-    all_positions = db.query(Position).filter(
-        Position.portfolio_id == portfolio_id
-    ).all()
-    total_value = sum(
-        (p.shares_count * (p.current_price or p.avg_cost)) 
-        for p in all_positions
-    )
-    
-    if total_value == 0:
-        raise HTTPException(status_code=400, detail="Portfolio has zero value")
-    
-    # Calculate current weight
-    position_value = position.shares_count * (position.current_price or position.avg_cost)
-    current_weight_pct = (position_value / total_value) * 100
-    
-    # Build StockMetrics
+    from app.services.tracker_sync import STATUS_SYNCED, sync_tracker
+
     try:
-        asset_class = AssetClass(stock.asset_class) if stock.asset_class else AssetClass.HIGH_BETA_ROCKET
-    except ValueError:
-        asset_class = AssetClass.HIGH_BETA_ROCKET
-    
-    metrics = StockMetrics(
-        ticker=ticker,
-        asset_class=asset_class,
-        conviction_score=stock.conviction_score,
-        cash_runway_months=stock.cash_runway_months,
-        inflection_status=stock.inflection_status,
-        current_price=stock.current_price or position.current_price or 0,
-        price_floor=stock.price_floor,
-        price_target_24m=stock.price_target_24m,
-        current_weight_pct=current_weight_pct
-    )
-    
-    # Execute Gomes Logic
-    decision = GomesLogicEngine.execute(metrics)
-    
-    # Update stock with calculated max_allocation_cap
-    stock.max_allocation_cap = decision.max_allocation_cap
-    db.commit()
-    
-    # Build decision log
-    log_lines = [
-        f"Asset Class: {asset_class.value}",
-        f"Gomes Score: {stock.conviction_score}/10",
-        f"Cash Runway: {stock.cash_runway_months} months" if stock.cash_runway_months else "Cash Runway: Unknown",
-        f"Inflection: {stock.inflection_status}" if stock.inflection_status else "Inflection: Unknown",
-        f"Current Weight: {current_weight_pct:.2f}%",
-        f"Max Allocation Cap: {decision.max_allocation_cap:.2f}%",
-        f"Action Signal: {decision.action_signal.value}",
-        f"Warnings: {len(decision.warnings)}"
-    ]
-    
-    return GomesDecisionResponse(
-        ticker=ticker,
-        max_allocation_cap=decision.max_allocation_cap,
-        action_signal=decision.action_signal.value,
-        warnings=decision.warnings,
-        metrics={
-            "asset_class": asset_class.value,
-            "conviction_score": stock.conviction_score,
-            "cash_runway_months": stock.cash_runway_months,
-            "inflection_status": stock.inflection_status,
-            "current_price": metrics.current_price,
-            "current_weight_pct": current_weight_pct
-        },
-        decision_log="\n".join(log_lines)
+        report = sync_tracker(db, force=force)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.exception("Tracker sync failed")
+        raise HTTPException(status_code=500, detail=f"Tracker sync failed: {e}")
+
+    if report.status == STATUS_SYNCED and report.touched_anything:
+        logger.info(
+            "Tracker sync: %s created, %s rebanded, %s changes",
+            len(report.created), len(report.band_updated), len(report.changes),
+        )
+
+    return TrackerSyncResponse(
+        status=report.status,
+        picks_read=report.picks_read,
+        created=report.created,
+        band_updated=report.band_updated,
+        price_updated=report.price_updated,
+        changes=[c.detail for c in report.changes],
+        summary_cs=report.summary_cs(),
+        error=report.error,
+        synced_at=report.synced_at,
     )
 
+
+# ============================================================================
+# CYLINDERS — proposal, and the confirmation that turns it into permission
+# ============================================================================
+# `deserved_score = 10 − cylinders` is one half of every buy decision, and the
+# Buy Guard refuses outright when cylinders are unknown. They were unknown for
+# every company in the app: the only writer hardcoded None. `cylinders.py` now
+# computes a number from named, dated facts — but a proposal authorises
+# nothing. Only a value the owner has looked at and agreed to reaches the guard.
+
+
+class CylinderEvidenceItem(BaseModel):
+    delta: int
+    fact_cs: str
+    source: str
+    as_of: Optional[date] = None
+
+
+class CylinderProposalResponse(BaseModel):
+    ticker: str
+    cylinders: Optional[int] = None
+    deserved_score: Optional[float] = None
+    layer: str
+    confidence: Optional[str] = None
+    evidence: List[CylinderEvidenceItem] = Field(default_factory=list)
+    unknowns: List[str] = Field(default_factory=list)
+    summary_cs: str = ""
+    #: What is on record now, so the screen can show "proposed 6, confirmed 5".
+    confirmed_cylinders: Optional[int] = None
+    confirmed_at: Optional[datetime] = None
+    confirmed_by: Optional[str] = None
+    valid_until: Optional[datetime] = None
+
+
+class ConfirmCylindersRequest(BaseModel):
+    cylinders: int = Field(..., ge=0, le=10)
+    confirmed_by: str = Field(..., min_length=1, max_length=100)
+    valid_until: Optional[datetime] = Field(
+        None,
+        description=(
+            "When the agreement lapses. Omit and it defaults to a quarter — "
+            "the next report is what can contradict it."
+        ),
+    )
+    phase: Optional[str] = Field(
+        None, description="GREAT_FIND | WAIT_TIME | GOLD_MINE | UNKNOWN"
+    )
+    override: bool = Field(
+        False,
+        description=(
+            "Write this even though a stronger source (an analyst on record) "
+            "is still standing. Without it the write is refused with 400 and a "
+            "message naming what stands — so the screen can show him what he "
+            "would be overwriting before he agrees to it."
+        ),
+    )
+
+
+def _proposal_response(db: Session, ticker: str, proposal) -> CylinderProposalResponse:
+    from app.models.gomes import StockLifecycleModel
+    from app.core.tickers import canonical_ticker
+
+    active = (
+        db.query(StockLifecycleModel)
+        .filter(StockLifecycleModel.ticker == (canonical_ticker(ticker) or ticker.upper()))
+        .filter(StockLifecycleModel.valid_until.is_(None))
+        .order_by(desc(StockLifecycleModel.detected_at))
+        .first()
+    )
+    return CylinderProposalResponse(
+        ticker=proposal.ticker,
+        cylinders=proposal.cylinders,
+        deserved_score=proposal.deserved_score,
+        layer=proposal.layer,
+        confidence=proposal.confidence,
+        evidence=[
+            CylinderEvidenceItem(
+                delta=e.delta, fact_cs=e.fact_cs, source=e.source, as_of=e.as_of
+            )
+            for e in proposal.evidence
+        ],
+        unknowns=proposal.unknowns,
+        summary_cs=proposal.summary_cs(),
+        confirmed_cylinders=(
+            active.cylinders_count
+            if active is not None and active.cylinders_confirmed_at is not None
+            else None
+        ),
+        confirmed_at=active.cylinders_confirmed_at if active is not None else None,
+        confirmed_by=active.cylinders_confirmed_by if active is not None else None,
+        valid_until=active.cylinders_valid_until if active is not None else None,
+    )
+
+
+@router.get("/cylinders/{ticker}", response_model=CylinderProposalResponse)
+def get_cylinder_proposal(ticker: str, db: Session = Depends(get_db)):
+    """
+    What the rubric makes of this company, and what is on record.
+
+    Reads only what the database already holds — no SEC or Yahoo call, so the
+    screen never waits on somebody else's server. `scripts/propose_cylinders.py`
+    is what pulls fresh filings.
+    """
+    from app.services.cylinder_intake import propose
+
+    try:
+        proposal = propose(db, ticker)
+    except Exception as e:
+        logger.exception("Cylinder proposal failed for %s", ticker)
+        raise HTTPException(status_code=500, detail=f"Návrh válců selhal: {e}")
+
+    return _proposal_response(db, ticker, proposal)
+
+
+@router.post("/cylinders/{ticker}", response_model=CylinderProposalResponse)
+def confirm_cylinders(
+    ticker: str,
+    request: ConfirmCylindersRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Record a cylinder count the owner agrees to. This is what unlocks buying.
+
+    The number is his, not the rubric's: he may confirm something other than
+    what was proposed, and that is the point of the step. What the app stores
+    alongside it is the evidence he was looking at, so three months later the
+    decision can still be judged.
+    """
+    from app.services.cylinder_intake import confirm, propose
+
+    try:
+        proposal = propose(db, ticker)
+        confirm(
+            db, ticker, request.cylinders,
+            confirmed_by=request.confirmed_by,
+            proposal=proposal,
+            valid_until=request.valid_until,
+            phase=request.phase,
+            override=request.override,
+        )
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        logger.exception("Cylinder confirmation failed for %s", ticker)
+        raise HTTPException(status_code=500, detail=f"Potvrzení válců selhalo: {e}")
+
+    return _proposal_response(db, ticker, proposal)
+
+
+# ============================================================================
+# LIFECYCLE PHASE — proposal, and the confirmation that turns it into stage
+# ============================================================================
+# The rubric's phase reading (GREAT_FIND/WAIT_TIME/GOLD_MINE) gates the Buy
+# Guard the same way cylinders do — WAIT_TIME refuses outright. Until now the
+# only way to confirm it was `scripts/propose_lifecycle.py --confirm`, a CLI.
+# This route exposes the same service (`lifecycle_intake.propose/confirm`) so
+# a phase can be reviewed and agreed to from the screen, not just the shell.
+
+
+class LifecycleSignalItem(BaseModel):
+    towards: str
+    weight: int
+    fact_cs: str
+    source: str
+    as_of: Optional[date] = None
+
+
+class LifecycleProposalResponse(BaseModel):
+    ticker: str
+    phase: Optional[str] = None
+    effective_phase: Optional[str] = None
+    ratcheted_to: Optional[str] = None
+    rough_patch: bool = False
+    ratchet_note_cs: str = ""
+    confidence: Optional[str] = None
+    layer: str = ""
+    signals: List[LifecycleSignalItem] = Field(default_factory=list)
+    unknowns: List[str] = Field(default_factory=list)
+    #: What is on record now, so the screen can show "proposed GOLD_MINE,
+    #: confirmed WAIT_TIME" instead of only ever showing the vote.
+    confirmed_phase: Optional[str] = None
+    phase_reached: Optional[str] = None
+    confirmed_at: Optional[str] = None
+    confirmed_by: Optional[str] = None
+
+
+class ConfirmLifecycleRequest(BaseModel):
+    phase: str = Field(..., description="GREAT_FIND | WAIT_TIME | GOLD_MINE | UNKNOWN")
+    confirmed_by: str = Field(..., min_length=1, max_length=100)
+
+
+def _lifecycle_response(db: Session, ticker: str, proposal) -> LifecycleProposalResponse:
+    from app.models.gomes import StockLifecycleModel
+    from app.core.tickers import canonical_ticker
+
+    row = (
+        db.query(StockLifecycleModel)
+        .filter(StockLifecycleModel.ticker == (canonical_ticker(ticker) or ticker.upper()))
+        .order_by(desc(StockLifecycleModel.detected_at))
+        .first()
+    )
+    signals = (row.phase_signals or {}) if row is not None else {}
+    return LifecycleProposalResponse(
+        ticker=proposal.ticker,
+        phase=proposal.phase,
+        effective_phase=proposal.effective_phase,
+        ratcheted_to=proposal.ratcheted_to,
+        rough_patch=proposal.rough_patch,
+        ratchet_note_cs=proposal.ratchet_note_cs,
+        confidence=proposal.confidence,
+        layer=proposal.layer,
+        signals=[
+            LifecycleSignalItem(
+                towards=s.towards, weight=s.weight, fact_cs=s.fact_cs,
+                source=s.source, as_of=s.as_of,
+            )
+            for s in proposal.signals
+        ],
+        unknowns=proposal.unknowns,
+        confirmed_phase=row.phase if row is not None else None,
+        phase_reached=row.phase_reached if row is not None else None,
+        confirmed_at=signals.get("phase_confirmed_at"),
+        confirmed_by=signals.get("phase_confirmed_by"),
+    )
+
+
+@router.get("/lifecycle/{ticker}", response_model=LifecycleProposalResponse)
+def get_lifecycle_proposal(ticker: str, db: Session = Depends(get_db)):
+    """
+    What the rubric makes of this company's stage, and what is on record.
+
+    Reads only what the database and cached fundamentals already hold — no
+    live SEC/Yahoo call, so the screen never waits on somebody else's server.
+    `scripts/propose_lifecycle.py` is what pulls fresh filings.
+    """
+    from app.services.lifecycle_intake import propose
+
+    try:
+        proposal = propose(db, ticker)
+    except Exception as e:
+        logger.exception("Lifecycle proposal failed for %s", ticker)
+        raise HTTPException(status_code=500, detail=f"Návrh fáze cyklu selhal: {e}")
+
+    return _lifecycle_response(db, ticker, proposal)
+
+
+@router.post("/lifecycle/{ticker}", response_model=LifecycleProposalResponse)
+def confirm_lifecycle(
+    ticker: str,
+    request: ConfirmLifecycleRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Record a lifecycle stage the owner agrees to.
+
+    The ratchet (§V1) is unconditional here, unlike cylinders' `override`: a
+    Gold Mine reading never demotes and there is no escape hatch to bypass
+    it. A business stage does not get a do-over the way a quarterly quality
+    estimate does.
+    """
+    from app.services.lifecycle_intake import confirm, propose
+
+    try:
+        proposal = propose(db, ticker)
+        confirm(
+            db, ticker, request.phase,
+            confirmed_by=request.confirmed_by,
+            proposal=proposal,
+        )
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        logger.exception("Lifecycle confirmation failed for %s", ticker)
+        raise HTTPException(status_code=500, detail=f"Potvrzení fáze cyklu selhalo: {e}")
+
+    return _lifecycle_response(db, ticker, proposal)
+
+
+# ============================================================================
+# OWNER INTENT — a standing instruction the phase gate cannot see
+# ============================================================================
+# ECOR passes the phase gate (GREAT_FIND) but is queued for exit; SMSI fails
+# it (WAIT_TIME) for the wrong reason — a tax-loss hold, not a stalled thesis.
+# See `app/models/owner_intent.py`. Read-only here: today this is set only by
+# `scripts/set_owner_intent.py`, the same CLI-only reasoning as the lifecycle
+# rubric's SEC pull — two tickers on a single-user app do not need a form.
+
+
+class OwnerIntentResponse(BaseModel):
+    ticker: str
+    intent: str
+    note: Optional[str] = None
+    set_by: str
+    set_at: datetime
+
+
+@router.get("/owner-intent/{ticker}", response_model=Optional[OwnerIntentResponse])
+def get_owner_intent(ticker: str, db: Session = Depends(get_db)):
+    """The standing instruction on record for this ticker, or null."""
+    from app.services import owner_intent as owner_intent_service
+
+    row = owner_intent_service.get(db, ticker)
+    if row is None:
+        return None
+    return OwnerIntentResponse(
+        ticker=row.ticker, intent=row.intent, note=row.note,
+        set_by=row.set_by, set_at=row.set_at,
+    )
+
+
+# ============================================================================
+# THE LADDER — every holding, its band, and the two prices that change it
+# ============================================================================
+
+
+class LadderItem(BaseModel):
+    """One company on the ladder."""
+
+    ticker: str
+    company_name: Optional[str] = None
+    band: str
+    reason_cs: str
+    rr_score: Optional[float] = None
+    deserved: Optional[float] = None
+    #: The two orders. Derived from the Green and Red Lines rather than from
+    #: today's quote, so they survive a stale price feed.
+    buy_below: Optional[float] = None
+    sell_above: Optional[float] = None
+    take_profit_above: Optional[float] = None
+    add_below: Optional[float] = None
+    line_currency: Optional[str] = None
+    trigger: str = "ZADNY"
+    trigger_reason: str = ""
+    quality_expired: bool = False
+
+
+class LadderResponse(BaseModel):
+    generated_at: datetime
+    #: Cheapest first — that is where money would go, so that is what leads.
+    items: List[LadderItem] = Field(default_factory=list)
+    with_band: int = 0
+    outside_method: int = 0
+
+
+@router.get("/ladder", response_model=LadderResponse)
+def get_portfolio_ladder(db: Session = Depends(get_db)):
+    """
+    The whole portfolio on one ladder: a band per company and two limit prices.
+
+    One row per COMPANY, not per account — the band is a fact about the
+    business, and two people holding the same stock should read the same thing.
+    What either of them should DO about it depends on his own cost basis and
+    cash, and that is the Daily Action engine's job.
+    """
+    from app.services.currency import CurrencyService
+    from app.services.ladder_view import portfolio_ladder
+    from app.trading.gomes_logic import Band
+
+    try:
+        rows = portfolio_ladder(db, fx_rate_to_czk=CurrencyService.get_rate_to_czk)
+    except Exception as e:
+        logger.exception("Ladder failed")
+        raise HTTPException(status_code=500, detail=f"Žebřík se nepodařilo sestavit: {e}")
+
+    items = [
+        LadderItem(
+            ticker=r.ticker,
+            company_name=r.company_name,
+            band=r.reading.band.value,
+            reason_cs=r.reading.reason_cs,
+            rr_score=r.reading.rr_score,
+            deserved=r.reading.deserved,
+            buy_below=r.reading.buy_below,
+            sell_above=r.reading.sell_above,
+            take_profit_above=r.reading.take_profit_above,
+            add_below=r.reading.add_below,
+            line_currency=r.line_currency,
+            trigger=r.trigger.value,
+            trigger_reason=r.trigger_reason,
+            quality_expired=r.quality_expired,
+        )
+        for r in rows
+    ]
+    return LadderResponse(
+        generated_at=datetime.now(),
+        items=items,
+        with_band=sum(1 for r in rows if r.reading.is_tradeable),
+        outside_method=sum(1 for r in rows if r.reading.band is Band.MIMO_METODIKU),
+    )
+
+
+# ============================================================================
+# WHATSAPP PASTE — who writes in the group, and what they claimed
+# ============================================================================
+# `whatsapp_intake.parse_export` has existed and had no caller. It is what
+# turns the second source from a scraped list of endorsement counts into
+# somebody's written opinion — and since 2026-08-23 a written opinion from a
+# listed analyst can refuse a purchase, so it has to be able to arrive.
+
+
+class WhatsAppSpeaker(BaseModel):
+    name: str
+    messages: int
+    listed: bool
+
+
+class WhatsAppPasteRequest(BaseModel):
+    raw: str = Field(..., min_length=1, description="Export zkopírovaný z WhatsAppu")
+    pasted_on: Optional[date] = Field(
+        None,
+        description=(
+            "Den, kdy byl export pořízen. WhatsApp píše 'dnes' a 'včera' místo "
+            "data, takže bez něj nejde relativní hlavičku přepočítat."
+        ),
+    )
+    extract: bool = Field(
+        False,
+        description=(
+            "Spustit rozbor tvrzení. Bez něj se jen přečte, kdo v exportu píše "
+            "— to nestojí nic a je to obvykle první, co chceš vidět."
+        ),
+    )
+
+
+class WhatsAppPasteResponse(BaseModel):
+    summary_cs: str
+    messages: int
+    speakers: List[WhatsAppSpeaker] = Field(default_factory=list)
+    quoted_messages: int = 0
+    skipped_short: int = 0
+    first_message_on: Optional[date] = None
+    last_message_on: Optional[date] = None
+    #: Present only when `extract` was set. Keyed by source, so a failure on
+    #: one source does not hide what the other one said.
+    claims_by_source: dict = Field(default_factory=dict)
+    errors: dict = Field(default_factory=dict)
+
+
+@router.post("/whatsapp/paste", response_model=WhatsAppPasteResponse)
+def ingest_whatsapp_paste(
+    request: WhatsAppPasteRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Read a WhatsApp export: who writes in the group, and optionally what they claimed.
+
+    Phone numbers are gone before anything else happens — the parser strips
+    them unconditionally, ahead of storage, logging and any model.
+
+    Only a listed analyst's text is sent for extraction. Everyone else's
+    messages are counted and their names reported, so the owner can see who
+    writes research and decide whether any of them belong on the roster, but
+    nobody is attributed to a source on the strength of being in the room.
+    """
+    from app.services.analyst_roster import load as load_roster
+    from app.services.whatsapp_ingest import (
+        analyse_paste,
+        documents_for_extraction,
+        extract_for_sources,
+    )
+
+    when = request.pasted_on or date.today()
+    try:
+        report, quotable = analyse_paste(db, request.raw, pasted_on=when)
+    except Exception as e:
+        logger.exception("WhatsApp paste failed")
+        raise HTTPException(status_code=400, detail=f"Export se nepodařilo přečíst: {e}")
+
+    speakers = [
+        WhatsAppSpeaker(name=name, messages=count, listed=name in report.quoted)
+        for name, count in sorted(report.speakers.items(), key=lambda kv: -kv[1])
+    ]
+
+    response = WhatsAppPasteResponse(
+        summary_cs=report.summary_cs(),
+        messages=report.messages,
+        speakers=speakers,
+        quoted_messages=sum(report.quoted.values()),
+        skipped_short=report.skipped_short,
+        first_message_on=report.dates[0],
+        last_message_on=report.dates[1],
+    )
+
+    if not request.extract or not quotable:
+        return response
+
+    settings = get_settings()
+    api_key = getattr(settings, "anthropic_api_key", None)
+    if not api_key:
+        response.errors["_"] = "Chybí ANTHROPIC_API_KEY — rozbor nespouštím"
+        return response
+
+    outcome = extract_for_sources(
+        documents_for_extraction(quotable, load_roster(db)),
+        today_iso=when.isoformat(),
+        api_key=api_key,
+    )
+    for source, result in outcome.items():
+        if isinstance(result, Exception):
+            response.errors[source] = f"{type(result).__name__}: {result}"
+        else:
+            response.claims_by_source[source] = result.model_dump()
+
+    return response

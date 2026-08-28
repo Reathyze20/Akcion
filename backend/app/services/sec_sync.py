@@ -360,7 +360,62 @@ def analyze_filing(
     )
     filing.analysis = summary
     filing.analyzed_at = datetime.now(timezone.utc)
+
+    # The same findings, in a form something can query. The markdown above is
+    # for reading; these rows are what the cylinder rubric and the portfolio
+    # concentration check need, and until now they had no way to see a going
+    # concern the model had already found and written into prose.
+    record_findings(db, filing, outlook)
     return summary
+
+
+def record_findings(db, filing, outlook: dict) -> list:
+    """
+    Store one filing's red flags as rows, replacing whatever it said before.
+
+    Replacing rather than appending: re-analysing a filing is a correction of
+    the same document, not a second opinion about it. Findings from OTHER
+    filings are untouched — a warning the company later dropped is still a fact
+    about the quarter it appeared in.
+
+    A flag with no sentence is skipped. It could not be shown and could not be
+    checked, so it is not a finding.
+    """
+    from app.models.sec_finding import SecFinding
+
+    flags = outlook.get("red_flags") or []
+
+    db.query(SecFinding).filter(SecFinding.accession == filing.accession).delete(
+        synchronize_session=False
+    )
+
+    rows = []
+    seen: set[str] = set()
+    for flag in flags:
+        if not isinstance(flag, dict):
+            continue
+        fact = (flag.get("fact_cs") or "").strip()
+        if not fact or fact in seen:
+            continue
+        seen.add(fact)
+        row = SecFinding(
+            ticker=filing.ticker,
+            accession=filing.accession,
+            form=filing.form,
+            filed_date=filing.filed_date,
+            period_date=filing.period_date,
+            severity=(flag.get("severity") or "MEDIUM").strip().upper(),
+            category=(flag.get("category") or None),
+            fact_cs=fact,
+            quote=(flag.get("quote") or None),
+        )
+        db.add(row)
+        rows.append(row)
+
+    if rows:
+        logger.info("{} {}: {} nálezů uloženo strukturovaně",
+                    filing.ticker, filing.form, len(rows))
+    return rows
 
 
 def format_outlook(

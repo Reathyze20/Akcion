@@ -1,0 +1,265 @@
+{
+  "_comment": [
+    "Čtení z vlastních čtvrtletních tiskovek firem, na které nedosáhne SEC EDGAR.",
+    "Čtyři kanadské pozice = 54 % portfolia. Bez tohohle souboru pro ně rubrika",
+    "válců spadne na roční souhrny z Yahoo, uzamčené do 3-7.",
+    "",
+    "PRAVIDLA, která tenhle soubor drží (vynucuje je release_fundamentals.py):",
+    "1. Každé čtení má doslovnou citaci ze zdroje. Číslo bez citace se zahodí.",
+    "2. Skórují se jen údaje NEZÁVISLÉ NA MĚNĚ -- meziroční procenta, procentní",
+    "   body marže, znaménko výsledku. Absolutní částky se zapisují do 'context'",
+    "   a rubrika je nikdy nepočítá, protože tři ze čtyř firem měnu v tiskovce",
+    "   vůbec neuvádějí.",
+    "3. Procenta jsou VŽDY ta, která spočítala firma, ne my ze dvou absolutních",
+    "   čísel. Kdo počítá sám, ten si vybírá základnu.",
+    "4. Co v tiskovce není, je null a zůstane neznámé. Provozní cash flow ani",
+    "   počet akcií tam nejsou u žádné ze čtyř -- runway a ředění se nedopočítají.",
+    "5. basis_months říká, za jak dlouhé období to platí. Kvartál proti půlroku",
+    "   se nesrovnává.",
+    "",
+    "Stránky, z nichž to vzniklo, leží v backend/data/firecrawl/pages/",
+    "(mimo git). Přehled pro člověka je v docs/KANADSKE_VYKAZY.md."
+  ],
+  "releases": [
+    {
+      "ticker": "RDCM",
+      "company": "RADCOM Ltd.",
+      "fiscal_label": "Q2 2026",
+      "period_end": "2026-06-30",
+      "published": "2026-08-12",
+      "currency": null,
+      "currency_note": "v tiskovce jen '$'; izraelská firma na Nasdaqu, vykazuje v USD, ale text to neříká -- neurčeno",
+      "source_url": "https://radcom.com/latest-news/radcom-reports-second-quarter-2026-results",
+      "readings": {
+        "revenue_yoy_pct": {
+          "value": -33.4,
+          "basis_months": 3,
+          "quote": "Total revenues for the quarter were $11.8 million, down 33.4% from $17.7 million in the second quarter of 2025."
+        },
+        "operating_margin_pct": {
+          "value": -31.9,
+          "prior": 9.9,
+          "basis_months": 3,
+          "quote": "GAAP operating loss for the second quarter of 2026 was $3.8 million, or (31.9)% of revenue, compared to GAAP operating income of $1.7 million, or 9.9% of revenue, for the second quarter of 2025."
+        },
+        "bottom_line": {
+          "value": "LOSS",
+          "basis_months": 3,
+          "quote": "GAAP net loss for the second quarter of 2026 was $3.1 million, or ($0.18) per diluted share"
+        },
+        "balance": {
+          "value": "CASH_EXCEEDS_DEBT",
+          "basis_months": 3,
+          "quote": "the Company had cash, cash equivalents and short-term bank deposits of $109.7 million and no debt"
+        }
+      },
+      "context": [
+        "SEC u RDCM vidí jen obálku: je to FOREIGN_PRIVATE_ISSUER a jeho 6-K je krycí list, obsah sedí v příloze EX-99.1. Tohle je ta příloha, přečtená u zdroje.",
+        "Za půl roku je pokles mírnější: tržby 30,3 M proti 34,2 M, tedy -11,4 %. Propad je soustředěný do Q2.",
+        "Firma to podává jako ZPOŽDĚNÍ, ne ztrátu poptávky: 'higher component costs and supply constraints slowed the buildout'. Po konci kvartálu podepsala tři kontrakty (CETIN Networks na Slovensku, nový Tier-1 v Asii vyhraný na úkor zavedeného dodavatele, prodloužení v Evropě).",
+        "Rozvaha je pevná: 109,7 M hotovosti a krátkodobých vkladů, žádný dluh. Vedení zakládá zpětný odkup akcií za 20-25 M.",
+        "Tiskovka píše 'Cash flow in the second quarter of 2026 was $1.3 million' -- kladné, ale BEZ UPŘESNĚNÍ, jestli provozní. Proto se to nezapisuje jako provozní cash flow a runway se z toho nepočítá.",
+        "Výhled na 2026 firma nezměnila a mluví o návratu k dvouciferném růstu v 2027. Je to tvrzení o budoucnosti -- do rubriky nevstupuje."
+      ],
+      "absent": [
+        "hrubá marže",
+        "provozní cash flow (nerozlišené)",
+        "počet akcií"
+      ]
+    },
+    {
+      "ticker": "DBOXF",
+      "company": "D-BOX Technologies",
+      "fiscal_label": "Q3 FY2026",
+      "period_end": "2025-12-31",
+      "published": "2026-02-10",
+      "currency": null,
+      "currency_note": "v tiskovce jen '$', firma je z Montrealu na TSX -- neurčeno",
+      "source_url": "https://www.d-box.com/en/news/d-box-news-d-box-technologies-reports-third-quarter-2026-results",
+      "readings": {
+        "revenue_yoy_pct": {
+          "value": 4.0,
+          "basis_months": 3,
+          "quote": "Theatrical customers drove the increase in total revenues to $13.8 million, up 4% year-over-year."
+        },
+        "gross_margin_pct": {
+          "value": 54.0,
+          "prior": 52.0,
+          "basis_months": 9,
+          "quote": "Gross margin increased two percentage points, from 52% to 54%."
+        },
+        "bottom_line": {
+          "value": "PROFIT",
+          "basis_months": 3,
+          "quote": "net profit before income taxes of $2.7 million"
+        }
+      },
+      "context": [
+        "Čistý zisk 9,1 M obsahuje 6,4 M odloženou daňovou pohledávku -- účetní, ne provozní. Skóruje se proto zisk před daní 2,7 M.",
+        "Upravená EBITDA 3,4 M, marže 24 %, meziročně +31 %.",
+        "Hotovost 16,2 M, odložené výnosy 4,1 M, oboje +3 M.",
+        "Royalty 3,1 M, meziročně -3 % (z 3,2 M); severoamerický box office -6,9 %.",
+        "Aktivní sály 1 135, meziročně +12,8 %. 86 hrubých instalací (rekord), čistě +51, protože 35 sálů mimo Severní Ameriku firma deaktivovala jako tři roky nečinné."
+      ],
+      "absent": [
+        "provozní cash flow",
+        "počet akcií"
+      ]
+    },
+    {
+      "ticker": "GKPRF",
+      "company": "Gatekeeper Systems",
+      "fiscal_label": "FQ3 2026",
+      "period_end": "2026-05-31",
+      "published": "2026-07-21",
+      "currency": "CAD",
+      "currency_note": "v tiskovce výslovně 'Canadian dollars'",
+      "source_url": "https://www.gatekeeper-systems.com/gatekeeper-reports-record-fq3-2026-results-with-12-5m-revenue-68-growth-and-2-4m-adjusted-ebitdagatekeeper-announces-c19-million-septa-transit-video-services-contract-over-5-years-2",
+      "readings": {
+        "revenue_yoy_pct": {
+          "value": 68.0,
+          "basis_months": 3,
+          "quote": "Gatekeeper Reports Record FQ3 2026 Results with $12.5M Revenue, 68% Growth, and $2.4M Adjusted EBITDA"
+        },
+        "gross_margin_pct": {
+          "value": 53.0,
+          "prior": 49.0,
+          "basis_months": 3,
+          "quote": "Gross margin as a percentage of revenue for the three and nine months was 53% and 48% respectively compared to 49% and 44% in the prior year"
+        },
+        "bottom_line": {
+          "value": "PROFIT",
+          "basis_months": 3,
+          "quote": "$2.4M Adjusted EBITDA"
+        }
+      },
+      "context": [
+        "Bez úročeného dluhu. Pracovní kapitál 37,5 M, hotovost 7,2 M.",
+        "Zásoby 17,4 M z 5,2 M loni -- hotovost vázaná ve skladu u firmy se 7,2 M v hotovosti. Bez výkazu cash flow se nedá říct, jestli je to příprava na zakázky, nebo problém.",
+        "Nové zakázky za fiskální rok ~73 M, z toho 14 M už zaúčtováno jako tržby.",
+        "Upravená EBITDA 2,4 M proti 0,2 M loni."
+      ],
+      "absent": [
+        "provozní cash flow",
+        "počet akcií"
+      ],
+      "publication_history": {
+        "note": "Měsíc nahrání výkazu a MD&A na vlastní IR stránku (den firma neuvádí). Zdroj: https://www.gatekeeper-systems.com/investors/financial-reports",
+        "publications": [
+          {
+            "label": "FY2025 Q1",
+            "published": "2025-01"
+          },
+          {
+            "label": "FY2025 Q2",
+            "published": "2025-04"
+          },
+          {
+            "label": "FY2025 Q3",
+            "published": "2025-07"
+          },
+          {
+            "label": "FY2025 Q4 / roční",
+            "published": "2025-12"
+          },
+          {
+            "label": "FY2026 Q1",
+            "published": "2026-01"
+          },
+          {
+            "label": "FY2026 Q2",
+            "published": "2026-04"
+          },
+          {
+            "label": "FY2026 Q3",
+            "published": "2026-07"
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "ITMSF",
+      "company": "Intermap Technologies",
+      "fiscal_label": "Q1 2026",
+      "period_end": "2026-03-31",
+      "published": "2026-05-13",
+      "currency": null,
+      "currency_note": "v tiskovce jen '$'; firma sídlí v Denveru, listing TSX -- neurčeno",
+      "source_url": "https://www.intermap.com/pressreleases/2026/05/intermap-reports-first-quarter-2026-results",
+      "readings": {
+        "revenue_yoy_pct": null,
+        "gross_margin_pct": null,
+        "bottom_line": null
+      },
+      "context": [
+        "Tržby za kvartál 1,4 M. Meziroční srovnání firma v tiskovce NEUVEDLA.",
+        "Opakované tržby (subscription + data) přes 80 % celku.",
+        "Hotovost ~18,8 M, pracovní kapitál ~16,3 M.",
+        "'Near break-even' platí až po vyloučení odkupu ředících cenných papírů, kurzových vlivů a časového rozlišení. Nevyloučeno to break-even není -- proto bottom_line zůstává neznámé.",
+        "POTVRZENÝ VÝHLED 30-35 M tržeb a 28% EBITDA marže na rok. Q1 dodal 1,4 M, tedy 4 %. Je to tvrzení firmy o budoucnosti, ne výsledek -- do rubriky nevstupuje."
+      ],
+      "absent": [
+        "meziroční změna tržeb",
+        "hrubá marže",
+        "provozní cash flow",
+        "počet akcií",
+        "čistý výsledek bez úprav"
+      ]
+    },
+    {
+      "ticker": "KUYAF",
+      "company": "Kuya Silver",
+      "fiscal_label": "H1 2026",
+      "period_end": "2026-06-30",
+      "published": "2026-08-17",
+      "currency": null,
+      "currency_note": "v tiskovce jen '$' -- neurčeno",
+      "source_url": "https://kuyasilver.com/news/news/2026-news/kuya-silver-reports-q2-2026-financial-results---advances-be2026-08-17-040502",
+      "readings": {
+        "revenue_yoy_pct": {
+          "value": 107.7,
+          "basis_months": 6,
+          "quote": "The Company's revenue increased significantly to $2.7 million during the first six months ended June 30, 2026, compared to $1.3 million in the comparable period of 2025"
+        },
+        "gross_margin_pct": null,
+        "bottom_line": {
+          "value": "LOSS",
+          "basis_months": 6,
+          "quote": "The Company recorded a net loss of $2.8 million for the six months ended June 30, 2026, compared to $1.35 million in the same period of 2025."
+        }
+      },
+      "context": [
+        "Tržby se víc než zdvojnásobily, ale ztráta taky (2,8 M z 1,35 M).",
+        "Hotovost 25,5 M. Průzkum a vyhodnocení 1,0 M za půl roku.",
+        "Důl Bethania v rozjezdu, staví se rampa na 350 t/den. Fázi rampy z tiskovky ocenit nejde.",
+        "Firma vykazuje ČTVRTLETNĚ (Q1 2026 vyšlo 27. 5. 2026), ale tahle zpráva uvádí kumulativní čísla za šest měsíců -- proto basis_months 6. Q2 samotný: tržby 1,25 M."
+      ],
+      "absent": [
+        "hrubá marže",
+        "provozní cash flow",
+        "počet akcií"
+      ],
+      "publication_history": {
+        "note": "Datum zveřejnění tiskové zprávy s výsledky, přesné na den (nese ho adresa zprávy). Zdroj: https://kuyasilver.com/news/news-2026",
+        "publications": [
+          {
+            "label": "Q2 2025",
+            "published": "2025-09-02"
+          },
+          {
+            "label": "Q3 2025",
+            "published": "2025-11-21"
+          },
+          {
+            "label": "Q1 2026",
+            "published": "2026-05-27"
+          },
+          {
+            "label": "Q2 2026",
+            "published": "2026-08-17"
+          }
+        ]
+      }
+    }
+  ]
+}

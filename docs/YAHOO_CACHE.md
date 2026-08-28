@@ -1,3 +1,7 @@
+> ⚠️ **Stav: historické, částečně neaktuální.** Mechanismus keše existuje, ale
+> sémantika „čerstvosti" byla přepsána poté, co audit našel neúspěšné načtení
+> zalogované jako čerstvé. Aktuální: [`OPERATIONS.md`](OPERATIONS.md) sekce Market data.
+
 # Yahoo Finance Smart Cache - Dokumentace
 
 ## 🎯 Účel

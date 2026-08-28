@@ -37,12 +37,13 @@ enthusiastic message moves nothing on its own — see docs/GOMES_METHODOLOGY_CAN
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from enum import Enum
 
 from loguru import logger
 from pydantic import BaseModel, Field, ValidationError
 
-from app.core.sources import InvestmentSource
+from app.core.sources import normalize_source, InvestmentSource
 from app.services import llm
 
 
@@ -134,7 +135,11 @@ class ExtractionResult(BaseModel):
 # Speaker -> source authority
 # ==============================================================================
 
-def resolve_source_key(speaker: str | None, source_type: SourceType) -> str:
+def resolve_source_key(
+    speaker: str | None,
+    source_type: SourceType,
+    roster: Mapping[str, str] | None = None,
+) -> str:
     """
     Map a speaker to the authority their claim carries.
 
@@ -143,6 +148,12 @@ def resolve_source_key(speaker: str | None, source_type: SourceType) -> str:
     chat Mark Gomes posts alongside everyone else, so the same paste yields
     both GOMES and BREAKOUT_INVESTORS rows; that is what makes cross-source
     agreement computable from a single document.
+
+    The group is where this used to go wrong. Every speaker in it was mapped to
+    BREAKOUT_INVESTORS — around a hundred and thirty people, any one of whom
+    then carried the authority of the research desk. Attribution now comes from
+    `analyst_roster`, and an unlisted speaker keeps their name on the record
+    and counts toward nothing.
     """
     if source_type is SourceType.EARNINGS_CALL:
         return "COMPANY"
@@ -151,12 +162,7 @@ def resolve_source_key(speaker: str | None, source_type: SourceType) -> str:
     if source_type is SourceType.GOMES_VIDEO:
         return InvestmentSource.GOMES.value
 
-    s = (speaker or "").strip().lower()
-    if "gomes" in s or "money mark" in s:
-        return InvestmentSource.GOMES.value
-    if source_type is SourceType.WHATSAPP_GROUP:
-        return InvestmentSource.BREAKOUT_INVESTORS.value
-    return InvestmentSource.OTHER.value
+    return normalize_source(speaker, roster)
 
 
 # ==============================================================================
@@ -194,7 +200,9 @@ def verify_claims(
     Whitespace and transcript timestamps are normalized away on both sides —
     a quote that differs only by a line break, or by a "(1:35:22)" the
     transcript tool dropped mid-sentence, is the same quote. The words
-    themselves must be present, in order. Nothing else is forgiven.
+    themselves must be present, in order. Ellipsis ('...' or '…') may be
+    used to bridge non-contiguous fragments spoken within the same thought,
+    and all fragments must be present in source in sequential order.
 
     Returns:
         (verified, rejected)
@@ -204,8 +212,27 @@ def verify_claims(
     rejected: list[ExtractedClaim] = []
 
     for claim in claims:
-        quote = _normalize(claim.verbatim_quote)
-        if quote and quote in haystack:
+        quote_text = claim.verbatim_quote
+        # Split on ellipsis (... or …)
+        parts = [p.strip() for p in re.split(r"\.{2,}|\u2026", quote_text) if p.strip()]
+
+        if not parts:
+            rejected.append(claim)
+            continue
+
+        cur_pos = 0
+        matched = True
+        for part in parts:
+            norm_part = _normalize(part)
+            if not norm_part:
+                continue
+            idx = haystack.find(norm_part, cur_pos)
+            if idx == -1:
+                matched = False
+                break
+            cur_pos = idx + len(norm_part)
+
+        if matched and cur_pos > 0:
             verified.append(claim)
         else:
             rejected.append(claim)

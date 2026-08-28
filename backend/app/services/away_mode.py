@@ -162,6 +162,13 @@ def data_age(price_as_of: datetime | None, now: datetime) -> timedelta | None:
     return None if price_as_of is None else now - price_as_of
 
 
+#: A revaluation is worth breaking silence for even with nothing to do about
+#: it, so it needs an urgency of its own. Below a de-risking sale and above a
+#: profit-taking trim: the analyst changing his mind about a company outranks
+#: the price drifting within a band he still stands behind.
+URGENCY_SOURCE_MOVED: Final[int] = 85
+
+
 def build_digest(
     actions: list,
     *,
@@ -169,6 +176,7 @@ def build_digest(
     now: datetime,
     last_push_at: datetime | None = None,
     last_push_urgency: int = 0,
+    source_moves: list[str] | None = None,
 ) -> Digest:
     """
     Decide the single message away mode may send this cycle.
@@ -178,9 +186,18 @@ def build_digest(
     weakest input, not the freshest, because a digest is only as current as its
     stalest number.
 
+    `source_moves` are Green or Red Lines the analyst has shifted, or picks that
+    entered or left his real portfolio. They carry no action of their own and
+    are the most consequential thing that can happen while nobody is looking:
+    every band, every limit price and every order sitting at the broker was
+    computed against a valuation that no longer exists. Away mode says so even
+    when there is nothing to do about it, because the alternative is coming
+    back to orders placed on a chart that has since been redrawn.
+
     Returns a `Digest` that always explains itself, whether or not it sends.
     """
     held: list[str] = []
+    moves = list(source_moves or [])
 
     pushable = [a for a in actions if a.action_type in PUSHABLE_ACTIONS]
     withheld = [a for a in actions if a.action_type not in PUSHABLE_ACTIONS]
@@ -195,6 +212,11 @@ def build_digest(
     stale = age is None or age > MAX_ACTIONABLE_AGE
 
     if not pushable:
+        if moves:
+            # No instruction, and still worth waking someone for: what the app
+            # was going to advise has been computed against a band the analyst
+            # has since moved.
+            return _revaluation_digest(moves, held, now, last_push_at, last_push_urgency)
         return Digest(
             send=False,
             reason="Nic k odeslání — žádná akce, která chrání kapitál.",
@@ -233,12 +255,62 @@ def build_digest(
             f"jen jednu věc."
         )
 
+    body = _body(top, pushable, age)
+    if moves:
+        body += "\n\n" + _moves_paragraph(moves)
+
     return Digest(
         send=True,
         reason="Nejnaléhavější akce, data jsou čerstvá.",
         subject=f"Akcion: {top.ticker} — {_action_label(top.action_type)}",
-        body=_body(top, pushable, age),
+        body=body,
         urgency=top.urgency_score,
+        held=held,
+    )
+
+
+def _moves_paragraph(moves: list[str]) -> str:
+    return "\n".join(
+        ["Mezitím se pohnulo pásmo:", *(f"  {m}" for m in moves), "",
+         "Posunutá čára znamená, že analytik firmu přecenil. Limitky zadané",
+         "u brokera podle starého pásma je potřeba překontrolovat."]
+    )
+
+
+def _revaluation_digest(
+    moves: list[str],
+    held: list[str],
+    now: datetime,
+    last_push_at: datetime | None,
+    last_push_urgency: int,
+) -> Digest:
+    """
+    A message about the ground moving, with nothing to do about it yet.
+
+    Subject to the same quiet period as anything else: a re-banding is
+    important once, not once a day for a fortnight.
+    """
+    if last_push_at is not None:
+        quiet_until = last_push_at + MIN_PUSH_INTERVAL
+        escalated = URGENCY_SOURCE_MOVED >= last_push_urgency + ESCALATION_MARGIN
+        if now < quiet_until and not escalated:
+            held.append(
+                "Přecenění zadrženo — poslední zpráva šla před "
+                f"{_hours(now - last_push_at)}."
+            )
+            return Digest(
+                send=False,
+                reason=f"Klid do {quiet_until:%d.%m. %H:%M} — přecenění počká.",
+                held=held,
+            )
+
+    count = len(moves)
+    return Digest(
+        send=True,
+        reason="Analytik přecenil firmu — mění to všechno pod tím.",
+        subject=f"Akcion: přeceněno ({count})",
+        body=_moves_paragraph(moves),
+        urgency=URGENCY_SOURCE_MOVED,
         held=held,
     )
 
@@ -322,6 +394,7 @@ def _action_label(action_type: str) -> str:
         "SELL": "Prodej",
         "TRIM": "Odeber polovinu",
         "BUY": "Nákup",
+        "ROZPOR": "Rozpor — rozhodni ty",
     }.get(action_type, action_type)
 
 

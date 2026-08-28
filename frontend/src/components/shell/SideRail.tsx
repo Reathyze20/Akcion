@@ -14,15 +14,16 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Coins, Eye, PanelLeftClose, PanelLeftOpen, Target, Wallet } from 'lucide-react';
+import { ClipboardCheck, Coins, Eye, Lightbulb, PanelLeftClose, PanelLeftOpen, Scale, Sparkles, Target, Wallet } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { alertName } from '../../lib/format';
 
-export type TabId = 'portfolio' | 'watchlist' | 'cil' | 'splaceni';
+export type TabId = 'rozhodnuti' | 'portfolio' | 'watchlist' | 'nalezy' | 'modely' | 'cil' | 'splaceni';
 
 interface SideRailProps {
   active: TabId;
   onSelect: (tab: TabId) => void;
+  onOpenIntake?: () => void;
   positionCount: number;
   watchlistCount: number;
 }
@@ -55,6 +56,7 @@ function readCollapsed(): boolean {
 export const SideRail: React.FC<SideRailProps> = ({
   active,
   onSelect,
+  onOpenIntake,
   positionCount,
   watchlistCount,
 }) => {
@@ -89,8 +91,16 @@ export const SideRail: React.FC<SideRailProps> = ({
   };
 
   const items: Item[] = [
+    // První v pořadí schválně: tohle je ta otázka, kvůli které se appka
+    // otevírá — „co s tímhle" u každé firmy, pro oba účty najednou.
+    { id: 'rozhodnuti', label: 'Co s tím', Icon: ClipboardCheck, count: positionCount },
     { id: 'portfolio', label: 'Portfolio', Icon: Wallet, count: positionCount },
     { id: 'watchlist', label: 'Sledované', Icon: Eye, count: watchlistCount },
+    // Vlastní nápady. Sledované je to, co dali zdroje; Nálezy je to, na co
+    // člověk narazil sám — a proto se u nich ptá jinak.
+    { id: 'nalezy', label: 'Nálezy', Icon: Lightbulb },
+    // Cizí modely tržeb (Mark, jiní analytici) vs. co firma skutečně nahlásí.
+    { id: 'modely', label: 'Modely', Icon: Scale },
     { id: 'cil', label: 'Cíl', Icon: Target },
     { id: 'splaceni', label: 'Platby', Icon: Coins },
   ];
@@ -133,6 +143,19 @@ export const SideRail: React.FC<SideRailProps> = ({
             </button>
           );
         })}
+
+        {onOpenIntake && (
+          <button
+            onClick={onOpenIntake}
+            title={collapsed ? 'Nový intake (Gemini Flash)' : undefined}
+            className="flex items-center gap-2.5 rounded-button px-2.5 py-2 text-left transition-all mt-2 bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20"
+          >
+            <Sparkles size={16} strokeWidth={2} className="shrink-0 text-accent animate-pulse" aria-hidden="true" />
+            {!collapsed && (
+              <span className="text-[13px] font-bold">Nový intake</span>
+            )}
+          </button>
+        )}
       </nav>
 
       {/* Semafor. Dole, aby byl na očích, ale necpal se před navigaci. */}

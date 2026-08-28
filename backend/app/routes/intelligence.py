@@ -371,6 +371,8 @@ from ..services.portfolio_reconciliation import (
     PortfolioReconciliationService,
 )
 from ..models.score_history import ThesisDriftAlert, ConvictionScoreHistory
+from ..services.score_calibration import calibrate, load_measurements
+from ..services.score_outcomes import HORIZONS
 from pydantic import Field
 
 
@@ -574,6 +576,44 @@ async def acknowledge_all_alerts(
     db.commit()
     
     return {"success": True, "acknowledged_count": count}
+
+
+# ==========================================
+# SCORE CALIBRATION
+# ==========================================
+
+@router.get("/score-calibration")
+async def get_score_calibration(
+    horizon: int = Query(
+        default=90,
+        description="Horizon in days; one of the four the evaluator measures",
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    How the app's own conviction scores have actually performed.
+
+    Groups every measured outcome at one horizon into score bands and reports
+    each band's median excess return over the S&P 500. If the nines do not beat
+    the fives, the method is not working and this is where that shows.
+
+    `sufficient` is the field to read first. It is false whenever no band has
+    enough measured outcomes to support a median, which will be the case until
+    roughly six months after the journal opened on 2026-08-23. The threshold is
+    decided here rather than in the UI so that a median of four samples cannot
+    be drawn by a caller that simply did not check.
+    """
+    if horizon not in HORIZONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Horizont {horizon} se nevyhodnocuje. "
+                f"K dispozici: {', '.join(str(h) for h in HORIZONS)} dní."
+            ),
+        )
+
+    report = calibrate(load_measurements(db, horizon), horizon_days=horizon)
+    return report.as_dict()
 
 
 # ==========================================

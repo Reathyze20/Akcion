@@ -10,39 +10,66 @@ Two properties matter more than the thresholds themselves:
    a loss" any more than it becomes "it was fine".
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
 
-from app.models.portfolio import InvestmentLogType
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+import app.models  # noqa: F401  — SQLAlchemy potřebuje všechny mappery
+import app.models.trading  # noqa: F401
+from app.models.base import Base
+from app.models.portfolio import (
+    BrokerType,
+    InvestmentLog,
+    InvestmentLogType,
+    Portfolio,
+)
 from app.services.emotional_brakes import (
     BURST_THRESHOLD,
     REENTRY_WINDOW,
+    recent_trades,
     check_burst,
     check_recent_loss,
     check_reentry,
     collect_brakes,
+    trade_day,
 )
 
 
 NOW = datetime(2026, 8, 22, 12, 0)
 
 
-def _trade(ticker: str, *, side=InvestmentLogType.SELL, realized_pl=None, days_ago=1):
+def _trade(
+    ticker: str,
+    *,
+    side=InvestmentLogType.SELL,
+    realized_pl=None,
+    days_ago=1,
+    trade_date=None,
+):
     log = MagicMock()
     log.ticker = ticker
     log.log_type = side
     log.realized_pl = realized_pl
     log.created_at = NOW - timedelta(days=days_ago)
+    # Explicit, not left to MagicMock: an auto-attribute is never None, so the
+    # fallback in `trade_day` would never be exercised and the mock would stop
+    # resembling the row it stands for.
+    log.trade_date = trade_date
     return log
 
 
 def _db(trades: list):
-    """A session whose filtered, ordered ledger query yields `trades`."""
+    """A session whose filtered ledger query yields `trades`."""
     db = MagicMock()
     chain = db.query.return_value.filter.return_value
     chain.filter.return_value = chain
+    # Both shapes: `recent_trades` sorts in Python now (NULLS LAST is not
+    # portable), so it calls .all() straight off the filter.
+    chain.all.return_value = trades
     chain.order_by.return_value.all.return_value = trades
     return db
 
@@ -102,6 +129,90 @@ class TestReentryAfterLoss:
 # ==============================================================================
 # Trading more than the method calls for
 # ==============================================================================
+
+class TestTradeDay:
+    """
+    Kdy se obchod stal, ne kdy se zapsal.
+
+    Brzdy soudí chování v čase. Zpětný zápis starého prodeje nesmí vypadat
+    jako dnešní obchod — 23. 8. 2026 se takhle tři zápisy do knihy staly
+    „třemi obchody za týden".
+    """
+
+    def test_an_old_trade_recorded_today_keeps_its_own_day(self):
+        log = _trade("TPCS", trade_date=date(2026, 5, 1), days_ago=0)
+        assert trade_day(log) == date(2026, 5, 1)
+
+    def test_without_a_date_it_falls_back_to_when_it_was_written(self):
+        # Neznámé datum řádek nezahazuje: obchod bez data se pořád stal.
+        log = _trade("TPCS", trade_date=None, days_ago=2)
+        assert trade_day(log) == (NOW - timedelta(days=2)).date()
+
+
+class TestRecentTradesQuery:
+    """
+    Filtr na datum obchodu proti skutečné databázi.
+
+    Tenhle test existuje kvůli konkrétní pasti: `coalesce(trade_date,
+    CAST(created_at AS DATE))` funguje na Postgresu a na SQLite tiše lže —
+    SQLite u neznámého CASTu použije numerickou afinitu a z '2026-08-23 12:00'
+    udělá číslo 2026, takže každý řádek bez data obchodu vypadne. Mock na to
+    nepřijde, protože filtr vůbec nespustí.
+    """
+
+    @pytest.fixture
+    def db(self):
+        engine = create_engine("sqlite://")
+        Base.metadata.create_all(
+            engine, tables=[Portfolio.__table__, InvestmentLog.__table__]
+        )
+        session = sessionmaker(bind=engine)()
+        portfolio = Portfolio(name="Test", broker=BrokerType.T212)
+        session.add(portfolio)
+        session.flush()
+        self.portfolio_id = portfolio.id
+        try:
+            yield session
+        finally:
+            session.close()
+
+    def _log(self, db, ticker, trade_date):
+        db.add(
+            InvestmentLog(
+                portfolio_id=self.portfolio_id,
+                log_type=InvestmentLogType.SELL,
+                ticker=ticker,
+                created_at=NOW,
+                trade_date=trade_date,
+            )
+        )
+        db.flush()
+
+    def test_a_sale_traded_long_ago_falls_outside_the_window(self, db):
+        self._log(db, "STARY", date(2026, 5, 1))
+        assert recent_trades(db, NOW - timedelta(days=7)) == []
+
+    def test_a_sale_traded_this_week_is_inside(self, db):
+        self._log(db, "CERSTVY", date(2026, 8, 21))
+        assert [t.ticker for t in recent_trades(db, NOW - timedelta(days=7))] == [
+            "CERSTVY"
+        ]
+
+    def test_a_row_without_a_trade_date_is_not_dropped(self, db):
+        # Přesně ta past. Bez explicitních dvou větví tenhle řádek zmizí.
+        self._log(db, "BEZDATA", None)
+        assert [t.ticker for t in recent_trades(db, NOW - timedelta(days=7))] == [
+            "BEZDATA"
+        ]
+
+    def test_newest_trade_day_comes_first(self, db):
+        self._log(db, "STARSI", date(2026, 8, 18))
+        self._log(db, "NOVEJSI", date(2026, 8, 21))
+        assert [t.ticker for t in recent_trades(db, NOW - timedelta(days=7))] == [
+            "NOVEJSI",
+            "STARSI",
+        ]
+
 
 class TestBurst:
     def test_a_week_of_churn_is_named(self):

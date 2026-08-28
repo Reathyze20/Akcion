@@ -114,3 +114,79 @@ class TestMassiveIsNamedForWhatItReturns:
         """
         assert hasattr(MarketDataService, "_get_previous_close_from_massive")
         assert not hasattr(MarketDataService, "_get_price_from_massive")
+
+
+# ==============================================================================
+# The cache may be read, but it may not outrank a live quote
+# ==============================================================================
+
+class TestCachedPricesDoNotOutrankLiveOnes:
+    """
+    The portfolio screen waited ~16 s because `get_multiple_prices` called
+    `get_current_price` without a session, so the Yahoo cache — market-hours
+    aware, already built — was never consulted and all 41 holdings went out
+    live on every load. Wiring the session through is only safe if a cached
+    row can never quietly stand in for a quote it is not.
+    """
+
+    FRESH = {"current_price": 3.42, "is_stale": False, "stale_reason": None}
+    STALE = {
+        "current_price": 3.18,
+        "is_stale": True,
+        "stale_reason": "Stažení z Yahoo selhalo",
+    }
+
+    def test_a_fresh_row_is_served_without_going_out(self):
+        with patch("app.services.market_data.YahooFinanceCache") as cache_cls, \
+             patch.object(MarketDataService, "_get_price_from_finnhub") as finnhub:
+            cache_cls.return_value.get_stock_data.return_value = self.FRESH
+
+            assert MarketDataService.get_current_price("VTSI", db=MagicMock()) == 3.42
+            finnhub.assert_not_called()
+
+    def test_a_stale_row_loses_to_a_live_quote(self):
+        """The whole point of the cache is speed, never a fresher-looking number."""
+        with patch("app.services.market_data.YahooFinanceCache") as cache_cls, \
+             patch.object(MarketDataService, "_get_price_from_finnhub",
+                          return_value=3.42) as finnhub:
+            cache_cls.return_value.get_stock_data.return_value = self.STALE
+
+            assert MarketDataService.get_current_price("VTSI", db=MagicMock()) == 3.42
+            finnhub.assert_called_once()
+
+    def test_a_stale_row_still_beats_nothing_when_every_source_fails(self):
+        """
+        `yahoo_cache` already argues an old price beats a missing one. This is
+        the last resort, reached only after the live sources have been asked.
+        """
+        with patch("app.services.market_data.YahooFinanceCache") as cache_cls, \
+             patch.object(MarketDataService, "_get_price_from_finnhub",
+                          return_value=None), \
+             patch.object(MarketDataService, "_get_previous_close_from_massive",
+                          return_value=None):
+            cache_cls.return_value.get_stock_data.return_value = self.STALE
+
+            assert MarketDataService.get_current_price("VTSI", db=MagicMock()) == 3.18
+
+    def test_the_batch_path_reads_the_cache_instead_of_the_network(self):
+        with patch("app.services.market_data.YahooFinanceCache") as cache_cls, \
+             patch("app.database.connection.get_session", return_value=MagicMock()), \
+             patch.object(MarketDataService, "_get_price_from_finnhub") as finnhub:
+            cache_cls.return_value.get_stock_data.return_value = self.FRESH
+
+            prices = MarketDataService.get_multiple_prices(
+                ["VTSI", "RDCM", "SMSI"], db=MagicMock()
+            )
+
+        assert prices == {"VTSI": 3.42, "RDCM": 3.42, "SMSI": 3.42}
+        finnhub.assert_not_called()
+
+    def test_without_a_session_the_cache_is_skipped_entirely(self):
+        """Guards the regression: no session, no cache, every ticker goes live."""
+        with patch("app.services.market_data.YahooFinanceCache") as cache_cls, \
+             patch.object(MarketDataService, "_get_price_from_finnhub",
+                          return_value=3.42):
+            prices = MarketDataService.get_multiple_prices(["VTSI", "RDCM"])
+
+        assert prices == {"VTSI": 3.42, "RDCM": 3.42}
+        cache_cls.assert_not_called()

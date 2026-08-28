@@ -27,6 +27,8 @@ so the auditor knows no command that is not written down here.
   pytest is not installed in `.venv` and is not in `requirements.txt`.
 - Frontend build: `npm run build` from `frontend/` (runs `tsc -b` first, so it
   is also the type check).
+- Frontend tests: `npm test` from `frontend/` (vitest, ~0.4 s — cheap enough
+  to be the default gate on any frontend subtask).
 - Frontend lint: `npm run lint` from `frontend/`.
 
 A subtask counts as done only when the relevant command above exits 0. An

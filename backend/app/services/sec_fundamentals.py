@@ -104,6 +104,26 @@ CONCEPTS: Final[tuple[Concept, ...]] = (
         "CommonStockSharesOutstanding",
         "EntityCommonStockSharesOutstanding",
     ), is_instant=True),
+    # --- Balance sheet, for the downside floor ---------------------------
+    # Everything above measures how the business is doing. These measure what
+    # would be left if it stopped doing it — the question "how much can I
+    # lose", which the app could not answer at all. Tangible only, on purpose:
+    # goodwill and intangibles are the first things to be written off when a
+    # thesis breaks, so a floor that counts them is not a floor.
+    Concept("stockholders_equity", "Vlastní kapitál", (
+        "StockholdersEquity",
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+    ), is_instant=True),
+    Concept("goodwill", "Goodwill", ("Goodwill",), is_instant=True),
+    Concept("intangibles", "Nehmotná aktiva", (
+        "IntangibleAssetsNetExcludingGoodwill",
+        "FiniteLivedIntangibleAssetsNet",
+    ), is_instant=True),
+    Concept("total_debt", "Celkový dluh", (
+        "DebtLongtermAndShorttermCombinedAmount",
+        "LongTermDebt",
+        "LongTermDebtNoncurrent",
+    ), is_instant=True),
 )
 
 

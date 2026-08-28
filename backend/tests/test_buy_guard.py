@@ -162,12 +162,33 @@ def test_neutral_breakout_is_mixed_standard_size():
     assert d.max_position_pct == 7.0
 
 
-def test_conflict_capped_small_and_flagged():
+def test_a_breakout_analyst_saying_sell_refuses_the_purchase():
+    """
+    Changed on 2026-08-23, on the owner's decision that the two sources sit at
+    the same level.
+
+    Equality here is equality in the right to PREVENT. It used to allow a
+    fifth-size position with a review flag — a compromise between two people
+    who disagreed about whether to own the company at all, which is a strange
+    thing to hold. A refusal is recoverable; a bad position is not.
+    """
     d = evaluate_dual_source_buy(True, "ok", "BEARISH", tier_max_pct=10.0)
-    assert d.decision == "ALLOW"
+    assert d.decision == "REJECT"
     assert d.agreement == "CONFLICT"
-    assert d.max_position_pct == 5.0
-    assert d.review_required is True
+    assert d.max_position_pct == 0.0
+    assert d.review_required is True          # the disagreement is worth reading
+    assert "jeden zdroj" in d.reason
+
+
+def test_neither_source_may_authorise_a_company_the_method_cannot_value():
+    """
+    The other half of the same decision. Equality in the right to prevent is
+    not equality in the right to allow: with the Gomes guard failing there is
+    no valuation to buy against, and enthusiasm does not supply one.
+    """
+    d = evaluate_dual_source_buy(False, "Missing R/R score", "BULLISH", 10.0)
+    assert d.decision == "REJECT"
+    assert d.max_position_pct == 0.0
 
 
 def test_breakout_bullish_never_overrides_gomes_block():

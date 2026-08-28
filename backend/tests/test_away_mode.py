@@ -480,3 +480,66 @@ class TestBlindSpots:
 
     def test_no_warnings_means_no_notes(self):
         assert self._spots([]) == []
+
+
+class TestARevaluationReachesHimWhileAway:
+    """
+    The most consequential thing that can happen during an absence, and until
+    now away mode could not mention it.
+
+    When the analyst moves a Green or Red Line he has revalued the company.
+    Every band, every limit price and every order left sitting at the broker
+    was worked out against a chart that no longer exists — and there is no
+    ACTION attached to it, so a digest that only forwards actions would stay
+    silent through the one event worth interrupting a holiday for.
+    """
+
+    def test_a_moved_band_is_sent_even_with_nothing_to_do(self):
+        digest = build_digest(
+            [], price_as_of=fresh(), now=NOW,
+            source_moves=["CXDO: přeceněno — pásmo 3.25–15.5 → 4.0–18.0"],
+        )
+        assert digest.send is True
+        assert "přeceněno" in digest.subject.lower() or "přeceněn" in digest.body
+        assert "CXDO" in digest.body
+
+    def test_it_says_what_to_do_about_the_orders_at_the_broker(self):
+        """
+        The practical consequence, which is the only reason to send it: a limit
+        order placed against the old band is now at the wrong price.
+        """
+        digest = build_digest(
+            [], price_as_of=fresh(), now=NOW,
+            source_moves=["CXDO: přeceněno — pásmo 3.25–15.5 → 4.0–18.0"],
+        )
+        assert "Limitky" in digest.body
+
+    def test_nothing_moved_and_nothing_to_do_still_sends_nothing(self):
+        digest = build_digest([], price_as_of=fresh(), now=NOW, source_moves=[])
+        assert digest.send is False
+
+    def test_a_revaluation_rides_along_with_a_real_instruction(self):
+        """
+        One message, not two. Away mode's whole promise is a single urgent
+        push rather than noise.
+        """
+        digest = build_digest(
+            [action("CXDO", action_type="TRIM", urgency=75)], price_as_of=fresh(), now=NOW,
+            source_moves=["TPCS: přeceněno — pásmo 3.25–14.0 → 3.0–12.0"],
+        )
+        assert digest.send is True
+        assert "CXDO" in digest.subject          # the instruction still leads
+        assert "TPCS" in digest.body             # the revaluation travels with it
+
+    def test_a_revaluation_respects_the_quiet_period(self):
+        """
+        Important once, not once a day for a fortnight. Same rule as anything
+        else away mode sends.
+        """
+        digest = build_digest(
+            [], price_as_of=fresh(), now=NOW,
+            last_push_at=NOW - timedelta(hours=2), last_push_urgency=95,
+            source_moves=["CXDO: přeceněno"],
+        )
+        assert digest.send is False
+        assert "počká" in digest.reason

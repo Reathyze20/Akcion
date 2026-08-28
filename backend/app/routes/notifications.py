@@ -17,7 +17,6 @@ from app.database.connection import get_db
 from app.services.notifications import (
     NotificationService,
     Alert,
-    check_and_send_alerts,
 )
 
 
@@ -109,32 +108,6 @@ async def send_test_alert(
             message=alert.message,
             channels_notified=results,
         )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/check-opportunities")
-async def check_opportunities(
-    min_confidence: float = 80.0,
-    db: Session = Depends(get_db),
-):
-    """
-    Check for high-confidence opportunities and send alerts
-    
-    Scans all tickers and sends notifications for those above threshold.
-    """
-    try:
-        alerts = await check_and_send_alerts(
-            db=db,
-            min_confidence=min_confidence,
-        )
-        
-        return {
-            "alerts_sent": len(alerts),
-            "min_confidence": min_confidence,
-            "tickers": [alert.ticker for alert in alerts],
-        }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

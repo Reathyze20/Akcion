@@ -62,10 +62,13 @@ const RULES: Rule[] = [
   },
   {
     kind: 'MENA',
-    match: /MĚNA NESEDÍ/i,
-    label: 'měna neodpovídá burze',
+    /* Dřív „MĚNA NESEDÍ". Kontrola umí říct, že si ticker a měna odporují,
+       ne která z nich je špatně — a text, který tvrdil, že součet portfolia
+       je vedle, byl u IMP.V a KUYA.V prostě nepravda. */
+    match: /MĚNA VS\. TICKER|MĚNA NESEDÍ/i,
+    label: 'měna versus ticker',
     consequence:
-      'Hodnota v korunách je přepočtená špatným kurzem, takže celé portfolio ukazuje jinou částku, než jakou má.',
+      'Přípona tickeru ukazuje na jinou burzu, než v jaké měně je pozice vedená. Jedno z toho je špatně — potvrď měnu v detailu pozice, nebo ji oprav.',
   },
   {
     kind: 'BEZ_NAKUPNI_CENY',
@@ -161,4 +164,21 @@ export function groupWarnings(warnings: string[]): WarningGroup[] {
   );
 
   return [...ordered, ...other];
+}
+
+/**
+ * Uřízne emoji, kterým backend značí závažnost.
+ *
+ * Backend je do vět dává, protože tytéž věty odcházejí e-mailem a v e-mailu
+ * je emoji jediný nosič, který přežije. Na obrazovce ale závažnost nese ikona
+ * komponenty — a dvě značky vedle sebe („⚠ ⚠️ NEZAŘAZENÝCH POZIC") se čtou
+ * jako chyba vykreslování. Horší je kombinace „⚠ 🧠", kde vedle výstražného
+ * trojúhelníku svítí mozek.
+ *
+ * Emoji se navíc sází systémovým písmem, takže na každém stroji vypadá jinak
+ * a nedá se přebarvit podle tématu — proto je v téhle codebase pravidlo, že
+ * stav UI nenese emoji.
+ */
+export function stripSeverityEmoji(text: string): string {
+  return text.replace(/^[\s\u26A0\uFE0F\u2139\u23F8\u{1F600}-\u{1F9FF}]+/u, '').trim();
 }

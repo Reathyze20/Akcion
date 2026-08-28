@@ -117,6 +117,19 @@ class TickerMention(Base):
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow)
     ai_extracted = Column(Boolean, default=True)  # Extrahováno AI vs manuálně
     is_current = Column(Boolean, default=True, index=True)  # Nejaktuálnější zmínka pro ticker
+
+    # Atribuce (migrations/add_claim_attribution.sql, 2026-08).
+    #
+    # Sloupce v databázi byly a na modelu chyběly, takže je nevidělo `create_all`
+    # a nevidělo je ani ORM — jediné, co je umělo přečíst, bylo syrové `text()`
+    # v `breakout_lookup`. Testovací fixtury si tabulku skládají z modelu, takže
+    # každý dotaz na `speaker` v nich padal na „no such column" a v produkci to
+    # přitom fungovalo. Rozdíl mezi schématem a modelem je ta nejhůř dohledatelná
+    # varianta chybějícího vstupu: nechybí data, chybí o nich vědomí.
+    speaker = Column(String(120))  # Kdo to řekl, jak ho zdroj pojmenoval
+    source_key = Column(String(30))  # GOMES | BREAKOUT_INVESTORS | COMPANY | MEDIA | OTHER
+    claim_type = Column(String(30))  # FACT | OPINION | TRADE_DISCLOSURE | RR_LINES | …
+    thesis_impact = Column(String(20))  # SUPPORTS | CONTRADICTS | BREAKS | NEUTRAL
     
     # Relationships
     transcript = relationship("AnalystTranscript", back_populates="ticker_mentions")

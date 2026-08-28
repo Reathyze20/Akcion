@@ -236,13 +236,6 @@ class GomesDashboardResponse(BaseModel):
     last_updated: datetime = Field(default_factory=datetime.now)
 
 
-class ImageLinesImportResponse(BaseModel):
-    """Response from importing lines from images"""
-    imported_count: int
-    tickers: list[str]
-    message: str
-
-
 # ============================================================================
 # POSITION SIZING SCHEMAS
 # ============================================================================
@@ -327,8 +320,12 @@ class DeepDueDiligenceResult(BaseModel):
     """
     ticker: str
     company_name: Optional[str] = None
-    conviction_score: int = Field(..., ge=0, le=10)
-    
+    #: Optional on purpose. A model that returns no score has told us nothing
+    #: about the company, and the previous default turned that silence into a
+    #: five — a middling conviction nobody expressed, which then drove the
+    #: target weight and the position tier.
+    conviction_score: Optional[int] = Field(None, ge=0, le=10)
+
     # Thesis tracking
     thesis_status: str = Field(
         ..., 

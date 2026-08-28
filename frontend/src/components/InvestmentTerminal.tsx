@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Akcion Investment Terminal
  * 
  * Enterprise-grade portfolio management dashboard:
@@ -9,29 +9,37 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
+import {
   TrendingUp, TrendingDown, AlertTriangle, Shield,
-  DollarSign, Users, PlusCircle, RefreshCw, Search,
-  Target, Zap, AlertCircle, X, Check, Clock, BarChart3,
+  PlusCircle, RefreshCw, Search,
+  Target, Zap, X, Check, BarChart3,
   Upload, Plus, FileSpreadsheet, Edit3, ArrowUp, ArrowDown, Trash2
 } from 'lucide-react';
 import { apiClient } from '../api/client';
-import type { 
+import { canonicalOf, canonicalSet, pickAnalysis } from '../lib/tickers';
+import type {
+  Band,
+  EarningsInfo,
+  MarketAlert,
   PortfolioSummary, Position, Stock,
-  FamilyAuditResponse, BrokerType
+  BrokerType
 } from '../types';
 import { StockDetail } from './StockDetail';
 import NotificationBell from './NotificationBell';
 import DailyActionWidget from './DailyActionWidget';
+import DecisionBoard from './DecisionBoard';
 import ClearPortfolioButton from './ClearPortfolioButton';
-import RiskMeter from './RiskMeter';
 import Term from './ui/Term';
-import { percent, plural } from '../lib/format';
+import { percent, plural, verdictName, verdictTone, zoneName, zoneTone } from '../lib/format';
 import GoalPage from './goal/GoalPage';
+import FindsPage from './finds/FindsPage';
+import RevenueModelsPage from './models/RevenueModelsPage';
 import ThemeToggle from './ui/ThemeToggle';
 import SideRail from './shell/SideRail';
 import ContextPanel from './shell/ContextPanel';
+import RemovePositionDialog from './RemovePositionDialog';
 import PaymentsPage, { type PaymentBook, type PaymentGroupKind } from './payments/PaymentsPage';
+import { GomesIntakeModal } from './GomesIntakeModal';
 
 // ============================================================================
 // TYPES
@@ -49,6 +57,8 @@ type EnrichedPosition = Position & {
   allocation_priority: number;   // Priorita (1 = nejvyšší)
   // Status
   trend_status: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
+  /** Pásmo tak, jak ho spočítal engine. Nedopočítává se v prohlížeči. */
+  band?: Band;
   // Whether the analysis behind the numbers above may drive a recommendation
   analysis_usable: boolean;
   analysis_note: string | null;
@@ -95,7 +105,6 @@ const TARGET_WEIGHTS: Record<number, number> = {
 
 // Hard Caps (Gomesova pojistka)
 const MIN_INVESTMENT_CZK = 1000; // Min vklad (kvůli poplatkům)
-const DEFAULT_MONTHLY_CONTRIBUTION = 20000; // Výchozí měsíční vklad v CZK
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -133,12 +142,16 @@ const calculateMonthsToTarget = (
   let value = currentValue;
   let months = 0;
   const maxMonths = 240; // 20 years max
-  
+
   while (value < targetValue && months < maxMonths) {
     value = value * (1 + monthlyReturn) + monthlyContribution;
     months++;
   }
-  return months;
+
+  // Strop není odpověď. Vrátit 240 znamená tvrdit „za dvacet let" i tam,
+  // kde se při nulovém vkladu cíl nesplní nikdy — a to je přesně ta záměna
+  // chybějícího údaje za verdikt, které se tahle aplikace má vyhýbat.
+  return value >= targetValue ? months : Infinity;
 };
 
 const getTargetWeight = (score: number | null): number => {
@@ -183,7 +196,21 @@ const getActionCommand = (
   currentWeight: number,
   targetWeight: number,
   unrealizedProfitPct: number,
-  analysisUsable: boolean = true
+  analysisUsable: boolean = true,
+  //  Buy Guard veto, added 2026-08-25. This function used to compute
+  //  STRONG BUY/BUY from score and weight alone — no idea whether the
+  //  market was GREEN, whether Gomes ever issued a valuation line for the
+  //  ticker, or whether it is in Wait Time. `GomesGatekeeper.evaluate_buy_guard`
+  //  already refuses a buy on any of those three; this is the presentation
+  //  layer's half of that same rule, because a table cell that says STRONG
+  //  BUY is a verdict whether or not the backend agrees with it.
+  hasBand: boolean = false,
+  marketAlert: MarketAlert | null = null,
+  isWaitTime: boolean = false,
+  // Čtvrtá brána, stejný důvod jako předchozí tři: Pokyn dřív mlčel o
+  // čtrnáctidenním zákazu nákupu před výsledky (§ backend earnings_lookup.py)
+  // a mohl napsat STRONG BUY na pozici, kterou by brána reálně odmítla.
+  earningsBlackout: boolean = false
 ): { text: string; color: string; bgColor?: string } => {
   // Priority 1: Free Ride at 150%+ — this one is pure arithmetic on the
   // owner's own cost basis, so it holds without any analysis.
@@ -197,27 +224,62 @@ const getActionCommand = (
   if (!analysisUsable) {
     return { text: 'DOPLŇ ANALÝZU', color: 'text-text-muted' };
   }
-  
-  // Priority 2: Hard Exit for score < 4
+
+  // Priority 2: Hard Exit for score < 4 — a sell-side call, so none of the
+  // buy-side vetoes below apply to it.
   if (score !== null && score < 4) {
     return { text: 'HARD EXIT', color: 'text-negative', bgColor: 'bg-negative/20' };
   }
-  
+
+  // Priority 2b: score 4 falls between Hard Exit and every buy-side branch
+  // below — getActionSignal already treats < 5 as SELL for the batch-size
+  // column, but this function had no matching case, so a score-4 row wrote
+  // "ANALYZE" here: a sell opinion presented as no opinion at all.
+  if (score !== null && score < 5) {
+    return { text: 'PRODAT', color: 'text-negative', bgColor: 'bg-negative/10' };
+  }
+
+  // Buy Guard veto: anything that would otherwise print a buy-side verdict
+  // has to clear the same three gates the backend enforces. Checked once,
+  // ahead of STRONG BUY/BUY, so neither can slip past it.
+  const wouldBuy = score !== null && score >= 5 && currentWeight < targetWeight;
+  if (wouldBuy && isWaitTime) {
+    return { text: 'ČEKÁNÍ', color: 'text-warning', bgColor: 'bg-warning/10' };
+  }
+  if (wouldBuy && !hasBand) {
+    return { text: 'BEZ PÁSMA', color: 'text-text-muted' };
+  }
+  if (wouldBuy && marketAlert === null) {
+    return { text: 'SEMAFOR?', color: 'text-text-muted' };
+  }
+  if (wouldBuy && marketAlert !== 'GREEN') {
+    return { text: `TRH ${marketAlert}`, color: 'text-warning', bgColor: 'bg-warning/10' };
+  }
+  if (wouldBuy && earningsBlackout) {
+    return { text: 'PŘED VÝSLEDKY', color: 'text-warning', bgColor: 'bg-warning/10' };
+  }
+
   // Priority 3: Strong Buy for score >= 8 and underweight
   if (score !== null && score >= 8 && currentWeight < targetWeight) {
     return { text: 'STRONG BUY', color: 'text-positive font-bold' };
   }
-  
-  // Priority 4: Hold if at or above target weight
+
+  // Priority 4: at or above target weight. Strictly over, not just at, was
+  // its own column ("ODEBRAT" + kolik Kč) until that column was cut — the
+  // trim call belongs on the one cell everyone actually reads, the exact
+  // amount stays a click away in the position detail.
+  if (score !== null && score >= 5 && currentWeight > targetWeight) {
+    return { text: 'ODEBRAT', color: 'text-warning', bgColor: 'bg-warning/10' };
+  }
   if (score !== null && score >= 5 && currentWeight >= targetWeight) {
     return { text: 'HOLD', color: 'text-text-muted' };
   }
-  
+
   // Default: BUY signal for underweight positions with score 5-7
   if (score !== null && score >= 5 && currentWeight < targetWeight) {
     return { text: 'BUY', color: 'text-positive' };
   }
-  
+
   // No score or edge case
   return { text: 'ANALYZE', color: 'text-text-muted' };
 };
@@ -284,18 +346,44 @@ const formatPrice = (value: number, currency?: string | null): string => {
  * Where the price sits inside the green/red band. NOT a trend — it says
  * nothing about direction, only about how much of the range is left.
  */
-const getTrendStatus = (
-  stock: Stock | undefined
+/**
+ * Pásmo do sloupce — z API, nikdy z prohlížeče.
+ *
+ * Tady dřív stála vlastní matematika: poloha ceny v rozpětí zelená–červená
+ * s prahy 0,4 a 0,7. Vypadalo to jako pásmo a nebylo. Engine pásmo počítá
+ * proti tomu, co si firma **zaslouží** (`10 − válce`), takže stejná cena u
+ * dvou různě kvalitních firem dá jiné pásmo — a prohlížeč o válcích nevěděl.
+ * Akcie na 28 % rozpětí tak byla U ZELENÉ na obrazovce a PŘEPLACENO v enginu.
+ *
+ * Chybějící řádek je `UNKNOWN`, ne střed. Nemít odpověď a mít neutrální
+ * odpověď jsou dvě různé věci a jen jedna z nich je informace.
+ */
+const bandToTrend = (
+  band: Band | undefined
 ): 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN' => {
-  if (!stock || !stock.current_price || !stock.green_line || !stock.red_line) {
-    return 'UNKNOWN';
+  switch (band) {
+    case 'POD_ZELENOU':
+    case 'NAKUP':
+      return 'BULLISH';
+    case 'DRZET':
+      return 'NEUTRAL';
+    case 'PREPLACENO':
+    case 'NAD_CERVENOU':
+      return 'BEARISH';
+    default:
+      return 'UNKNOWN';
   }
-  const priceRange = stock.red_line - stock.green_line;
-  if (priceRange <= 0) return 'UNKNOWN';
-  const position = (stock.current_price - stock.green_line) / priceRange;
-  if (position <= 0.4) return 'BULLISH';
-  if (position >= 0.7) return 'BEARISH';
-  return 'NEUTRAL';
+};
+
+/** České názvy pásem. Syrový enum se na obrazovku nikdy nedostane. */
+const BAND_LABELS_CS: Record<Band, string> = {
+  POD_ZELENOU: 'POD ZELENOU',
+  NAKUP: 'NÁKUP',
+  DRZET: 'DRŽET',
+  PREPLACENO: 'PŘEPLACENO',
+  NAD_CERVENOU: 'NAD ČERVENOU',
+  NEZNAME: 'NEZNÁMÉ',
+  MIMO_METODIKU: 'MIMO METODIKU',
 };
 
 // ============================================================================
@@ -306,17 +394,15 @@ const getTrendStatus = (
 /**
  * Které nepovinné sloupce má smysl kreslit.
  *
- * Deset sloupců, z nichž čtyři jsou u čtrnácti z patnácti řádků prázdné,
- * není tabulka — je to mřížka pomlček. Sloupec, pro který nemá data ani
- * jedna pozice, se proto nevykreslí vůbec a řádek se o jeho výšku zkrátí.
+ * Dávka, katalyzátor, odpočet do výsledků a cesta k free ride měly každé
+ * vlastní sloupec, ale žádný z nich nevedl k jinému rozhodnutí, než už
+ * říká Pokyn (PRODAT/ODEBRAT/PŘED VÝSLEDKY/FREE RIDE) — zbyly tabulce jako
+ * dvanáct sloupců pro dvanáct pozic. Přesná částka a katalyzátor jsou
+ * o klik dál v detailu pozice.
  */
 export interface PositionColumns {
   score: boolean;
-  size: boolean;
-  catalyst: boolean;
   band: boolean;
-  /** Cesta ke zdvojnásobení. Bez známé nákupní ceny se nedá spočítat. */
-  freeride: boolean;
   /**
    * Sloupec s pokynem.
    *
@@ -365,18 +451,52 @@ const Th: React.FC<{
   </th>
 );
 
+/**
+ * Odpočet do nejbližších výsledků.
+ *
+ * Jedna komponenta pro portfolio i pro sledované, protože ta samá otázka se
+ * nesmí ve dvou tabulkách čtvrtletně rozejít. Text píše backend
+ * (`earnings_lookup.py`) — „za 78 dní" u oznámeného data, „asi za 98 dní"
+ * u odhadu z vlastní historie zveřejňování firmy. Ten rozdíl je celý smysl
+ * kalendáře, takže se nese ve slovech, ne jen v tooltipu.
+ *
+ * Blackout kreslí backend taky. Kdyby si čtrnáct dnů počítal prohlížeč, mohla
+ * by tabulka tvrdit něco jiného než brána, která nákup opravdu odmítne.
+ */
+const EarningsCell: React.FC<{ earnings?: EarningsInfo | null }> = ({ earnings }) => {
+  if (!earnings) {
+    // Chybějící datum není zpráva o firmě. Pomlčka, ne nula.
+    return <span className="text-[9px] uppercase text-text-muted">—</span>;
+  }
+  const tone = earnings.blackout
+    ? 'text-warning'
+    : earnings.confirmed
+      ? 'text-text-secondary'
+      : 'text-text-muted';
+  return (
+    <span
+      title={earnings.detail_cs}
+      className={`text-[10px] font-mono tabular-nums whitespace-nowrap ${tone}`}
+    >
+      {earnings.label_cs}
+    </span>
+  );
+};
+
 const PortfolioRow: React.FC<{
   position: EnrichedPosition;
   columns: PositionColumns;
+  marketAlert: MarketAlert | null;
   onClick: () => void;
-}> = ({ position, columns, onClick }) => {
-  const scoreColor = position.conviction_score 
-    ? position.conviction_score >= 7 ? 'text-positive' 
-      : position.conviction_score >= 5 ? 'text-warning' 
+  onRemove: () => void;
+}> = ({ position, columns, marketAlert, onClick, onRemove }) => {
+  const scoreColor = position.conviction_score
+    ? position.conviction_score >= 7 ? 'text-positive'
+      : position.conviction_score >= 5 ? 'text-warning'
       : 'text-negative'
     : 'text-text-muted';
 
-  const trendIcon = position.trend_status === 'BULLISH' 
+  const trendIcon = position.trend_status === 'BULLISH'
     ? <TrendingUp className="w-4 h-4 text-positive" />
     : position.trend_status === 'BEARISH'
     ? <TrendingDown className="w-4 h-4 text-negative" />
@@ -388,13 +508,23 @@ const PortfolioRow: React.FC<{
     ? 'text-warning'
     : position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative';
 
-  // Get action command (unknown P/L treated as 0: no free-ride claims)
+  const isWaitTime = position.inflection_status?.toUpperCase() === 'WAIT_TIME';
+
+  // Get action command (unknown P/L treated as 0: no free-ride claims).
+  // `!!position.band` is the same "does Gomes have a valuation line for this
+  // company" question the Pásmo column answers — a buy-side verdict without
+  // one is the KUYAF/OPTX pattern (IMPLEMENTATION_PLAN.md §20): a score with
+  // nothing under it.
   const actionCmd = getActionCommand(
     position.conviction_score,
     position.weight_in_portfolio,
     position.target_weight_pct,
     position.unrealized_pl_percent ?? 0,
-    position.analysis_usable
+    position.analysis_usable,
+    !!position.band,
+    marketAlert,
+    isWaitTime,
+    position.earnings?.blackout ?? false
   );
 
   // Check if row should be highlighted (HARD EXIT)
@@ -403,16 +533,8 @@ const PortfolioRow: React.FC<{
     position.conviction_score !== null &&
     position.conviction_score < 4;
 
-  const isWaitTime = position.inflection_status?.toUpperCase() === 'WAIT_TIME';
-
   // Strategy: Free Ride eligible vs everything else (never without a cost basis)
   const isFreeRideEligible = position.unrealized_pl_percent != null && position.unrealized_pl_percent >= 150;
-  // Clamped at BOTH ends. Without a lower bound a −60 % position produced a
-  // CSS width of "-40%", which browsers discard — so the biggest losses
-  // rendered as a full green bar.
-  const progressTo150 = Math.max(
-    0, Math.min(100, ((position.unrealized_pl_percent ?? 0) / 150) * 100)
-  );
 
   // Calculate shares to sell for Free Ride
   const sharesToSellForFreeRide = useMemo(() => {
@@ -443,6 +565,17 @@ const PortfolioRow: React.FC<{
                 REVIEW
               </span>
             )}
+            {/* SEC nález (going concern, neúčinné kontroly, restatement...).
+                Dřív viditelné jen po otevření detailu pozice — čtvrtina
+                portfolia ho nese a na řádku po něm nebyla ani stopa. */}
+            {position.sec_material_finding && (
+              <span
+                className="px-1.5 py-0.5 bg-warning/20 text-warning text-[10px] font-bold rounded"
+                title="Vlastní SEC výkaz firmy má CRITICAL/HIGH nález (going concern, neúčinné kontroly, restatement...) — detail v kartě pozice"
+              >
+                ⚠ SEC
+              </span>
+            )}
           </div>
           <div className="text-[10px] text-text-secondary truncate">
             {position.company_name || 'Unknown'}
@@ -455,7 +588,10 @@ const PortfolioRow: React.FC<{
           jednou nad tabulkou místo patnáctkrát v ní. */}
       <td className="py-1.5 px-2.5">
         {(columns.action || actionCmd.text !== 'DOPLŇ ANALÝZU') && (
-          <div className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}>
+          <div
+            className={`text-[10px] font-bold uppercase tracking-wide ${actionCmd.color} ${actionCmd.bgColor ? actionCmd.bgColor + ' px-2 py-1 rounded' : ''}`}
+            title={actionCmd.text === 'PŘED VÝSLEDKY' ? position.earnings?.detail_cs : undefined}
+          >
             {actionCmd.text}
           </div>
         )}
@@ -465,6 +601,14 @@ const PortfolioRow: React.FC<{
         {isWaitTime && (
           <div className="text-[9px] text-warning font-bold mt-0.5" title="Kánon: mrtvé peníze, neinvestovat">
             WAIT TIME
+          </div>
+        )}
+        {/* Kolik kusů prodat při FREE RIDE — dřív žilo jen ve svém vlastním
+            sloupci vedle Pokynu, který totéž slovo už napsal. Číslo bez
+            pokynu vedle sebe patří k němu, ne do dalšího sloupce. */}
+        {isFreeRideEligible && sharesToSellForFreeRide > 0 && (
+          <div className="text-[9px] text-warning/80 mt-0.5">
+            prodat {sharesToSellForFreeRide} ks
           </div>
         )}
       </td>
@@ -538,122 +682,44 @@ const PortfolioRow: React.FC<{
         </div>
       </td>
 
-      {/* Optimální dávka na tento měsíc. */}
-      {columns.size && (
-        <td className="py-1.5 px-2.5">
-          {!position.analysis_usable ? (
-            <div className="text-text-muted font-mono text-xs">—</div>
-          ) : position.action_signal === 'SELL' ? (
-            <div className="flex flex-col">
-              <div className="text-negative font-bold text-xs">PRODAT</div>
-              <div className="text-[9px] text-negative/80">Skóre &lt; 5</div>
-            </div>
-          ) : position.optimal_size < 0 ? (
-            // OVERWEIGHT: Show how much to SELL (negative optimal_size)
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1">
-                <span className="text-warning font-bold text-[9px]">ODEBRAT</span>
-                <span className="text-sm font-bold text-warning font-mono">
-                  {formatCurrency(Math.abs(position.optimal_size))}
-                </span>
-              </div>
-              <div className="text-[9px] text-warning/80">
-                Nad limit {position.max_allocation_cap.toFixed(1)}%
-              </div>
-            </div>
-          ) : position.optimal_size > 0 ? (
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1">
-                {position.action_signal === 'SNIPER' && <span className="text-warning text-[9px] font-bold">SNIPER</span>}
-                <span className="text-sm font-bold text-positive font-mono">
-                  {formatCurrency(position.optimal_size)}
-                </span>
-              </div>
-              {position.allocation_priority > 0 && position.allocation_priority <= 3 && (
-                <div className="text-[9px] text-warning font-bold">
-                  #{position.allocation_priority} priorita
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col">
-              <div className="text-text-muted font-mono text-xs">0 Kč</div>
-              <div className="text-[9px] text-text-muted">
-                {position.gap_czk <= 0 ? 'Na cíli' : 'Nízká priorita'}
-              </div>
-            </div>
-          )}
-        </td>
-      )}
+      {/* Dávka, katalyzátor, odpočet do výsledků a cesta k free ride měly
+          každé svůj sloupec — čtyři vedlejší fakta u dvanácti pozic naráz.
+          Pokyn teď nese jejich verdikt přímo (PRODAT/ODEBRAT/PŘED VÝSLEDKY/
+          FREE RIDE + kusy k prodeji), přesnou částku a katalyzátor ukáže
+          klik na řádek v detailu pozice. */}
 
-      {/* Nejbližší katalyzátor. */}
-      {columns.catalyst && (
-        <td className="py-1.5 px-2.5">
-          {position.next_catalyst ? (
-            <div className="text-[9px] text-text-secondary uppercase tracking-wide font-mono truncate" title={position.next_catalyst}>
-              {position.next_catalyst.length > 18 ? position.next_catalyst.slice(0, 18) + '...' : position.next_catalyst}
-            </div>
-          ) : (
-            // Absent data is not a red flag about the company.
-            <div className="text-[9px] text-text-muted uppercase">—</div>
-          )}
-        </td>
-      )}
-
-      {/* Kde cena leží mezi zelenou a červenou linkou. Není to trend —
-          není v tom směr — a prázdné, když linky nejsou. */}
+      {/* Pásmo z enginu: kde cena leží vůči tomu, co si firma zaslouží
+          (`10 − válce`), ne kde leží v rozpětí. Prázdné, když engine pásmo
+          nevydal — mimo metodiku, neznámé válce, nebo server neodpověděl. */}
       {columns.band && (
         <td className="py-1.5 px-2.5">
-          {/* Prázdno, ne pomlčka. Dvanáct pomlček pod sebou dělá svislý
-              pruh, který táhne oko a není v něm žádná informace; sloupec
-              už stojí jen tehdy, když ho vyplní aspoň pětina řádků. */}
+          {/* Prázdno, ne pomlčka — ale jen když engine neřekl vůbec nic.
+              „MIMO METODIKU" prázdno není: je to odpověď, že Gomes pro tu
+              firmu linku nevydal, takže žádné pásmo neexistuje a nemá smysl
+              ho čekat. Dokud byly prázdné všechny řádky, byl ten rozdíl
+              neviditelný; vedle vyplněných čte prázdná buňka jako rozbitá
+              aplikace. Šedě a bez šipky, aby se nepletlo s pásmem, které
+              o ceně něco tvrdí — barva by z chybějícího údaje udělala verdikt. */}
           <div className="flex flex-col items-center gap-1">
-            {position.trend_status === 'UNKNOWN' ? null : (
-              <>
-                {trendIcon}
-                <span className={`text-[10px] font-medium ${
-                  position.trend_status === 'BULLISH' ? 'text-positive' :
-                  position.trend_status === 'BEARISH' ? 'text-negative' :
-                  'text-text-muted'
-                }`}>
-                  {position.trend_status === 'BULLISH' ? 'U ZELENÉ'
-                    : position.trend_status === 'BEARISH' ? 'U ČERVENÉ'
-                    : 'STŘED'}
+            {position.band ? (
+              position.trend_status !== 'UNKNOWN' ? (
+                <>
+                  {trendIcon}
+                  <span className={`text-[10px] font-medium ${
+                    position.trend_status === 'BULLISH' ? 'text-positive' :
+                    position.trend_status === 'BEARISH' ? 'text-negative' :
+                    'text-text-muted'
+                  }`}>
+                    {BAND_LABELS_CS[position.band]}
+                  </span>
+                </>
+              ) : (
+                <span className="text-[10px] text-text-muted">
+                  {BAND_LABELS_CS[position.band]}
                 </span>
-              </>
-            )}
+              )
+            ) : null}
           </div>
-        </td>
-      )}
-
-      {/* Cesta k free ride.
-
-          Tenhle sloupec dřív psal „VE ZTRÁTĚ“, pruh a „−60 % od nákupu“ —
-          tedy potřetí totéž, co vedle stojí jako −60,30 % a −746,53 US$.
-          Zbylo z něj jen to, co P/L neříká: jak daleko je pozice ke
-          zdvojnásobení, po kterém se podle kánonu vybírá vklad. */}
-      {columns.freeride && (
-        <td className="py-1.5 px-2.5">
-          {isFreeRideEligible ? (
-            <div className="flex flex-col">
-              <div className="text-[9px] text-warning font-bold uppercase">FREE RIDE</div>
-              <div className="text-[8px] text-warning/70">
-                prodat {sharesToSellForFreeRide} ks
-              </div>
-            </div>
-          ) : position.unrealized_pl_percent != null && position.unrealized_pl_percent > 0 ? (
-            <div className="flex flex-col gap-1">
-              <div className="w-full h-1.5 bg-surface-hover rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-positive/60 transition-all"
-                  style={{ width: `${progressTo150}%` }}
-                />
-              </div>
-              <div className="text-[8px] text-text-muted">
-                {position.unrealized_pl_percent.toFixed(0)} % ze 150 %
-              </div>
-            </div>
-          ) : null}
         </td>
       )}
 
@@ -674,758 +740,22 @@ const PortfolioRow: React.FC<{
           </div>
         )}
       </td>
+
+      {/* „Už nedržím". Vždycky viditelné, ne až po najetí myší: akce, která
+          se objeví jen na hover, je pro někoho, kdo míří hůř, akce, která
+          neexistuje. `stopPropagation` proto, že klik na řádek otevírá
+          detail — a tenhle klik má dělat něco jiného. */}
+      <td className="py-1.5 px-1 text-right">
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="rounded-button p-1.5 text-text-muted transition-colors hover:bg-negative/15 hover:text-negative"
+          title={`Už nedržím ${position.ticker}`}
+          aria-label={`Už nedržím ${position.ticker}`}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </td>
     </tr>
-  );
-};
-
-// ============================================================================
-// STOCK DETAIL MODAL
-// ============================================================================
-
-interface StockDetailModalProps {
-  position: EnrichedPosition;
-  familyGaps: FamilyAuditResponse | null;
-  onClose: () => void;
-  onUpdate: () => void;  // Callback to refresh data after update
-}
-
-// DEAD CODE: superseded by AssetDetailModal; exported only so strict TS
-// (noUnusedLocals) passes until the monolith split removes it entirely.
-export const StockDetailModal: React.FC<StockDetailModalProps> = ({ position, familyGaps, onClose, onUpdate }) => {
-  const stock = position.stock;
-  const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [updateText, setUpdateText] = useState('');
-  const [sourceType, setSourceType] = useState<'earnings' | 'news' | 'chat' | 'transcript' | 'manual'>('manual');
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [updateResult, setUpdateResult] = useState<{ success: boolean; message: string } | null>(null);
-  
-  // Position editing state
-  const [isEditingPosition, setIsEditingPosition] = useState(false);
-  const [editShares, setEditShares] = useState(position.shares_count.toString());
-  const [editAvgCost, setEditAvgCost] = useState(position.avg_cost != null ? position.avg_cost.toString() : '');
-  const [editCurrentPrice, setEditCurrentPrice] = useState((stock?.current_price ?? position.current_price ?? 0).toString());
-  const [editCompanyName, setEditCompanyName] = useState(position.company_name || stock?.company_name || '');
-  const [editTicker, setEditTicker] = useState(position.ticker);
-  const [editCurrency, setEditCurrency] = useState(position.currency || 'USD');
-  const [isSavingPosition, setIsSavingPosition] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  
-  // Available currencies
-  const CURRENCIES = ['USD', 'EUR', 'CZK', 'CAD', 'GBP', 'HKD', 'CHF'];
-  
-  // Legacy price editing state (for inline price edit)
-  const [isEditingPrice, setIsEditingPrice] = useState(false);
-  const [editPrice, setEditPrice] = useState('');
-  const [isSavingPrice, setIsSavingPrice] = useState(false);
-  
-  // Price targets (mock calculation - should come from Deep DD)
-  const currentPrice = stock?.current_price ?? position.current_price ?? 0;
-  const greenLine = stock?.green_line ?? currentPrice * 0.7;
-  const redLine = stock?.red_line ?? currentPrice * 1.5;
-  const moonTarget = redLine * 1.5;
-  
-  // Calculate price position percentage
-  const priceRange = moonTarget - greenLine;
-  const pricePosition = priceRange > 0 ? ((currentPrice - greenLine) / priceRange) * 100 : 50;
-  
-  // Check if this stock has family gap
-  const familyGap = familyGaps?.gaps.find(g => g.ticker === position.ticker);
-  
-  // Market cap warning - standard $10B+ large-cap classification
-  const marketCapValue = stock?.market_cap ?? stock?.fully_diluted_market_cap ?? null;
-  const isLargeCap = marketCapValue !== null && marketCapValue >= 10_000_000_000;
-  
-  // Handle stock update
-  const handleUpdate = async () => {
-    if (!updateText.trim() || updateText.length < 50) {
-      setUpdateResult({ success: false, message: 'Text must be at least 50 characters.' });
-      return;
-    }
-    
-    setIsUpdating(true);
-    setUpdateResult(null);
-    
-    try {
-      const result = await apiClient.updateStockAnalysis(position.ticker, updateText, sourceType);
-      
-      if (result.success) {
-        const driftLabel = result.thesis_drift === 'IMPROVED' ? '[UP]' : 
-                          result.thesis_drift === 'DETERIORATED' ? '[DOWN]' : '[STABLE]';
-        setUpdateResult({ 
-          success: true, 
-          message: `${driftLabel} Updated! Score: ${result.previous_score || '?'} → ${result.new_score}/10` 
-        });
-        // Refresh parent data
-        setTimeout(() => {
-          onUpdate();
-          setShowUpdateForm(false);
-          setUpdateText('');
-        }, 2000);
-      }
-    } catch {
-      setUpdateResult({ success: false, message: 'Update failed. Please try again.' });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-  
-  // Handle position update (shares, avg_cost, current_price, company_name, ticker, currency)
-  const handleSavePosition = async () => {
-    setIsSavingPosition(true);
-    setSaveError(null);
-    
-    try {
-      const shares = parseFloat(editShares);
-      const avgCost = parseFloat(editAvgCost);
-      const price = parseFloat(editCurrentPrice);
-      
-      if (isNaN(shares) || shares <= 0) {
-        setSaveError('Počet kusů musí být kladné číslo.');
-        return;
-      }
-      if (isNaN(avgCost) || avgCost < 0) {
-        setSaveError('Průměrná pořizovací cena nesmí být záporná.');
-        return;
-      }
-      if (isNaN(price) || price <= 0) {
-        setSaveError('Aktuální cena musí být kladné číslo.');
-        return;
-      }
-      
-      await apiClient.updatePosition(position.id, {
-        shares_count: shares,
-        avg_cost: avgCost,
-        current_price: price,
-        company_name: editCompanyName.trim() || undefined,
-        ticker: editTicker.trim() !== position.ticker ? editTicker.trim() : undefined,
-        currency: editCurrency,
-      });
-      
-      // Also update the stock price if it changed
-      if (price !== currentPrice) {
-        await apiClient.updateStockPrice(position.ticker, price);
-      }
-      
-      setIsEditingPosition(false);
-      onUpdate();
-    } catch (err) {
-      console.error('Failed to save position:', err);
-      setSaveError('Změny se nepodařilo uložit. Zkus to znovu.');
-    } finally {
-      setIsSavingPosition(false);
-    }
-  };
-  
-  return (
-    <div className="fixed inset-0 bg-surface-base/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-surface-base border border-border rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-surface-base border-b border-border p-4 flex items-center justify-between z-10">
-          <div className="flex items-center gap-4">
-            <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-2xl
-              ${position.conviction_score && position.conviction_score >= 7 ? 'bg-positive/20 text-positive' :
-                position.conviction_score && position.conviction_score >= 5 ? 'bg-warning/20 text-warning' :
-                'bg-negative/20 text-negative'}`}>
-              {position.conviction_score ?? '?'}
-            </div>
-            <div>
-              <h2 className="text-2xl font-black text-text-primary">{position.ticker}</h2>
-              <p className="text-text-secondary">{stock?.company_name || 'Unknown Company'}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setShowUpdateForm(!showUpdateForm)}
-              className="px-3 py-2 bg-accent hover:bg-accent/80 text-text-primary rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Update Analysis
-            </button>
-            <button onClick={onClose} className="p-2 hover:bg-surface-raised rounded-lg">
-              <X className="w-6 h-6 text-text-secondary" />
-            </button>
-          </div>
-        </div>
-
-        {/* Update Form (collapsible) */}
-        {showUpdateForm && (
-          <div className="p-4 bg-accent/10 border-b border-accent/30">
-            <h3 className="text-lg font-bold text-accent mb-3 flex items-center gap-2">
-              <PlusCircle className="w-5 h-5" />
-              Add New Intelligence for {position.ticker}
-            </h3>
-            
-            {/* Source Type Selector */}
-            <div className="flex gap-2 mb-3">
-              {[
-                { value: 'earnings', label: 'Earnings Call' },
-                { value: 'news', label: 'News/PR' },
-                { value: 'transcript', label: 'Video Transcript' },
-                { value: 'chat', label: 'Research Note' },
-                { value: 'manual', label: 'Manual Entry' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setSourceType(opt.value as typeof sourceType)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    sourceType === opt.value
-                      ? 'bg-accent text-text-primary'
-                      : 'bg-surface-overlay text-text-secondary hover:bg-surface-hover'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            
-            <textarea
-              value={updateText}
-              onChange={(e) => setUpdateText(e.target.value)}
-              placeholder={
-                sourceType === 'earnings' 
-                  ? 'Paste earnings call summary, key metrics, guidance updates...' 
-                  : sourceType === 'news' 
-                  ? 'Paste news article, press release content...'
-                  : sourceType === 'transcript'
-                  ? 'Paste video transcript or interview notes...'
-                  : sourceType === 'chat'
-                  ? 'Paste research notes or analyst commentary...'
-                  : 'Enter your analysis notes...'
-              }
-              rows={6}
-              className="w-full px-4 py-3 bg-surface-overlay border border-border rounded-lg text-text-primary placeholder-text-muted focus:outline-none focus:border-accent resize-none mb-3"
-            />
-            
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-text-muted">
-                {updateText.length} characters (min. 50)
-              </div>
-              <div className="flex items-center gap-3">
-                {updateResult && (
-                  <span className={`text-sm ${updateResult.success ? 'text-positive' : 'text-negative'}`}>
-                    {updateResult.message}
-                  </span>
-                )}
-                <button
-                  onClick={handleUpdate}
-                  disabled={isUpdating || updateText.length < 50}
-                  className="px-4 py-2 bg-accent hover:bg-accent/80 disabled:bg-surface-overlay text-text-primary rounded-lg font-medium flex items-center gap-2 transition-colors"
-                >
-                  {isUpdating ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4" />
-                      Run Analysis
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Warnings - Trend Broken is CRITICAL (Weinstein Rule) */}
-        {(position.trend_status === 'BEARISH' || isLargeCap || position.is_deteriorated || familyGap) && (
-          <div className="p-4 space-y-2">
-            {/* TREND BROKEN - Most Critical Warning */}
-            {position.trend_status === 'BEARISH' && (
-              <div className="p-4 bg-negative/20 border-2 border-negative rounded-lg flex items-start gap-3 animate-pulse">
-                <TrendingDown className="w-6 h-6 text-negative flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="text-negative font-black text-lg">TREND IS BROKEN</div>
-                  <div className="text-negative/80 text-sm mt-1">
-                    Price below 30-week moving average. Re-evaluate fundamentals immediately!
-                  </div>
-                  <div className="text-negative/70 text-xs mt-2">
-                    Weinstein Rule: Do not add to positions with broken trends regardless of fundamentals.
-                  </div>
-                </div>
-              </div>
-            )}
-            {isLargeCap && (
-              <div className="p-3 bg-warning/10 border border-warning/50 rounded-lg flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-warning" />
-                <span className="text-warning font-semibold">
-                  Large Cap Alert: Limited asymmetric upside potential
-                </span>
-              </div>
-            )}
-            {position.is_deteriorated && (
-              <div className="p-3 bg-negative/10 border border-negative/50 rounded-lg flex items-center gap-3 animate-pulse">
-                <AlertCircle className="w-5 h-5 text-negative" />
-                <span className="text-negative/80 font-semibold">
-                  Position Under Review: Fundamental score below threshold (4/10)
-                </span>
-              </div>
-            )}
-            {familyGap && (
-              <div className="p-3 bg-info/10 border border-info/50 rounded-lg flex items-center gap-3">
-                <Users className="w-5 h-5 text-info" />
-                <span className="text-info">
-                  Cross-Account: Consider adding to <span className="font-bold">{familyGap.missing_from}</span> for balanced exposure
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Three Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
-          {/* LEFT: Holdings Stats */}
-          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-                <DollarSign className="w-4 h-4" /> Position Details
-              </h3>
-              {!isEditingPosition ? (
-                <button
-                  onClick={() => setIsEditingPosition(true)}
-                  className="p-1.5 text-text-muted hover:text-accent hover:bg-surface-hover rounded-lg transition-colors"
-                  title="Edit position"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
-              ) : (
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={handleSavePosition}
-                    disabled={isSavingPosition}
-                    className="p-1.5 bg-positive/20 hover:bg-positive/30 text-positive rounded-lg transition-colors disabled:opacity-50"
-                    title="Uložit změny"
-                  >
-                    {isSavingPosition ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsEditingPosition(false);
-                      setEditShares(position.shares_count.toString());
-                      setEditAvgCost(position.avg_cost != null ? position.avg_cost.toString() : '');
-                      setEditCurrentPrice(currentPrice.toString());
-                      setEditCompanyName(position.company_name || stock?.company_name || '');
-                      setEditTicker(position.ticker);
-                      setEditCurrency(position.currency || 'USD');
-                      setSaveError(null);
-                    }}
-                    className="p-1.5 bg-surface-active hover:bg-surface-active text-text-secondary rounded-lg transition-colors"
-                    title="Zrušit"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-            </div>
-            
-            {saveError && (
-              <div className="mb-3 p-2 bg-negative/20 border border-negative/50 rounded-lg text-negative/80 text-sm">
-                {saveError}
-              </div>
-            )}
-            
-            <div className="space-y-3">
-              {/* Ticker (editable) */}
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Ticker</span>
-                {isEditingPosition ? (
-                  <input
-                    type="text"
-                    value={editTicker}
-                    onChange={(e) => setEditTicker(e.target.value.toUpperCase())}
-                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
-                  />
-                ) : (
-                  <span className="font-bold text-text-primary">{position.ticker}</span>
-                )}
-              </div>
-              
-              {/* Company Name (editable) */}
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Firma</span>
-                {isEditingPosition ? (
-                  <input
-                    type="text"
-                    value={editCompanyName}
-                    onChange={(e) => setEditCompanyName(e.target.value)}
-                    className="w-40 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right text-sm focus:outline-none focus:border-accent"
-                    placeholder="Company name"
-                  />
-                ) : (
-                  <span className="text-text-primary text-sm">{position.company_name || stock?.company_name || 'Unknown'}</span>
-                )}
-              </div>
-              
-              {/* Shares (editable) */}
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Shares</span>
-                {isEditingPosition ? (
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editShares}
-                    onChange={(e) => setEditShares(e.target.value)}
-                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
-                  />
-                ) : (
-                  <span className="font-bold text-text-primary">{position.shares_count.toFixed(2)}</span>
-                )}
-              </div>
-              
-              {/* Avg Cost (editable) */}
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Avg. Cost</span>
-                {isEditingPosition ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-text-muted">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editAvgCost}
-                      onChange={(e) => setEditAvgCost(e.target.value)}
-                      className="w-20 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
-                    />
-                  </div>
-                ) : (
-                  <span className="font-mono text-text-primary">
-                    {position.avg_cost != null ? `$${position.avg_cost.toFixed(2)}` : '⚠️ doplň'}
-                  </span>
-                )}
-              </div>
-
-              {/* Current Price (editable) */}
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Current Price</span>
-                {isEditingPosition ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-text-muted">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editCurrentPrice}
-                      onChange={(e) => setEditCurrentPrice(e.target.value)}
-                      className="w-20 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
-                    />
-                  </div>
-                ) : isEditingPrice ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editPrice}
-                      onChange={(e) => setEditPrice(e.target.value)}
-                      className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right font-mono text-sm focus:outline-none focus:border-accent"
-                      placeholder={currentPrice.toFixed(2)}
-                      autoFocus
-                    />
-                    <button
-                      onClick={async () => {
-                        const price = parseFloat(editPrice);
-                        if (isNaN(price) || price <= 0) return;
-                        setIsSavingPrice(true);
-                        try {
-                          await apiClient.updateStockPrice(position.ticker, price);
-                          onUpdate();
-                          setIsEditingPrice(false);
-                        } catch (err) {
-                          console.error('Failed to update price:', err);
-                        } finally {
-                          setIsSavingPrice(false);
-                        }
-                      }}
-                      disabled={isSavingPrice}
-                      className="p-1 bg-positive/20 hover:bg-positive/30 text-positive rounded transition-colors"
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setIsEditingPrice(false)}
-                      className="p-1 bg-surface-active hover:bg-surface-active text-text-secondary rounded transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-text-primary">${currentPrice.toFixed(2)}</span>
-                    <button
-                      onClick={() => {
-                        setEditPrice(currentPrice.toFixed(2));
-                        setIsEditingPrice(true);
-                      }}
-                      className="p-1 text-text-muted hover:text-accent transition-colors"
-                      title="Update price manually"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-              
-              {/* Currency (editable) */}
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Currency</span>
-                {isEditingPosition ? (
-                  <select
-                    value={editCurrency}
-                    onChange={(e) => setEditCurrency(e.target.value)}
-                    className="w-24 px-2 py-1 bg-surface-hover border border-border rounded text-text-primary text-right text-sm focus:outline-none focus:border-accent"
-                  >
-                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                ) : (
-                  <span className="font-mono text-text-primary">{position.currency || 'USD'}</span>
-                )}
-              </div>
-              
-              <div className="border-t border-border pt-3 flex justify-between">
-                <span className="text-text-secondary">Pořizovací cena</span>
-                <span className="font-mono text-text-secondary">
-                  {position.cost_basis != null ? formatCurrency(position.cost_basis, position.currency || 'USD') : '⚠️ chybí nákupní cena'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-text-secondary">Market Value</span>
-                <span className="font-mono text-text-primary">{formatCurrency(position.market_value, position.currency || 'USD')}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">Nerealizovaný <Term id="pl">P/L</Term></span>
-                <div className="text-right">
-                  {position.unrealized_pl != null && position.unrealized_pl_percent != null ? (
-                    <>
-                      <span className={`font-bold ${position.unrealized_pl >= 0 ? 'text-positive' : 'text-negative'}`}>
-                        {formatCurrency(position.unrealized_pl, position.currency || 'USD')}
-                      </span>
-                      <div className={`text-xs ${position.unrealized_pl_percent >= 0 ? 'text-positive' : 'text-negative'}`}>
-                        ({formatPercent(position.unrealized_pl_percent)})
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-warning text-xs font-bold">⚠️ chybí nákupní cena</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Free Ride Alert */}
-            {position.unrealized_pl_percent != null && position.unrealized_pl_percent >= 150 && (
-              <div className="mt-4 p-3 bg-warning/20 border border-warning/50 rounded-lg">
-                <div className="flex items-center gap-2 text-warning font-bold mb-1">
-                  <Zap className="w-4 h-4" />
-                  Rule of 150%
-                </div>
-                <p className="text-warning/90 text-sm mb-2">
-                  Gain exceeds 150%. Consider selling half to lock in profits and ride free shares.
-                </p>
-                <button className="w-full py-2 bg-warning/30 hover:bg-warning/50 text-warning font-bold rounded-lg transition-colors">
-                  Take the Free Ride 🎰
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* MIDDLE: The Thesis */}
-          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
-            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Target className="w-4 h-4" /> Investment Thesis
-            </h3>
-            
-            {/* Narrative */}
-            <div className="mb-4">
-              <div className="text-xs text-text-muted uppercase mb-1">Latest Analysis</div>
-              <p className="text-text-secondary text-sm leading-relaxed">
-                {stock?.trade_rationale || stock?.edge || 'No analysis available. Run Deep DD to generate.'}
-              </p>
-            </div>
-
-            {/* Inflection Point Status */}
-            <div className="mb-4 p-3 bg-surface-hover/50 rounded-lg">
-              <div className="text-xs text-text-muted uppercase mb-1">Inflection Point</div>
-              <div className="flex items-center gap-2">
-                <span className={`w-3 h-3 rounded-full ${
-                  position.inflection_status === 'ACHIEVED' ? 'bg-positive' :
-                  position.inflection_status === 'UPCOMING' ? 'bg-warning animate-pulse' :
-                  'bg-surface-active'
-                }`} />
-                <span className="font-semibold text-text-primary">
-                  {position.inflection_status || 'PENDING'}
-                </span>
-              </div>
-            </div>
-
-            {/* Milestones */}
-            <div className="mb-4">
-              <div className="text-xs text-text-muted uppercase mb-2">Key Milestones</div>
-              <div className="space-y-2">
-                {stock?.catalysts?.split(',').slice(0, 3).map((catalyst, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <Check className="w-4 h-4 text-positive" />
-                    <span className="text-text-secondary">{catalyst.trim()}</span>
-                  </div>
-                )) || (
-                  <div className="text-text-muted text-sm">No milestones defined</div>
-                )}
-              </div>
-            </div>
-
-            {/* Catalysts */}
-            <div>
-              <div className="text-xs text-text-muted uppercase mb-2">Upcoming Catalysts</div>
-              <div className="flex flex-wrap gap-2">
-                {stock?.catalysts?.split(',').map((c, i) => (
-                  <span key={i} className="px-2 py-1 bg-accent/20 text-accent text-xs rounded">
-                    {c.trim()}
-                  </span>
-                )) || (
-                  <span className="text-text-muted text-sm">None identified</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT: Valuation & Exit */}
-          <div className="bg-surface-raised/50 rounded-xl p-4 border border-border">
-            <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" /> Valuation & Exit
-            </h3>
-
-            {/* Price Axis Visualization */}
-            <div className="mb-6">
-              <div className="relative pt-8 pb-4">
-                {/* Labels */}
-                <div className="absolute top-0 left-0 text-xs text-text-muted">Floor</div>
-                <div className="absolute top-0 right-0 text-xs text-text-muted">Moon</div>
-                
-                {/* The Bar */}
-                <div className="h-4 bg-gradient-to-r from-positive via-warning to-negative rounded-full relative">
-                  {/* Current Price Marker */}
-                  <div 
-                    className="absolute top-1/2 -translate-y-1/2 w-1 h-8 bg-text-primary rounded"
-                    style={{ left: `${Math.max(0, Math.min(100, pricePosition))}%` }}
-                  >
-                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-bold text-text-primary bg-surface-base px-2 py-1 rounded">
-                      ${currentPrice.toFixed(2)}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Price Labels */}
-                <div className="flex justify-between mt-2 text-xs">
-                  <span className="text-positive">${greenLine.toFixed(2)}</span>
-                  <span className="text-warning">${redLine.toFixed(2)}</span>
-                  <span className="text-negative">${moonTarget.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-[10px] text-text-muted">
-                  <span>Conservative</span>
-                  <span>Base Case</span>
-                  <span>Optimistic</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Gomes Gap Analysis Recommendation */}
-            <div className="mb-4 p-3 bg-positive/10 border border-positive/30 rounded-lg">
-              <div className="text-xs text-text-muted uppercase mb-2">Gap Analysis - Tento měsíc</div>
-              
-              {/* Target vs Current Weight */}
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-text-secondary text-sm">Cílová váha:</span>
-                <span className="font-mono text-text-primary">{position.max_allocation_cap.toFixed(1)}%</span>
-              </div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-text-secondary text-sm">Aktuální váha:</span>
-                <span className={`font-mono ${position.is_underweight ? 'text-warning' : position.is_overweight ? 'text-negative' : 'text-positive'}`}>
-                  {position.weight_in_portfolio.toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
-                <span className="text-text-secondary text-sm">Mezera (Gap):</span>
-                <span className={`font-mono font-bold ${position.gap_czk > 0 ? 'text-warning' : position.gap_czk < 0 ? 'text-negative' : 'text-positive'}`}>
-                  {position.gap_czk > 0 ? '+' : ''}{formatCurrency(position.gap_czk)}
-                </span>
-              </div>
-              
-              {/* Optimal Size */}
-              <div className="flex items-center justify-between">
-                <span className="text-text-secondary font-semibold">Doporučený vklad:</span>
-                {position.action_signal === 'SELL' ? (
-                  <span className="text-xl font-bold text-negative">PRODAT</span>
-                ) : (
-                  <span className={`text-xl font-bold ${position.optimal_size > 0 ? 'text-positive' : 'text-text-muted'}`}>
-                    {formatCurrency(position.optimal_size)}
-                  </span>
-                )}
-              </div>
-              
-              {position.action_signal === 'SNIPER' && (
-                <div className="mt-2 text-xs text-warning flex items-center gap-1">
-                  Sniper příležitost! Vysoké skóre + velká mezera.
-                </div>
-              )}
-              {position.optimal_size === 0 && position.gap_czk > MIN_INVESTMENT_CZK && position.action_signal !== 'SELL' && (
-                <div className="mt-2 text-xs text-text-muted">
-                  Nízká priorita - tento měsíc mají přednost lepší příležitosti
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-2">
-              <button className="w-full py-2 bg-positive/20 hover:bg-positive/30 text-positive font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
-                <PlusCircle className="w-4 h-4" />
-                Add to Position
-              </button>
-              {position.unrealized_pl_percent != null && position.unrealized_pl_percent >= 100 && (
-                <button className="w-full py-2 bg-warning/20 hover:bg-warning/30 text-warning font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
-                  <TrendingUp className="w-4 h-4" />
-                  Take Partial Profits (House Money)
-                </button>
-              )}
-              {position.is_deteriorated && (
-                <button className="w-full py-2 bg-negative/20 hover:bg-negative/30 text-negative font-bold rounded-lg transition-colors flex items-center justify-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  Uzavřít celou pozici
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom: Thesis Drift Log */}
-        <div className="p-4 border-t border-border">
-          <h3 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4" /> Score History (Thesis Drift)
-          </h3>
-          <div className="flex gap-4 overflow-x-auto pb-2">
-            {/* Mock history - should come from score_history API */}
-            {[
-              { date: '2026-01-20', score: 8, status: 'IMPROVED' },
-              { date: '2026-01-10', score: 7, status: 'STABLE' },
-              { date: '2025-12-15', score: 6, status: 'DETERIORATED' },
-            ].map((entry, i) => (
-              <div key={i} className="flex-shrink-0 p-3 bg-surface-raised rounded-lg border border-border min-w-[120px]">
-                <div className="text-xs text-text-muted">{entry.date}</div>
-                <div className={`text-2xl font-black ${
-                  entry.score >= 7 ? 'text-positive' : 
-                  entry.score >= 5 ? 'text-warning' : 
-                  'text-negative'
-                }`}>
-                  {entry.score}/10
-                </div>
-                <div className={`text-xs ${
-                  entry.status === 'IMPROVED' ? 'text-positive' :
-                  entry.status === 'DETERIORATED' ? 'text-negative' :
-                  'text-text-secondary'
-                }`}>
-                  {entry.status}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
   );
 };
 
@@ -1640,14 +970,8 @@ const WatchlistDetailModal: React.FC<WatchlistDetailModalProps> = ({ stock, onCl
               
               <div className="flex justify-between">
                 <span className="text-text-secondary">Cenové pásmo</span>
-                <span className={`font-bold px-2 py-0.5 rounded text-sm ${
-                  stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
-                  stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
-                  stock.price_zone === 'ACCUMULATE' ? 'bg-accent/20 text-accent' :
-                  stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
-                  'bg-surface-hover text-text-secondary'
-                }`}>
-                  {stock.price_zone || 'N/A'}
+                <span className={`font-bold px-2 py-0.5 rounded text-sm border ${zoneTone(stock.price_zone).pill}`}>
+                  {zoneName(stock.price_zone)}
                 </span>
               </div>
               
@@ -2496,15 +1820,32 @@ export const InvestmentTerminal: React.FC = () => {
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ EUR: 25, USD: 24 });
-  const [familyGaps, setFamilyGaps] = useState<FamilyAuditResponse | null>(null);
+  /**
+   * Pásmo na ticker, tak jak ho spočítal engine.
+   *
+   * Prázdná mapa znamená „server neodpověděl", ne „žádná akcie nemá pásmo" —
+   * proto se ze scházejícího klíče stane NEZNÁMÉ a ne střed.
+   */
+  const [bandByTicker, setBandByTicker] = useState<Map<string, Band>>(new Map());
+  /**
+   * Semafor. Zůstává `null`, dokud se opravdu nenačte — `null` se v „Pokynu"
+   * čte jako veto, ne jako GREEN. Appka dřív neznala semafor vůbec: sloupec
+   * mohl doporučit STRONG BUY i uprostřed ORANŽOVÉ, protože se ho nikdo neptal.
+   */
+  const [marketAlert, setMarketAlert] = useState<MarketAlert | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<EnrichedPosition | null>(null);
+  /** Pozice, u které se právě řeší „už ji nedržím". */
+  const [removingPosition, setRemovingPosition] = useState<EnrichedPosition | null>(null);
   const [selectedWatchlistStock, setSelectedWatchlistStock] = useState<Stock | null>(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAddPositionModal, setShowAddPositionModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'weight' | 'score' | 'pl'>('score');
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'watchlist' | 'cil' | 'splaceni'>('portfolio');
+  // Otevírá se na Rozhodnutí, ne na tabulce. Otázka, kvůli které se sem
+  // chodí, je „co s tím mám dělat", a tabulka pozic na ni neodpovídá —
+  // odpověď byla o jedno kliknutí dál, než kam se člověk podívá.
+  const [activeTab, setActiveTab] = useState<'rozhodnuti' | 'portfolio' | 'watchlist' | 'nalezy' | 'modely' | 'cil' | 'splaceni'>('rozhodnuti');
   
   // Cash editing state
   const [isEditingCash, setIsEditingCash] = useState(false);
@@ -2630,6 +1971,8 @@ export const InvestmentTerminal: React.FC = () => {
   // Available currencies for cash
   const CASH_CURRENCIES = ['CZK', 'EUR', 'USD', 'CAD', 'GBP'];
   
+  const [showIntakeModal, setShowIntakeModal] = useState(false);
+  
   // Refresh portfolios helper
   const refreshPortfolios = async () => {
     const portfolioList = await apiClient.getPortfolios();
@@ -2655,7 +1998,25 @@ export const InvestmentTerminal: React.FC = () => {
         } catch {
           console.warn('Failed to fetch exchange rates, using fallback');
         }
-        
+
+        // Pásma. Selhání tady nesmí shodit portfolio — sloupec zůstane
+        // prázdný, což je poctivější než dopočítat ho v prohlížeči.
+        try {
+          const ladder = await apiClient.getLadder();
+          setBandByTicker(new Map(ladder.items.map((i) => [i.ticker, i.band])));
+        } catch {
+          console.warn('Žebřík pásem se nenačetl — sloupec Pásmo zůstane prázdný');
+        }
+
+        // Semafor. Selhání nechává marketAlert na `null` — Pokyn to čte jako
+        // veto, nikdy jako GREEN.
+        try {
+          const status = await apiClient.getMarketStatus();
+          setMarketAlert(status.status as MarketAlert);
+        } catch {
+          console.warn('Semafor se nenačetl — Pokyn nesmí nabízet nákup bez něj');
+        }
+
         // Fetch portfolios
         const portfolioList = await apiClient.getPortfolios();
         const summaries: PortfolioSummary[] = [];
@@ -2670,17 +2031,13 @@ export const InvestmentTerminal: React.FC = () => {
         }
         setPortfolios(summaries);
 
-        // Fetch stocks for Gomes data
-        const stocksData = await apiClient.getStocks();
+        // Fetch stocks for Gomes data (with enriched price lines & zones)
+        const stocksData = await apiClient.getEnrichedStocks();
         setStocks(stocksData.stocks);
 
-        // Fetch family gaps
-        try {
-          const gaps = await apiClient.getFamilyAudit();
-          setFamilyGaps(gaps);
-        } catch {
-          // No family audit available
-        }
+        // Rozdíly portfolií si načítá PortfolioDiffCard sám, až když si
+        // člověk tu odrážku otevře. Tady to byl dotaz na každé spuštění
+        // aplikace pro panel, který se většinou nezobrazil.
       } catch (err) {
         console.error('Failed to fetch data:', err);
       } finally {
@@ -2707,7 +2064,7 @@ export const InvestmentTerminal: React.FC = () => {
       totalValue += portfolio.total_market_value || 0;
       totalCash += portfolio.cash_balance || 0;
       // Sum up monthly contributions from all portfolios
-      totalMonthlyContribution += portfolio.portfolio.monthly_contribution ?? DEFAULT_MONTHLY_CONTRIBUTION;
+      totalMonthlyContribution += portfolio.portfolio.monthly_contribution ?? 0;
     }
     
     // Include cash in total
@@ -2727,7 +2084,9 @@ export const InvestmentTerminal: React.FC = () => {
     for (const portfolio of portfolios) {
       for (const pos of portfolio.positions) {
         // Find matching stock from Gomes analysis (may not exist)
-        const stock = stocks.find(s => s.ticker.toUpperCase() === pos.ticker.toUpperCase());
+        // Napříč burzami: pozice KUYA.V najde analýzu vedenou jako KUYAF.
+        // Když jsou řádky dva, vyhraje ten od Gomese — viz lib/tickers.ts.
+        const stock = pickAnalysis(stocks, pos);
         const gomesScore = stock?.conviction_score ?? null;
         
         // 1. Cílová váha podle skóre (Target Weight)
@@ -2775,6 +2134,12 @@ export const InvestmentTerminal: React.FC = () => {
           initialOptimalSize = Math.round(gapCZK); // gapCZK is already negative
         }
 
+        const posBand =
+          bandByTicker.get(pos.ticker) ??
+          (pos.canonical_ticker ? bandByTicker.get(pos.canonical_ticker) : undefined) ??
+          (stock?.ticker ? bandByTicker.get(stock.ticker) : undefined) ??
+          (stock?.canonical_ticker ? bandByTicker.get(stock.canonical_ticker) : undefined);
+
         const enriched: EnrichedPosition = {
           ...pos,
           stock,
@@ -2785,7 +2150,8 @@ export const InvestmentTerminal: React.FC = () => {
           gap_czk: gapCZK,
           optimal_size: initialOptimalSize, // Negative for OVERWEIGHT, will be recalculated for UNDERWEIGHT
           allocation_priority: 999, // Will be set after sorting
-          trend_status: getTrendStatus(stock),
+          trend_status: bandToTrend(posBand),
+          band: posBand,
           is_deteriorated: analysisState.usable && gomesScore !== null && gomesScore < 4,
           // "Overweight" against a target we could not compute is not a fact
           // about the position, it is a fact about our data.
@@ -2886,16 +2252,31 @@ export const InvestmentTerminal: React.FC = () => {
       unanalyzedCount,
       riskScore,
     };
-  }, [portfolios, stocks, exchangeRates]);
+  }, [portfolios, stocks, exchangeRates, bandByTicker]);
 
-  // Get tickers that are in portfolio (owned)
+  // Pozice, jejichž měnu appka neumí přepočítat na koruny — součty výš je
+  // tiše vynechávají. Prázdné dnes pro všech dvanáct pozic; existuje kvůli
+  // incidentu, kdy neznámá měna spadla na výchozí kurz USD a ocenila
+  // izraelskou pozici na 3,3násobek skutečné hodnoty.
+  const unconvertiblePositions = useMemo(() => {
+    // Backend nemá pole `unconvertible_positions` v odpovědi zapojené —
+    // bez zálohy na [] vracelo `flatMap` na každé portfolio `undefined`
+    // jako jednu položku (flatMap nesplošťuje ne-pole), pole se čtou
+    // .ticker na undefined a záložka Portfolio spadla na prázdnou obrazovku.
+    return portfolios.flatMap((p) => p.unconvertible_positions ?? []);
+  }, [portfolios]);
+
+  // Které firmy držíme — kanonicky, ne podle zápisu tickeru. Bez toho se
+  // KUYAF ukazovalo mezi sledovanými, přestože KUYA.V je v portfoliu.
   const ownedTickers = useMemo(() => {
-    return new Set(familyData.allPositions.map(p => p.ticker.toUpperCase()));
+    return canonicalSet(familyData.allPositions);
   }, [familyData.allPositions]);
 
-  // Watchlist: stocks with analysis but NOT owned
+  // Sledované: papíry s analýzou, které nedržíme.
   const watchlistStocks = useMemo(() => {
-    return stocks.filter(s => !ownedTickers.has(s.ticker.toUpperCase()) && s.conviction_score !== null);
+    return stocks.filter(
+      s => !ownedTickers.has(canonicalOf(s)) && s.conviction_score !== null
+    );
   }, [stocks, ownedTickers]);
 
   // Filter and sort positions
@@ -2931,10 +2312,9 @@ export const InvestmentTerminal: React.FC = () => {
   /**
    * Které nepovinné sloupce vůbec nakreslit.
    *
-   * Skóre bylo prázdné u třinácti řádků z patnácti, optimální dávka
-   * a katalyzátor u čtrnácti, pásmo u dvanácti. Čtyřicet procent tabulky
-   * byly pomlčky — a každá z nich přidávala řádku výšku, kvůli které se
-   * portfolio nevešlo na obrazovku.
+   * Dávka, katalyzátor, výsledky a free ride měly každé vlastní sloupec,
+   * ale žádný z nich neříkal nic, co teď nenese Pokyn nebo detail pozice
+   * na klik — zůstaly jen Skóre a Pásmo, obojí přímý vstup do rozhodnutí.
    *
    * Sloupec se ukáže, jakmile pro něj má data aspoň jedna pozice. Nic se
    * neskrývá natrvalo: zmizí přesně to, o čem aplikace nic neví.
@@ -2943,10 +2323,10 @@ export const InvestmentTerminal: React.FC = () => {
     /*
      * Doplňkový sloupec má smysl, až když ho vyplní aspoň pětina řádků.
      *
-     * Pravidlo „stačí jedna pozice" nechalo stát sloupec Katalyzátor s
-     * jediným záznamem ze čtrnácti a Pásmo se třemi — dva svislé pruhy
-     * pomlček přes celou tabulku. Údaj se neztrácí, je v detailu pozice;
-     * jen nedělá sloupec tam, kde ho nemá čím naplnit.
+     * Pravidlo „stačí jedna pozice" nechalo stát sloupec Pásmo se třemi
+     * záznamy ze čtrnácti — svislý pruh pomlček přes celou tabulku. Údaj
+     * se neztrácí, je v detailu pozice; jen nedělá sloupec tam, kde ho
+     * nemá čím naplnit.
      */
     const alesponPetina = (test: (p: EnrichedPosition) => boolean) => {
       const kolik = displayedPositions.filter(test).length;
@@ -2954,29 +2334,22 @@ export const InvestmentTerminal: React.FC = () => {
     };
 
     return {
-      /* Skóre a dávka jsou vlastní výstupy aplikace. Ty se kreslí, jakmile
-         existuje aspoň jeden — na nich se rozhoduje. */
+      /* Skóre je vlastní výstup aplikace. Kreslí se, jakmile existuje
+         aspoň jeden — na něm se rozhoduje. */
       score: displayedPositions.some((p) => p.analysis_usable && p.conviction_score != null),
-      size: displayedPositions.some((p) => (p.optimal_size ?? 0) > 0),
-      catalyst: alesponPetina((p) => Boolean(p.next_catalyst)),
       band: alesponPetina(
         (p) => p.stock?.green_line != null || p.stock?.red_line != null,
-      ),
-      freeride: alesponPetina(
-        (p) => p.unrealized_pl_percent != null && p.unrealized_pl_percent > 0,
       ),
       analysisNote: displayedPositions.some((p) => p.analysis_usable),
       action: displayedPositions.some((p) => p.analysis_usable),
     };
   }, [displayedPositions]);
 
-  /** Kolik sloupců se opravdu kreslí — pro colSpan prázdného řádku. */
-  const columnCount = 5
+  /** Kolik sloupců se opravdu kreslí — pro colSpan prázdného řádku.
+      Šest napevno: symbol, pokyn, váha, cena, P/L a sloupec s akcí. */
+  const columnCount = 6
     + (columns.score ? 1 : 0)
-    + (columns.size ? 1 : 0)
-    + (columns.catalyst ? 1 : 0)
-    + (columns.band ? 1 : 0)
-    + (columns.freeride ? 1 : 0);
+    + (columns.band ? 1 : 0);
 
   // Filter and sort watchlist
   const displayedWatchlist = useMemo(() => {
@@ -3016,7 +2389,7 @@ export const InvestmentTerminal: React.FC = () => {
         await apiClient.runDeepDD(transcript, ticker);
       }
       // Refresh data
-      const stocksData = await apiClient.getStocks();
+      const stocksData = await apiClient.getEnrichedStocks();
       setStocks(stocksData.stocks);
     } catch (err) {
       console.error('Analysis failed:', err);
@@ -3054,6 +2427,7 @@ export const InvestmentTerminal: React.FC = () => {
       <SideRail
         active={activeTab}
         onSelect={setActiveTab}
+        onOpenIntake={() => setShowIntakeModal(true)}
         positionCount={familyData.allPositions.length}
         watchlistCount={watchlistStocks.length}
       />
@@ -3086,15 +2460,23 @@ export const InvestmentTerminal: React.FC = () => {
           <div
             className="flex flex-col"
             title={(() => {
-              const months = calculateMonthsToTarget(familyData.totalValue, 500000, 20000, 0.15);
+              const months = calculateMonthsToTarget(
+                familyData.totalValue, 500000, familyData.monthlyContribution, 0.15,
+              );
               if (months <= 0) return 'Cíl 500 tis. Kč je splněn.';
+              if (!Number.isFinite(months)) {
+                return familyData.monthlyContribution > 0
+                  ? 'Při tomhle vkladu se cíl 500 tis. Kč do dvaceti let nesplní.'
+                  : 'Žádný účet nemá zadaný měsíční vklad, takže se cíl neplní.';
+              }
               const years = Math.floor(months / 12);
               const rest = months % 12;
               const casti = [
                 years > 0 ? `${years} ${plural(years, 'rok', 'roky', 'let')}` : '',
                 rest > 0 ? `${rest} ${plural(rest, 'měsíc', 'měsíce', 'měsíců')}` : '',
               ].filter(Boolean).join(' a ');
-              return `Do cíle 500 tis. Kč zbývá ${casti} při 15 % ročně a vkladu 20 tis. Kč měsíčně.`;
+              return `Do cíle 500 tis. Kč zbývá ${casti} při 15 % ročně a vkladu `
+                + `${formatCurrency(familyData.monthlyContribution)} měsíčně.`;
             })()}
           >
             <div className="flex items-baseline gap-2">
@@ -3163,7 +2545,10 @@ export const InvestmentTerminal: React.FC = () => {
                       const rate = exchangeRates[editCashCurrency] || 1;
                       amountInCZK = amount * rate;
                     }
-                    if (portfolios.length > 0) {
+                    // Jen jedno portfolio. Při dvou by se sem uložil součet
+                    // hotovosti obou lidí do účtu toho prvního — pole se proto
+                    // v tom případě vůbec nedá otevřít (viz spouštěč níž).
+                    if (portfolios.length === 1) {
                       await apiClient.updateCashBalance(portfolios[0].portfolio.id, amountInCZK);
                       await refreshPortfolios();
                     }
@@ -3189,24 +2574,53 @@ export const InvestmentTerminal: React.FC = () => {
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => {
-                setEditCashValue(familyData.totalCash.toString());
-                setEditCashCurrency('CZK');
-                setIsEditingCash(true);
-              }}
-              className="group flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-left transition-colors hover:bg-surface-hover"
-              title="Upravit volnou hotovost"
-            >
-              <span className="eyebrow text-text-muted">hotovost</span>
-              <span className="font-mono text-[13px] tabular-nums text-text-primary">
-                {formatCurrency(familyData.totalCash)}
-              </span>
-              <span className="font-mono text-[11px] text-text-muted">
-                {percent(familyData.totalValue > 0 ? (familyData.totalCash / familyData.totalValue) * 100 : 0)}
-              </span>
-              <Edit3 className="h-3 w-3 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
-            </button>
+            /*
+             * Číslo je součet hotovosti přes všechna portfolia, ale zápis umí
+             * mířit jen do jednoho. Dokud je portfolio jediné, je to totéž a
+             * úprava rovnou v pruhu dává smysl. Jakmile jsou dvě, uložení by
+             * hodilo součet obou lidí na účet toho prvního — tichý přesun cizí
+             * hotovosti. Proto se tužka schová a upravuje se po účtech
+             * v záložce Portfolia, kde zápis a čtení míří na tentýž řádek.
+             */
+            (() => {
+              const jedine = portfolios.length === 1;
+              const rozpis = portfolios
+                .map((p) => `${p.portfolio.owner}: ${formatCurrency(p.cash_balance || 0)}`)
+                .join(' · ');
+              const obsah = (
+                <>
+                  <span className="eyebrow text-text-muted">hotovost</span>
+                  <span className="font-mono text-[13px] tabular-nums text-text-primary">
+                    {formatCurrency(familyData.totalCash)}
+                  </span>
+                  <span className="font-mono text-[11px] text-text-muted">
+                    {percent(familyData.totalValue > 0 ? (familyData.totalCash / familyData.totalValue) * 100 : 0)}
+                  </span>
+                </>
+              );
+
+              return jedine ? (
+                <button
+                  onClick={() => {
+                    setEditCashValue((portfolios[0].cash_balance || 0).toString());
+                    setEditCashCurrency('CZK');
+                    setIsEditingCash(true);
+                  }}
+                  className="group flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-left transition-colors hover:bg-surface-hover"
+                  title="Upravit volnou hotovost"
+                >
+                  {obsah}
+                  <Edit3 className="h-3 w-3 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              ) : (
+                <span
+                  className="flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1"
+                  title={`${rozpis} — hotovost se upravuje po účtech v záložce Portfolia.`}
+                >
+                  {obsah}
+                </span>
+              );
+            })()
           )}
 
           {/* Kolik pozic a kolik z nich aplikace neumí posoudit. */}
@@ -3314,11 +2728,24 @@ export const InvestmentTerminal: React.FC = () => {
             Verdikt je úzký sloupec, protože je to pár vět. Vedle něj
             je místo na celou tabulku.
         ============================================================== */}
+        {/* „Co s tím" — jedna karta na firmu, pokyn pro oba účty. Vlastní
+            záložka, protože je to jiná otázka než „co dnes udělat": denní
+            seznam ukazuje nejvýš tři věci, tohle ukazuje stanovisko ke všemu,
+            co držíte, a dá se to přečíst po třech týdnech bez otevření. */}
+        {activeTab === 'rozhodnuti' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <DecisionBoard />
+          </div>
+        )}
+
         {activeTab === 'portfolio' && (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
           <div className="grid min-h-0 flex-1 gap-3 min-[1480px]:grid-cols-[352px_minmax(0,1fr)]">
 
-            {/* Levý sloupec: co dnes dělat a na čem portfolio stojí. */}
+            {/* Levý sloupec: co dnes dělat. Skladba portfolia (dřív tu stála
+                jako druhá dlaždice pod tímhle) je podklad k otázce „proč",
+                ne k dennímu čtení — přestěhovala se mezi odrážky
+                ContextPanelu, viz „Skladba" tam dole. */}
             <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-0.5">
               <DailyActionWidget
                 onExecuteAction={(action) => {
@@ -3329,13 +2756,7 @@ export const InvestmentTerminal: React.FC = () => {
                   }
                   return false;
                 }}
-              />
-              <RiskMeter
-                rocketCount={familyData.rocketCount}
-                anchorCount={familyData.anchorCount}
-                waitTimeCount={familyData.waitTimeCount}
-                unanalyzedCount={familyData.unanalyzedCount}
-                riskScore={familyData.riskScore}
+                onOpenRozpor={() => setActiveTab('rozhodnuti')}
               />
             </div>
 
@@ -3430,31 +2851,21 @@ export const InvestmentTerminal: React.FC = () => {
                 </div>
               </div>
               
-              {/* Top 3 recommendations */}
-              <div className="flex items-center gap-2">
-                {familyData.allPositions
-                  .filter(p => p.optimal_size > 0)
-                  .sort((a, b) => a.allocation_priority - b.allocation_priority)
-                  .slice(0, 3)
-                  .map((pos, i) => (
-                    <div 
-                      key={pos.ticker}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                        i === 0 ? 'bg-positive/20 text-positive border border-positive/50' :
-                        'bg-surface-hover/50 text-text-secondary'
-                      }`}
-                    >
-                      {pos.action_signal === 'SNIPER' && '[S] '}
-                      {pos.ticker}: {formatCurrency(pos.optimal_size)}
-                    </div>
-                  ))
-                }
-                {familyData.allPositions.filter(p => p.action_signal === 'SELL').length > 0 && (
-                  <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-negative/20 text-negative border border-negative/50">
-                    {familyData.allPositions.filter(p => p.action_signal === 'SELL').length}x PRODAT
-                  </div>
-                )}
-              </div>
+              {/* Dřív tu stály tři dlaždice a čtvrtá s počtem PRODAT — totéž,
+                  co tabulka níž říká u každého řádku ve sloupci Pokyn, jen
+                  jinou barvou. Zbyla jediná věta o tom, kam jde další
+                  koruna — to jediné tabulka sama neřekne. */}
+              {(() => {
+                const next = familyData.allPositions
+                  .filter((p) => p.optimal_size > 0)
+                  .sort((a, b) => a.allocation_priority - b.allocation_priority)[0];
+                return next ? (
+                  <p className="text-xs text-text-secondary">
+                    Příští na řadě: <span className="font-bold text-positive">{next.ticker}</span>
+                    {' '}({formatCurrency(next.optimal_size)})
+                  </p>
+                ) : null;
+              })()}
             </div>
           </div>
         )}
@@ -3483,6 +2894,13 @@ export const InvestmentTerminal: React.FC = () => {
                 </div>
               </div>
 
+              {activeTab === 'portfolio' && unconvertiblePositions.length > 0 && (
+                <div className="shrink-0 rounded-card border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning">
+                  Součty výš nepočítají {unconvertiblePositions.length === 1 ? 'jednu pozici' : `${unconvertiblePositions.length} pozice`} —
+                  appka nezná kurz pro {unconvertiblePositions.map((u) => u.ticker).join(', ')}.
+                </div>
+              )}
+
         {/* Portfolio Table */}
         {activeTab === 'portfolio' && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-border-subtle bg-surface-base/50">
@@ -3502,19 +2920,13 @@ export const InvestmentTerminal: React.FC = () => {
                   <Th width="w-[62px]" align="center"><Term id="konvikcniSkore">Skóre</Term></Th>
                 )}
                 <Th width="w-[96px]" align="right">Cena</Th>
-                {columns.size && <Th width="w-[128px]" sub="tento měsíc">Dávka</Th>}
-                {columns.catalyst && <Th width="w-[118px]">Katalyzátor</Th>}
                 {columns.band && (
                   <Th width="w-[88px]" align="center" hint="Kde leží cena v pásmu mezi zelenou a červenou linkou">
                     Pásmo
                   </Th>
                 )}
-                {columns.freeride && (
-                  <Th width="w-[106px]" hint="Kolik chybí do zdvojnásobení, po kterém se podle kánonu vybírá vklad">
-                    Do free ride
-                  </Th>
-                )}
                 <Th width="w-[108px]" align="right"><Term id="pl">P/L</Term></Th>
+                <Th width="w-[44px]" align="right"><span className="sr-only">Akce</span></Th>
               </tr>
             </thead>
             <tbody>
@@ -3523,7 +2935,9 @@ export const InvestmentTerminal: React.FC = () => {
                   key={`${pos.portfolio_id}-${pos.ticker}`}
                   position={pos}
                   columns={columns}
+                  marketAlert={marketAlert}
                   onClick={() => setSelectedPosition(pos)}
+                  onRemove={() => setRemovingPosition(pos)}
                 />
               ))}
               {displayedPositions.length === 0 && (
@@ -3546,7 +2960,15 @@ export const InvestmentTerminal: React.FC = () => {
 
           {/* Podklady jako odrážky. Zavřené zabírají 38 px; otevřená je
               vždycky jen jedna a scrolluje sama v sobě. */}
-          <ContextPanel />
+          <ContextPanel
+            riskMeter={{
+              rocketCount: familyData.rocketCount,
+              anchorCount: familyData.anchorCount,
+              waitTimeCount: familyData.waitTimeCount,
+              unanalyzedCount: familyData.unanalyzedCount,
+              riskScore: familyData.riskScore,
+            }}
+          />
           </div>
         )}
 
@@ -3561,6 +2983,12 @@ export const InvestmentTerminal: React.FC = () => {
                   <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider"><Term id="konvikcniSkore">Skóre</Term></th>
                   <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Verdikt</th>
                   <th className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Cenové pásmo</th>
+                  <th
+                    title="Nejbližší výsledky. Uvnitř čtrnácti dnů před nimi brána nákup odmítne. Slovo asi znamená odhad, ne oznámené datum."
+                    className="text-left py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider"
+                  >
+                    Výsledky
+                  </th>
                   <th className="text-right py-3 px-4 text-xs font-bold text-text-muted uppercase tracking-wider">Detail</th>
                 </tr>
               </thead>
@@ -3572,14 +3000,6 @@ export const InvestmentTerminal: React.FC = () => {
                       : 'text-negative'
                     : 'text-text-muted';
                   
-                  const zoneColor = stock.price_zone === 'DEEP_VALUE' ? 'bg-positive/20 text-positive' :
-                                    stock.price_zone === 'BUY_ZONE' ? 'bg-positive/20 text-positive' :
-                                    stock.price_zone === 'ACCUMULATE' ? 'bg-accent/20 text-accent' :
-                                    stock.price_zone === 'FAIR_VALUE' ? 'bg-warning/20 text-warning' :
-                                    stock.price_zone === 'SELL_ZONE' ? 'bg-warning/20 text-warning' :
-                                    stock.price_zone === 'OVERVALUED' ? 'bg-negative/20 text-negative' :
-                                    'bg-surface-hover text-text-secondary';
-
                   return (
                     <tr 
                       key={stock.id}
@@ -3600,22 +3020,17 @@ export const InvestmentTerminal: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${
-                          stock.action_verdict === 'BUY_NOW' ? 'bg-positive/20 text-positive' :
-                          stock.action_verdict === 'ACCUMULATE' ? 'bg-positive/20 text-positive' :
-                          stock.action_verdict === 'WATCH_LIST' ? 'bg-accent/20 text-accent' :
-                          stock.action_verdict === 'TRIM' ? 'bg-warning/20 text-warning' :
-                          stock.action_verdict === 'SELL' ? 'bg-negative/20 text-negative' :
-                          stock.action_verdict === 'AVOID' ? 'bg-negative/30 text-negative' :
-                          'bg-surface-hover text-text-secondary'
-                        }`}>
-                          {stock.action_verdict || 'N/A'}
+                        <span className={`px-2 py-1 rounded border text-xs font-bold ${verdictTone(stock.action_verdict).pill}`}>
+                          {verdictName(stock.action_verdict)}
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${zoneColor}`}>
-                          {stock.price_zone || 'N/A'}
+                        <span className={`px-2 py-1 rounded border text-xs font-medium ${zoneTone(stock.price_zone).pill}`}>
+                          {zoneName(stock.price_zone)}
                         </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <EarningsCell earnings={stock.earnings} />
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button className="px-3 py-1 bg-accent hover:bg-accent/80 text-text-primary text-xs font-bold rounded transition-colors">
@@ -3627,7 +3042,7 @@ export const InvestmentTerminal: React.FC = () => {
                 })}
                 {displayedWatchlist.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-text-muted">
+                    <td colSpan={7} className="text-center py-12 text-text-muted">
                       {searchQuery 
                         ? 'No stocks found in watchlist' 
                         : 'Zatím žádná analýza. Novou přidáš tlačítkem „Nová analýza“ v hlavičce.'}
@@ -3639,33 +3054,32 @@ export const InvestmentTerminal: React.FC = () => {
           </div>
         )}
 
-        {/* Family Gaps Alert */}
-        {activeTab === 'portfolio' && familyGaps && familyGaps.gaps.length > 0 && (
-          <div className="mt-6 p-4 bg-info/10 border border-info/30 rounded-xl">
-            <h3 className="text-lg font-bold text-info flex items-center gap-2 mb-3">
-              <Users className="w-5 h-5" />
-              Cross-Account Discrepancies ({familyGaps.gaps.length})
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {familyGaps.gaps.slice(0, 6).map((gap, i) => (
-                <div key={i} className="p-3 bg-surface-raised/50 rounded-lg">
-                  <div className="font-bold text-text-primary">{gap.ticker}</div>
-                  <div className="text-sm text-text-secondary">
-                    <span className="text-info">{gap.holder}</span> holds, 
-                    <span className="text-warning"> {gap.missing_from}</span> does not
-                  </div>
-                  <div className="text-xs text-text-muted mt-1">
-                    Score: {gap.conviction_score}/10 • {gap.action}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Rozdíly portfolií se přestěhovaly mezi podklady (ContextPanel →
+            „Rozdíly portfolií"). Pod tabulkou to byl pruh, který po každém
+            otevření aplikace tvrdil, že se něco našlo — přitom dokud druhý
+            účet nemá pozice, je „rozdílem" celé portfolio toho prvního. */}
 
         {/* CÍL — složené úročení, kam to míří a co to znamená.
             Nahradilo dřívější Freedom a Platby: Freedom byla z poloviny
             gamifikace, Platby pětkrát prázdný stav se zelenou fajfkou. */}
+        {/* ==============================================================
+            NÁLEZY — vlastní nápady, posouzené podle metodiky
+            ============================================================== */}
+        {activeTab === 'nalezy' && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <FindsPage />
+          </div>
+        )}
+
+        {/* ==============================================================
+            MODELY — analytikovy modely tržeb vs. realita
+            ============================================================== */}
+        {activeTab === 'modely' && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+            <RevenueModelsPage />
+          </div>
+        )}
+
         {activeTab === 'cil' && (
           <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
             <GoalPage
@@ -3725,9 +3139,22 @@ export const InvestmentTerminal: React.FC = () => {
           onUpdate={async () => {
             // Refresh portfolio data after position update
             await refreshPortfolios();
-            // Also refresh stocks data for conviction scores
-            const stocksData = await apiClient.getStocks();
+            // Also refresh stocks data for conviction scores and price lines
+            const stocksData = await apiClient.getEnrichedStocks();
             setStocks(stocksData.stocks);
+          }}
+        />
+      )}
+
+      {/* „Už nedržím" — prodej se zapisuje, řádek z importu se maže.
+          Rozdíl mezi tím rozhoduje dialog, ne tohle místo. */}
+      {removingPosition && (
+        <RemovePositionDialog
+          position={removingPosition}
+          onCancel={() => setRemovingPosition(null)}
+          onDone={async () => {
+            setRemovingPosition(null);
+            await refreshPortfolios();
           }}
         />
       )}
@@ -3738,7 +3165,7 @@ export const InvestmentTerminal: React.FC = () => {
           stock={selectedWatchlistStock}
           onClose={() => setSelectedWatchlistStock(null)}
           onUpdate={async () => {
-            const stocksData = await apiClient.getStocks();
+            const stocksData = await apiClient.getEnrichedStocks();
             setStocks(stocksData.stocks);
           }}
         />
@@ -3763,6 +3190,17 @@ export const InvestmentTerminal: React.FC = () => {
           }}
         />
       )}
+
+      {/* Gomes Intake Modal (Gemini 3.7 Flash) */}
+      <GomesIntakeModal
+        isOpen={showIntakeModal}
+        onClose={() => setShowIntakeModal(false)}
+        onSuccess={async () => {
+          await refreshPortfolios();
+          const stocksData = await apiClient.getEnrichedStocks();
+          setStocks(stocksData.stocks);
+        }}
+      />
 
       {/* Add Position Modal */}
       {showAddPositionModal && (

@@ -1,17 +1,30 @@
 """
-Background Alert Scheduler
-============================
+The clock behind away mode.
 
-Periodically checks for high-confidence opportunities and sends alerts.
+What this used to be
+--------------------
+A second opinion with a mailing list. Every thirty minutes it asked
+`master_signal` for "high-confidence opportunities" and mailed them out with an
+entry price, a target and a stop — none of which had passed the Buy Guard, the
+cylinder check, the market semafor, the per-account caps, the pacing rules or
+the concentration check. It was the rival engine at its most dangerous, because
+it was the only one that reached a phone.
 
-Usage:
-    python -m app.services.alert_scheduler
-    
-Or run as background service with systemd/Windows Task Scheduler.
+It also never worked. `check_and_send_alerts` called
+`get_top_opportunities_v2(db=…, min_confidence=…, limit=10)` while that function
+required a `tickers` argument and accepted no `limit`, so every single run
+raised `TypeError` into the loop's `except Exception` and logged a failure
+nobody read. Not one alert was ever sent.
 
-Author: GitHub Copilot with Claude Sonnet 4.5
-Date: 2025-01-17
-Version: 1.0.0
+What it is now
+--------------
+A clock. It runs one away-mode cycle, which is the app's single disciplined push
+path: one engine, a 24-hour quiet period, no BUY while nobody is watching, and
+silence that is recorded as a decision rather than as nothing happening.
+
+It sends only while away mode is switched on. With away mode off `run_cycle`
+returns without touching a channel, which is why this can run every half hour
+without becoming noise.
 """
 
 import asyncio
@@ -20,7 +33,6 @@ import os
 from datetime import datetime, time
 
 from app.database.connection import session_scope
-from app.services.notifications import check_and_send_alerts
 
 
 logging.basicConfig(
@@ -34,59 +46,104 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ==============================================================================
 
-CHECK_INTERVAL_MINUTES = int(os.getenv('ALERT_CHECK_INTERVAL', '30'))  # Default: 30 min
-MIN_CONFIDENCE = float(os.getenv('ALERT_MIN_CONFIDENCE', '80'))  # Default: 80%
-MARKET_OPEN_HOUR = 9  # 9:00 AM
-MARKET_CLOSE_HOUR = 16  # 4:00 PM
+CHECK_INTERVAL_MINUTES = int(os.getenv('ALERT_CHECK_INTERVAL', '30'))
+
+#: Waking hours, not market hours. Away mode's own 24-hour quiet period decides
+#: how often anything leaves; this only decides that it never leaves at four in
+#: the morning. The old name said "market" and the numbers said otherwise —
+#: 9-16 local time is mostly before the US open.
+WAKING_START_HOUR = 8
+WAKING_END_HOUR = 21
 
 
 # ==============================================================================
 # Scheduler
 # ==============================================================================
 
-def is_market_hours() -> bool:
-    """Check if current time is during market hours (9 AM - 4 PM)"""
+def is_waking_hours() -> bool:
+    """Whether a message sent now would be read rather than slept through."""
     now = datetime.now().time()
-    market_open = time(MARKET_OPEN_HOUR, 0)
-    market_close = time(MARKET_CLOSE_HOUR, 0)
-    return market_open <= now <= market_close
+    return time(WAKING_START_HOUR, 0) <= now <= time(WAKING_END_HOUR, 0)
+
+
+def _deliver(subject: str, body: str) -> bool:
+    """
+    Put one away-mode message on a channel. Returns whether it actually left.
+
+    False rather than an exception, deliberately: a failed send must leave the
+    quiet period unstarted so the next cycle tries again instead of swallowing
+    the message. Same contract as `scripts/away_check.py`.
+    """
+    from app.services.notifications import Alert, NotificationService
+
+    service = NotificationService.from_env()
+    if not service.channels:
+        logger.warning(
+            "Away mode chce něco poslat, ale není nastavený žádný kanál: %s",
+            "; ".join(service.unconfigured),
+        )
+        return False
+
+    alert = Alert(
+        ticker=subject,
+        buy_confidence=0.0,
+        signal_strength="AWAY",
+        entry_price=None,
+        target_price=None,
+        stop_loss=None,
+        kelly_size=None,
+        message=body,
+    )
+    try:
+        results = asyncio.run(service.send_alert(alert))
+    except Exception as e:  # noqa: BLE001 — a channel failing is not a crash
+        logger.error("Odeslání selhalo: %s: %s", type(e).__name__, e)
+        return False
+    return any(results.values())
 
 
 async def run_alert_check():
-    """Single alert check iteration"""
+    """
+    One away-mode pass.
+
+    Does nothing at all unless away mode is on: `run_away_cycle` reads the
+    switch first and returns without touching a channel when it is off. That is
+    the whole reason this can run on a half-hour clock — the decision about
+    whether the owner wants to hear from the app is theirs, made once, not
+    re-litigated by a confidence threshold every cycle.
+    """
+    # Imported here, not at module scope: the route pulls in the whole engine
+    # and this module is also a __main__ entry point.
+    from app.routes.away import run_away_cycle
+
     try:
-        logger.info("Running alert check...")
-        
-        # Get database session
         with session_scope() as db:
-            alerts = await check_and_send_alerts(
-                db=db,
-                min_confidence=MIN_CONFIDENCE,
-            )
-            
-            if alerts:
-                logger.info(f"Sent {len(alerts)} alerts")
-            else:
-                logger.info("No alerts triggered")
-                
+            result = run_away_cycle(db, send=True, notify=_deliver)
+
+        if not result.away:
+            logger.debug("Away mode je vypnutý, neposílám nic")
+        elif result.sent:
+            logger.info("Odesláno: %s", result.subject)
+        else:
+            logger.info("Away mode mlčí: %s", result.reason)
+
     except Exception as e:
-        logger.error(f"Alert check failed: {e}", exc_info=True)
+        logger.error("Away cyklus selhal: %s", e, exc_info=True)
 
 
 async def scheduler_loop():
-    """Main scheduler loop"""
-    logger.info(f"Alert scheduler started")
-    logger.info(f"Check interval: {CHECK_INTERVAL_MINUTES} minutes")
-    logger.info(f"Min confidence: {MIN_CONFIDENCE}%")
-    logger.info(f"Market hours: {MARKET_OPEN_HOUR}:00 - {MARKET_CLOSE_HOUR}:00")
+    """The clock. Away mode decides whether anything leaves."""
+    logger.info("Away heartbeat spuštěn")
+    logger.info("Interval: %d min", CHECK_INTERVAL_MINUTES)
+    logger.info("Bdělé hodiny: %d:00 - %d:00", WAKING_START_HOUR, WAKING_END_HOUR)
     
     while True:
         try:
             # Only run during market hours
-            if is_market_hours():
+            if is_waking_hours():
                 await run_alert_check()
             else:
-                logger.debug("Outside market hours, skipping check")
+                logger.debug("Mimo bdělé hodiny, nekontroluji")
             
             # Wait for next interval
             await asyncio.sleep(CHECK_INTERVAL_MINUTES * 60)

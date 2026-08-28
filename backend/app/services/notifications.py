@@ -391,57 +391,21 @@ class NotificationService:
 
 
 # ==============================================================================
-# Alert Trigger
+# Where the alert trigger went
 # ==============================================================================
-
-async def check_and_send_alerts(
-    db,
-    min_confidence: float = 80.0,
-    notification_service: Optional[NotificationService] = None,
-) -> list[Alert]:
-    """
-    Check for high-confidence opportunities and send alerts.
-    
-    Args:
-        db: Database session
-        min_confidence: Minimum confidence to trigger alert (default 80%)
-        notification_service: Service to use (default: from env)
-        
-    Returns:
-        List of alerts sent
-    """
-    from app.trading.master_signal import get_top_opportunities_v2
-    
-    if notification_service is None:
-        notification_service = NotificationService.from_env()
-    
-    if not notification_service.channels:
-        logger.warning("No notification channels configured")
-        return []
-    
-    # Get top opportunities
-    opportunities = get_top_opportunities_v2(
-        db=db,
-        min_confidence=min_confidence,
-        limit=10,
-    )
-    
-    alerts_sent = []
-    
-    for opp in opportunities:
-        alert = Alert(
-            ticker=opp.ticker,
-            buy_confidence=opp.buy_confidence,
-            signal_strength=opp.signal_strength.value,
-            entry_price=opp.entry_price,
-            target_price=opp.target_price,
-            stop_loss=opp.stop_loss,
-            kelly_size=opp.kelly_size,
-            message=f"Master Signal detected strong opportunity in {opp.ticker}",
-        )
-        
-        await notification_service.send_alert(alert)
-        alerts_sent.append(alert)
-    
-    logger.info(f"Sent {len(alerts_sent)} alerts")
-    return alerts_sent
+#
+# `check_and_send_alerts` lived here and asked `master_signal` for
+# "high-confidence opportunities" to mail out. Two things were wrong with it.
+#
+# It bypassed every gate. Its alerts carried an entry price, a target and a
+# stop that had passed no Buy Guard, no cylinder check, no market semafor, no
+# per-account cap, no pacing rule and no concentration check — the rival engine
+# reaching a phone.
+#
+# And it had never once run. It called
+# `get_top_opportunities_v2(db=…, min_confidence=…, limit=10)`; that function
+# required `tickers` and accepted no `limit`, so every call raised TypeError
+# into the scheduler's `except Exception`.
+#
+# The push path is now away mode, driven by `alert_scheduler`: one engine, a
+# 24-hour quiet period, and no BUY sent to somebody who is not watching.

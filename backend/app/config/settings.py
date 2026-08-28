@@ -77,7 +77,31 @@ class Settings(BaseSettings):
         alias="FINNHUB_API_KEY",
         description="Finnhub.io API key for global market data (non-US stocks)",
     )
-    
+
+    # Analyst transcripts
+    transcriptapi_key: str | None = Field(
+        default=None,
+        alias="TRANSCRIPTAPI_KEY",
+        description=(
+            "TranscriptAPI.com key for pulling YouTube transcripts (Mark Gomes "
+            "channel). Sent as an Authorization: Bearer header, never as a query "
+            "param — a key in the URL ends up in HTTPError text and then in logs."
+        ),
+    )
+
+    # Pages no free source reaches (Canadian filers)
+    firecrawl_api_key: str | None = Field(
+        default=None,
+        alias="FIRECRAWL_API_KEY",
+        description=(
+            "Firecrawl.dev key for reading pages the free sources cannot — the "
+            "quarterly releases of the four Canadian positions, which are "
+            "outside SEC EDGAR. Metered: the balance is a fixed number of "
+            "pages, so every call goes through the ledger in "
+            "`services/firecrawl.py`. Authorization: Bearer header only."
+        ),
+    )
+
     # Telegram Notifications
     TELEGRAM_BOT_TOKEN: str | None = Field(
         default=None,

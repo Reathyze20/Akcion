@@ -285,6 +285,27 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
       + 'která na cíl ještě nedošla — není to signál k prodeji.',
     source: 'metodika',
   },
+  valce: {
+    expansion: 'válce — cylinders',
+    meaning:
+      'Známka kvality firmy od nuly do desítky: kolik jejích motorů zrovna '
+      + 'běží. Nestojí na žádném webu, je to úsudek — a bez něj aplikace '
+      + 'nákup nepustí.',
+    source: 'metodika',
+  },
+  zaslouzeneSkore: {
+    meaning:
+      'Deset mínus válce. Laťka, přes kterou musí papír přeskočit, aby stál '
+      + 'za nákup: skvělá firma se smí kupovat i draho, slabá jen hodně levně.',
+    source: 'metodika',
+  },
+  branaNakupu: {
+    meaning:
+      'Řada podmínek, které musí platit současně, než aplikace navrhne nákup. '
+      + 'Zastaví se na první, která neplatí, a řekne které — takže odpověď je '
+      + 'vždycky konkrétní důvod, ne mlčení.',
+    source: 'metodika',
+  },
   zdvojnasobeni: {
     meaning:
       'Pravidlo: jakmile pozice zdvojnásobí hodnotu, prodá se polovina. '
@@ -297,6 +318,45 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
       'Počet měsíců, po které firma vydrží při současném tempu pálení hotovosti, '
       + 'než bude potřebovat další peníze.',
     source: 'účetnictví',
+  },
+
+  /* ---- kalibrace vlastních skóre ------------------------------------ */
+
+  nadvynos: {
+    meaning:
+      'O kolik procentních bodů papír překonal index za stejné období. '
+      + 'Devítka s +5 %, když trh udělal +12 %, byla špatná rada — absolutní '
+      + 'výnos by to zamaskoval, nadvýnos ne.',
+    source: 'trh',
+  },
+  /* ---- druhý zdroj --------------------------------------------------- */
+
+  breakoutInvestors: {
+    meaning:
+      'Skupina investorů kolem Marka Gomese, která u každého jména zveřejňuje '
+      + 'počet podpisů a očekávaný růst. Je to druhý zdroj vedle Gomesovy '
+      + 'valuace — ukazuje se, ale o velikosti pozice nerozhoduje.',
+    source: 'metodika',
+  },
+  podpisy: {
+    meaning:
+      'Kolik členů skupiny se za jméno postavilo. Měří přesvědčení skupiny, '
+      + 'ne kvalitu firmy — pět podpisů neznamená, že je papír levný.',
+    source: 'metodika',
+  },
+  ocekavanyRust: {
+    meaning:
+      'O kolik procent podle skupiny papír vyroste. Je to jejich cílová cena '
+      + 'řečená jinak: cíl se z ní dopočítá vynásobením aktuálním kurzem.',
+    source: 'metodika',
+  },
+
+  sp500: {
+    expansion: 'S&P 500 — index pěti set největších amerických firem',
+    meaning:
+      'Měřítko, proti kterému se poměřují skóre aplikace. Odpovídá tomu, co by '
+      + 'člověk měl bez jakéhokoli výběru akcií.',
+    source: 'trh',
   },
 };
 

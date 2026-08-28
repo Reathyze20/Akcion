@@ -51,3 +51,22 @@ Thumbs.db
 
 # LongHorizon-Harness run state
 .lh-harness/runs/
+
+# Research artefacts. Everything under out/ is a function of the committed
+# inputs plus yfinance on a given day, and yfinance rewrites adjusted history
+# backwards on every split — a stored copy drifts from the source in silence.
+# The inputs and the human rulings in backend/research/data/ ARE committed.
+backend/research/out/
+
+# Stažené přepisy Gomesových videí (velké, znovu stažitelné za kredity)
+backend/data/gomes_transcripts/
+
+# WhatsApp cislenik: telefonni cislo -> jmeno. Nikdy se necommituje.
+whatsapp_contacts.local.json
+
+# Stazene stranky a ucetni kniha kreditu Firecrawlu. Obsah je cizi, kredity jsou
+# stav uctu -- ani jedno nepatri do repa.
+backend/data/firecrawl/
+
+# Pracovni odpad - jednorazove skripty a syrove API dumpy, ne zdrojovy kod
+backend/scratch/

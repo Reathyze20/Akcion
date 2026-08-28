@@ -13,6 +13,12 @@ zdroj přímo od autora, ne přepis z videa z druhé ruky).
 > konsensus/nesouhlas komunity. Appka je dnes míchá do jednoho `speaker` pole a přepisuje starší verze
 > (viz `reath-main-design-*` trust-triage doc). To je samostatná mezera, nesouvisí s věrností Gomesovi.
 
+> ➕ **Doplněk z videa.** `GOMES_VIDEO_ADDENDUM.md` rozebírá Gomesovo video `9PhWx9rzIaU`
+> (jeho vlastní kanál, také primární zdroj) a pokrývá témata, o kterých tenhle článek mlčí:
+> Gold Mine jako absorpční stav vs. „rough patch“, velikost pozice jako funkce R/R skóre,
+> stupně semaforu jako valuace × znalost příčiny, výjimka „getting paid to wait“ ve žluté,
+> chase guard a odjištění hedge u dna. Kde se překrývají, vyhrává tenhle dokument.
+
 ---
 
 ## 1. Jádro doktríny (co Gomes je a co není)

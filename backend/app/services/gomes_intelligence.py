@@ -32,6 +32,7 @@ from app.models.gomes import (
 )
 from app.models.stock import Stock
 from app.models.trading import ActiveWatchlist, MLPrediction
+from app.services.lifecycle_rubric import PHASE_RANK, apply_ratchet
 from app.trading.gomes_logic import (
     GomesGatekeeper,
     GomesVerdict,
@@ -44,6 +45,7 @@ from app.trading.gomes_logic import (
     PriceLines,
     RiskRewardCalculator,
     StockLifecycleClassifier,
+    ZoneLadder,
 )
 
 
@@ -51,14 +53,20 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# IMAGE PRICE LINE DATA (Hardcoded from screenshots)
+# Where the price lines come from
 # ============================================================================
-
-# Import from dedicated data file
-from app.trading.price_lines_data import get_price_lines_dict, EXTRACTED_LINES
-
-# Get lines from data file
-IMAGE_PRICE_LINES: dict[str, dict[str, Any]] = get_price_lines_dict()
+# They used to come from `app/trading/price_lines_data.py`: a list transcribed
+# by hand from January 2026 screenshots, loaded into the database by
+# `load_price_lines_from_images()`. By August those numbers had drifted from
+# the source they were copied out of — CXDO 4.50/19.00 where the tracker said
+# 3.25/15.50, CELH 23.50/137.50 where it said 18.00/110.00 — and the app was
+# banding real positions against a valuation the analyst had already replaced.
+#
+# Both the file and the loader are gone. `app/services/tracker_sync.py` fills
+# `stocks.green_line` / `stocks.red_line` from riskrewardcharts.com, where the
+# lines actually live and where a change can be noticed the day it happens.
+# Lines the tracker does not carry are entered by hand through
+# `set_price_lines(source="manual")` and are labelled as such.
 
 
 class GomesIntelligenceService:
@@ -176,15 +184,27 @@ class GomesIntelligenceService:
             StockLifecycleModel with phase
         """
         ticker = ticker.upper()
-        
-        # Get classification
-        assessment = StockLifecycleClassifier.classify(ticker, transcript_text)
-        
-        # Deactivate previous lifecycle
+
+        # The live row is read BEFORE classifying, not after, because it
+        # carries the ratchet (GOMES_VIDEO_ADDENDUM.md §V1) and this method
+        # supersedes it: it retires the row and writes a new one. Without
+        # carrying the high-water mark across, every transcript run would reset
+        # it, and the first stream to say "delays" would demote a proven Gold
+        # Mine to Wait Time — which is exactly the demotion §V1 closes, and it
+        # would make the Buy Guard refuse the stock at its cheapest.
         current = self.get_stock_lifecycle(ticker)
+        prior = ""
+        if current is not None:
+            prior = (current.phase_reached or current.phase or "").upper()
+        reached = prior if prior in PHASE_RANK else None
+
+        assessment = StockLifecycleClassifier.classify(
+            ticker, transcript_text, reached=reached
+        )
+
         if current:
             current.valid_until = datetime.utcnow()
-        
+
         # Get stock_id if exists
         stock = (
             self.db.query(Stock)
@@ -193,19 +213,80 @@ class GomesIntelligenceService:
             .first()
         )
         
+        # The ratchet is applied again over the assessment, and not because the
+        # classifier forgot to: it handles the case the classifier deliberately
+        # leaves alone. A transcript that says nothing about this company votes
+        # UNKNOWN, and UNKNOWN is silence, not a demotion — writing it over a
+        # recorded stage would erase what is known because nobody mentioned it.
+        # Applying it twice is safe (the second pass is a no-op on an already
+        # ratcheted phase); the one thing that does not survive it is the
+        # rough-patch flag, which is why it is OR-ed rather than re-read.
+        result = apply_ratchet(assessment.phase.value, reached)
+        effective = LifecyclePhase(result.phase)
+        rough_patch = assessment.rough_patch or result.rough_patch
+
+        reasoning = assessment.reasoning
+        if result.held_back_cs and result.held_back_cs not in reasoning:
+            reasoning = f"{reasoning}. {result.held_back_cs}".lstrip(". ")
+
         # Create new lifecycle record
         lifecycle = StockLifecycleModel(
             ticker=ticker,
             stock_id=stock.id if stock else None,
-            phase=assessment.phase.value,
-            is_investable=assessment.is_investable,
+            phase=effective.value,
+            is_investable=StockLifecycleClassifier.is_investable(effective),
             firing_on_all_cylinders=assessment.firing_on_all_cylinders,
             cylinders_count=assessment.cylinders_count,
             phase_signals=assessment.signals,
-            phase_reasoning=assessment.reasoning,
+            phase_reasoning=reasoning,
             confidence=assessment.confidence,
             source=source
         )
+
+        # The high-water mark only ever rises, and it has to be carried onto the
+        # new row by hand — this method supersedes rows rather than updating
+        # them, so anything not copied across is lost.
+        # UNKNOWN is deliberately absent from PHASE_RANK: it is the absence of
+        # a reading, not a rung, and recorded as a high-water mark it would be a
+        # floor made out of ignorance. The database says so too — there is a
+        # CHECK constraint on this column.
+        mark = max(
+            (effective.value, reached or ""),
+            key=lambda candidate: PHASE_RANK.get(candidate, 0),
+        )
+        lifecycle.phase_reached = mark if mark in PHASE_RANK else None
+
+        # A rough patch is carried forward and never cleared here.
+        #
+        # Clearing it means declaring a slowdown over, and the evidence on this
+        # path is keyword votes over a transcript — the weakest the app has. It
+        # is cleared where the evidence is strong enough to carry the claim:
+        # `lifecycle_intake.confirm`, on filed numbers with the owner's
+        # confirmation behind them. The asymmetry is the standing rule — weak
+        # data may make this app more careful, never less.
+        if rough_patch or (current is not None and current.rough_patch):
+            lifecycle.rough_patch = True
+            # Set once. A slowdown re-detected on the next transcript is the
+            # same slowdown, and restamping it would keep moving it past the
+            # cylinder confirmation it exists to invalidate — quietly
+            # re-authorising the very purchase the flag is there to stop.
+            lifecycle.rough_patch_since = (
+                (current.rough_patch_since if current is not None else None)
+                or datetime.utcnow()
+            )
+            lifecycle.rough_patch_until = (
+                current.rough_patch_until if current is not None else None
+            )
+            # The classifier already applied the ratchet, so the second pass
+            # above has nothing left to hold back and returns no sentence — the
+            # explanation is in the assessment's own reasoning by then. Falling
+            # through to the previous note keeps a carried-forward slowdown from
+            # losing the account of why it was raised.
+            lifecycle.rough_patch_note = (
+                result.held_back_cs
+                or (assessment.reasoning if assessment.rough_patch else None)
+                or (current.rough_patch_note if current is not None else None)
+            )
         
         self.db.add(lifecycle)
         self.db.commit()
@@ -317,42 +398,6 @@ class GomesIntelligenceService:
         self.logger.info(f"{ticker} price lines set: G=${green_line} R=${red_line}")
         
         return lines
-    
-    def load_price_lines_from_images(self) -> list[PriceLinesModel]:
-        """
-        Load price lines from IMAGE_PRICE_LINES dictionary.
-        
-        This populates the database with lines extracted from screenshots.
-        """
-        results = []
-        
-        for ticker, data in IMAGE_PRICE_LINES.items():
-            lines = self.set_price_lines(
-                ticker=ticker,
-                green_line=data.get("green_line"),
-                red_line=data.get("red_line"),
-                grey_line=data.get("grey_line"),
-                source="image",
-                image_path=data.get("source")
-            )
-            results.append(lines)
-            
-            # Also log to image_analysis_log
-            log = ImageAnalysisLogModel(
-                ticker=ticker,
-                image_path=data.get("source", ""),
-                extracted_green_line=Decimal(str(data.get("green_line"))) if data.get("green_line") else None,
-                extracted_red_line=Decimal(str(data.get("red_line"))) if data.get("red_line") else None,
-                extracted_grey_line=Decimal(str(data.get("grey_line"))) if data.get("grey_line") else None,
-                analysis_method="manual",
-                status="verified"
-            )
-            self.db.add(log)
-        
-        self.db.commit()
-        self.logger.info(f"Loaded {len(results)} price lines from images")
-        
-        return results
     
     # ========================================================================
     # VERDICT GENERATION
@@ -472,7 +517,8 @@ class GomesIntelligenceService:
             earnings_date=earnings_date,
             ml_prediction=ml_prediction,
             transcript_text=transcript_text,
-            catalyst_info=catalyst_info
+            catalyst_info=catalyst_info,
+            phase_reached=(lifecycle.phase_reached if lifecycle else None),
         )
         
         # =====================================================================
@@ -662,11 +708,26 @@ class GomesIntelligenceService:
             green_line = float(lines.green_line) if lines and lines.green_line else None
             red_line = float(lines.red_line) if lines and lines.red_line else None
             
+            # `get_action_zone` returns (zone, REASON) — a sentence, not a
+            # number. Unpacking it into `price_position_pct` put prose in a
+            # field the front end types as `number | null` and feeds straight
+            # into `left: {x}%`. It has not crashed only because nothing calls
+            # this endpoint yet.
+            #
+            # The position is a real number and worth having, so it is computed
+            # rather than dropped: where the price sits between the two lines,
+            # on the same logarithmic scale as the R/R score, 0 at the Green
+            # Line and 100 at the Red.
             price_zone = None
             price_position_pct = None
-            
-            if current_price and (green_line or red_line):
-                price_zone, price_position_pct = RiskRewardCalculator.get_action_zone(
+
+            if current_price and green_line and red_line:
+                reading = ZoneLadder.read(current_price, green_line, red_line, None)
+                price_zone = reading.band.value
+                if reading.rr_score is not None:
+                    price_position_pct = round((10.0 - reading.rr_score) * 10.0, 1)
+            elif current_price and (green_line or red_line):
+                price_zone, _reason = RiskRewardCalculator.get_action_zone(
                     current_price, green_line, red_line
                 )
             

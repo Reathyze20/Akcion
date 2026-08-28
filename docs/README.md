@@ -1,653 +1,126 @@
-# Complete System Documentation
+# Akcion Documentation Index
 
-# ==============================
+> ⚠️ **This file replaces an earlier "Complete System Documentation" index that
+> described a January 2026 version of the app (React 18, a 6-component Master
+> Signal, ML/PatchTST, Docker deployment) — none of which reflects the current
+> codebase. That old content has been preserved as `README.legacy-2026-01.md` in
+> this folder. Nothing was deleted; this file was rewritten as of 2026-08-28 to be
+> the real, current index.**
 
-Kompletní přehled **Akcion Trading Intelligence** systému.
+This is the entry point into Akcion's documentation. If you are an AI or a new
+contributor given access to this repository, **read in this order**:
 
----
+1. [`INVARIANTS.md`](specification/INVARIANTS.md) — the rules that must never break, and why
+2. [`ARCHITECTURE.md`](specification/ARCHITECTURE.md) — how the system is put together
+3. [`DOMAIN_MODEL.md`](specification/DOMAIN_MODEL.md) — what the app is actually deciding, and why
+4. [`KNOWN_ISSUES.md`](specification/KNOWN_ISSUES.md) — what is currently broken, prioritised
 
-## 📚 Table of Contents
+Then the four detailed references, read as needed:
 
-1. [System Overview](#system-overview)
-2. [Architecture](#architecture)
-3. [Module Documentation](#module-documentation)
-4. [New Features (January 2026)](#new-features)
-5. [API Reference](#api-reference)
-6. [Deployment](#deployment)
-7. [Testing](#testing)
-8. [Troubleshooting](#troubleshooting)
+5. [`API_REFERENCE.md`](specification/API_REFERENCE.md) — the full backend HTTP surface
+6. [`DATA_MODEL.md`](specification/DATA_MODEL.md) — every table, and the traps in each
+7. [`FRONTEND.md`](specification/FRONTEND.md) — the React app, screen by screen
+8. [`OPERATIONS.md`](specification/OPERATIONS.md) — external data sources, scheduled jobs, config
 
----
-
-## System Overview
-
-**Akcion Trading Intelligence** je kompletní trading systém, který kombinuje:
-
-- 🧠 **AI Analýzu** (Gomes transkripty + ML predikce)
-- 📊 **Technical Indicators** (RSI, MACD, Moving Averages)
-- 📰 **Sentiment Analysis** (News headlines)
-- 📈 **Fundamentální Analýzu** (Gap Analysis)
-- 🎯 **Master Signal** (6-component aggregation → Buy Confidence 0-100%)
-- 🔔 **Alerty** (Telegram + Email)
-- 📉 **Backtesting** (1-year simulations)
-- 🧪 **ML Learning** (Self-improving AI)
-
-### Tech Stack
-
-| Layer          | Technology                         |
-| -------------- | ---------------------------------- |
-| **Backend**    | Python 3.12, FastAPI, SQLAlchemy   |
-| **Database**   | PostgreSQL (Neon), TimescaleDB     |
-| **ML**         | PyTorch, NeuralForecast (PatchTST) |
-| **Frontend**   | React 18, TypeScript, Recharts     |
-| **Deployment** | Docker, systemd, GitHub Actions CI |
+Before starting **any** task, also read `../CLAUDE.md` (verification commands and
+hard invariants) and `../IMPLEMENTATION_PLAN.md` in full — the latter is the running
+engineering log and is frequently ahead of everything below it, including this index.
 
 ---
 
-## Architecture
+## Why this documentation exists
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      FRONTEND (React)                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ Action Center│  │ ML Charts    │  │ Portfolio    │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                    FastAPI REST API
-                            │
-┌─────────────────────────────────────────────────────────────┐
-│                      BACKEND (Python)                        │
-│                                                              │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │                  MASTER SIGNAL                        │  │
-│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌───┐ │  │
-│  │  │Gomes │ │  ML  │ │Tech  │ │Sent  │ │ Gap  │ │R/R│ │  │
-│  │  │ 30% │ │ 25% │ │ 15% │ │ 15% │ │ 10% │ │5% │ │  │
-│  │  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └───┘ │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                            │                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ ML Learning  │  │ Backtesting  │  │ Notifications│      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────────┐
-│              DATABASE (PostgreSQL + TimescaleDB)            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ OHLCV Data   │  │ Gomes Intel  │  │ ML Perform.  │      │
-│  │ (TimeSeries) │  │              │  │              │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-```
+Akcion is a decision-support tool for one person's real family investment portfolio.
+The owner has multiple sclerosis and limited time — correctness and honest handling
+of missing data matter more than any feature. This documentation set was generated
+2026-08-28 specifically so an AI given access to this GitHub repository could
+understand the architecture, the domain, and the current defects quickly enough to
+propose useful next steps. See `INVARIANTS.md` §0 for the full framing.
 
 ---
 
-## Module Documentation
+## The eight core documents — `docs/specification/`
 
-### 1. Master Signal Aggregator
+| Document | Type | Covers |
+|---|---|---|
+| [`INVARIANTS.md`](specification/INVARIANTS.md) | Explanation | The cardinal rule (missing data ≠ a verdict), the Buy Guard, propose-then-confirm, secrets, language/design rules, verification commands |
+| [`ARCHITECTURE.md`](specification/ARCHITECTURE.md) | Explanation | System diagram, the decision-request lifecycle end to end, why migrations are hand-written, the duplicate-engine risk |
+| [`DOMAIN_MODEL.md`](specification/DOMAIN_MODEL.md) | Explanation | Gomes' methodology as code: market alert, lifecycle ratchet, R/R log-scale scoring, cylinders, position sizing, the Buy Guard's exact gate order, calibration status |
+| [`KNOWN_ISSUES.md`](specification/KNOWN_ISSUES.md) | Reference | Every verified defect, P0 (money-affecting) to P4 (process), plus open decisions only the owner can make |
+| [`API_REFERENCE.md`](specification/API_REFERENCE.md) | Reference | All 21 routers, every endpoint, duplicate/competing endpoints, dead code, schema notes |
+| [`DATA_MODEL.md`](specification/DATA_MODEL.md) | Reference | All 47+ tables by domain, migration history and its known breaks, column-level traps (`is_current`, currency, `avg_cost`, price lines) |
+| [`FRONTEND.md`](specification/FRONTEND.md) | Reference | Stack, every screen, the API client, state management, design system, dead components, client-side verdict duplication |
+| [`OPERATIONS.md`](specification/OPERATIONS.md) | Reference | Every external integration (SEC, Yahoo, Firecrawl, LLM providers, brokers, WhatsApp), config, scheduled jobs, CI |
 
-**File**: `backend/app/trading/master_signal.py`
-
-**Purpose**: Kombinuje 6 signálů do Buy Confidence score (0-100%)
-
-**Components**:
-
-- Gomes Intelligence (30%)
-- ML Predictions (25%)
-- Technical Analysis (15%)
-- Sentiment Analysis (15%)
-- Gap Analysis (10%)
-- Risk/Reward Ratio (5%)
-
-📖 **Detailed docs**: [MASTER_SIGNAL.md](./MASTER_SIGNAL.md)
+These eight are the **canonical, current** documentation. Everything below this line
+is either domain source material that remains authoritative for its narrow topic, or
+historical material kept for the record.
 
 ---
 
-### 2. ML Learning Engine
+## Domain source material (still canonical, narrower scope)
 
-**File**: `backend/app/trading/ml_learning.py`
+These are not superseded — they are the primary sources `DOMAIN_MODEL.md`
+summarizes and links back to. Read them directly for exact quotes and citations.
 
-**Purpose**: Sleduje historical performance a adjustuje confidence
-
-**Features**:
-
-- ✅ Win rate tracking
-- ✅ Prediction error analysis
-- ✅ Gomes correlation
-- ✅ Automatic confidence adjustment
-- ✅ Leaderboard
-
-📖 **Detailed docs**: [ML_LEARNING.md](./ML_LEARNING.md)
-
----
-
-### 3. Sentiment Analysis
-
-**File**: `backend/app/trading/sentiment.py`
-
-**Purpose**: Stahuje news headlines a počítá sentiment score
-
-**Sources**:
-
-- Yahoo Finance
-- RSS feeds (extensible)
-
-**Algorithm**:
-
-- Keyword-based NLP
-- Negation handling
-- Amplifier detection
-- Returns 0-100 score
+| File | Covers |
+|---|---|
+| [`GOMES_METHODOLOGY_CANON.md`](GOMES_METHODOLOGY_CANON.md) | The written source of truth for the investing method, distilled from Gomes' own article. When code and this doc disagree, **this doc wins** |
+| [`GOMES_VIDEO_ADDENDUM.md`](GOMES_VIDEO_ADDENDUM.md) | Amendments from Gomes' own video, covering topics the article is silent on (V1–V14) |
+| [`GOMES_TACTICAL_PANELS.md`](GOMES_TACTICAL_PANELS.md) | ⚠️ Describes the "Gomes Guardian" AI-analyst implementation that was later found to be a fabricating stub and disabled — see `INVARIANTS.md` §1. Historical design intent only; do not treat as current |
+| [`KANADSKE_VYKAZY.md`](KANADSKE_VYKAZY.md) | The Firecrawl-sourced Canadian/foreign-filer cylinder layer — why it exists, what it costs, per-company findings |
+| [`INVESTING_LITERATURE_CONTEXT.md`](INVESTING_LITERATURE_CONTEXT.md) | Secondary context (Lynch, Mayer, O'Neil, Marks, Dorsey, Graham) explaining *why* the canon's rules make sense — never itself a source of a rule |
+| [`EFFICIENT_INVESTING_PLAYBOOK.md`](EFFICIENT_INVESTING_PLAYBOOK.md) | User paths and acceptance-test scenarios, with real tracker fixtures. Paths still valid; the sizing table (15%) predates and contradicts the current 10% Primary tier cap — trust `DOMAIN_MODEL.md` for the number |
+| [`DESKTOP_DESIGN_PROMPT.md`](DESKTOP_DESIGN_PROMPT.md) | The approved visual direction ("signální skříň") — exact colour tokens and copy rules. Canonical; summarized in `INVARIANTS.md` §7 and `FRONTEND.md` |
+| [`whatsapp/README.md`](whatsapp/README.md) | The WhatsApp grooming convention (author slots, no phone numbers, provenance) and index of archived extracts |
+| [`AUDIT_2026-08-22.md`](AUDIT_2026-08-22.md) | The original 106-finding full audit. Useful-but-stale reference — most of its top findings are fixed; its unverified section (~25% of raw findings) was refuted and should not be treated as fact |
+| [`AUDIT_2026-08-22_AKCNI_PLAN.md`](AUDIT_2026-08-22_AKCNI_PLAN.md) | The action-plan summary of the above |
+| [`BACKLOG.md`](BACKLOG.md) | Live backlog drawn from the audit — covers only its top slice; see `KNOWN_ISSUES.md` for the fuller current list |
+| [`REDESIGN_BACKLOG.md`](REDESIGN_BACKLOG.md) | Outstanding frontend rebuild tasks (A–I). Section A's palette is superseded by `DESKTOP_DESIGN_PROMPT.md`; the rest is current |
+| [`SETUP_GUIDE.md`](SETUP_GUIDE.md) | A beginner install walkthrough written for a non-technical tester. Ports and paths correct; harmless to keep |
+| [`AKCION_PROVOZ.md`](AKCION_PROVOZ.md) | Day-to-day operations how-to — migrations, scheduling, verification, troubleshooting. Mostly folded into `OPERATIONS.md` now; kept as the Czech-language original |
 
 ---
 
-## New Features
+## Superseded — historical only, do not treat as current
 
-### 🆕 January 2026 Updates
+These describe an earlier version of the application (roughly January–February
+2026: React 18, Google Gemini 2.0 Flash as the primary model, a 6-component Master
+Signal, an ML/PatchTST prediction engine, Docker/systemd deployment) that no longer
+exists in this codebase. **Kept for the historical record per project convention —
+nothing in this repository's docs gets deleted — but every fact in them should be
+assumed wrong until cross-checked against the eight core documents above.**
 
-#### 1. Universal Intelligence Unit
-
-**File**: `backend/app/core/prompts_universal_intelligence.py`
-
-**Purpose**: Multi-source context-aware analysis with automatic source detection
-
-**Features**:
-
-- ✅ Auto-detects source type (Official Filing, Chat Discussion, Analyst Report)
-- ✅ Source-specific reliability (100% for Filings, 30% for Chat, 60% for Analysts)
-- ✅ Context-aware extraction (Chat → sentiment/rumors, Official → hard numbers)
-- ✅ Nested JSON output with meta_info, inflection_updates, financial_updates
-- ✅ Decision tree with source-specific scoring penalties
-
-**API Endpoint**:
-```
-POST /api/intelligence/analyze-ticker?use_universal_prompt=true
-```
-
-📖 **Detailed docs**: [UNIVERSAL_INTELLIGENCE.md](./UNIVERSAL_INTELLIGENCE.md)
-
----
-
-#### 2. Logical Validation System
-
-**Files**: 
-- `backend/app/routes/intelligence_gomes.py`
-- `frontend/src/components/StockDetailModalGomes.tsx`
-
-**Purpose**: Automatic detection of investment logic errors
-
-**Features**:
-
-- ✅ Validates: Score 9+ requires specific Catalyst
-- ✅ Yellow warning box in frontend when logic error detected
-- ✅ Backend logging for monitoring
-- ✅ Protects against AI blind spots (missing market calendar context)
-
-**Validation Rule**:
-```python
-IF gomes_score >= 9 AND next_catalyst is empty:
-    → Display: "⚠️ LOGICAL ERROR: High Score but No Catalyst"
-```
-
-📖 **Detailed docs**: [LOGICAL_VALIDATION.md](./LOGICAL_VALIDATION.md)
+| File | What it claimed that is no longer true |
+|---|---|
+| `README.legacy-2026-01.md` | The old version of this very index |
+| [`COMPLETE_SYSTEM_DOCUMENTATION.md`](COMPLETE_SYSTEM_DOCUMENTATION.md) | React 18, Gemini 2.0 Flash, 6-component Master Signal, ML/backtesting, Docker/systemd/`docs.akcion.com` — none of this is real |
+| [`AKCION_PRODUCT_OVERVIEW.md`](AKCION_PRODUCT_OVERVIEW.md) | A 5-phase lifecycle (canon has 3) and a 15% conviction-based allocation cap (canon has a 10% Primary tier cap) |
+| [`MASTER_SIGNAL.md`](MASTER_SIGNAL.md) | The 3-pillar Master Signal with a 15% Weinstein-guard weight — Weinstein is 0% weight by explicit decision (informational badge only) |
+| [`LOGICAL_VALIDATION.md`](LOGICAL_VALIDATION.md) | Anchored on `gomes_score` and a component (`StockDetailModalGomes.tsx`) that no longer exists |
+| [`UNIVERSAL_INTELLIGENCE.md`](UNIVERSAL_INTELLIGENCE.md) | The specific reliability percentages (Filing 100%/Analyst 60%/Chat 30%) are Gemini-era; the underlying idea (source reliability tiering) survives in `source_key` and the dual-source cap matrix — see `DOMAIN_MODEL.md` |
+| [`YAHOO_CACHE.md`](YAHOO_CACHE.md) | The cache mechanism exists but its staleness-honesty semantics were rewritten after the audit found failed fetches were logged as fresh — see `OPERATIONS.md` |
+| [`PORTFOLIO_PL_CALCULATION.md`](PORTFOLIO_PL_CALCULATION.md) | Predates nullable `avg_cost`, FX conflict warnings, and the currency-honesty fixes — see `DATA_MODEL.md` §"avg_cost" |
+| [`NOTIFICATIONS.md`](NOTIFICATIONS.md) | Documents phantom env vars (`SMTP_FROM_EMAIL`/`SMTP_TO_EMAIL`) that were found to permanently break the notification service, a port-8000 setup, and a systemd unit that was never used — see `OPERATIONS.md` |
+| [`QUICKSTART.md`](QUICKSTART.md) | Wrong port (8000, not 8002), wrong API key name, wrong entrypoints |
+| `../README.md` (repo root) | Same era as the above — React 18, Gemini, port 8000, wrong file/line counts |
+| `../backend/README.md` | Port 8000, `/docs` instead of `/api/docs` |
+| `../frontend/README.md` | Claims React 18; still contains Vite template boilerplate |
+| `../backend/README_YAHOO_CACHE.md` | Same era as `YAHOO_CACHE.md` above |
 
 ---
 
-#### 3. UI/UX Improvements
+## Scratch / not documentation
 
-**File**: `frontend/src/components/StockDetailModalGomes.tsx`
-
-**Changes**:
-
-- ✅ Trading Deck larger fonts (text-xs instead of text-[9px])
-- ✅ "+ ANALÝZA" button moved to header (right side)
-- ✅ Trading Deck Legend added (3-column explanations in Czech)
-- ✅ Gomes Guardian Intelligence Unit modal with source type selector
+`../.github/instructions/*.md` are historical AI-assistant persona prompts from
+January 2026, describing work already completed. Not documentation of current
+behaviour.
 
 ---
 
-### 4. Backtesting Engine
-
-**File**: `backend/app/trading/backtest.py`
-
-**Purpose**: Simuluje trading strategii na historical data
-
-**Features**:
-
-- ✅ OHLCV-based simulation
-- ✅ Stop loss / Take profit
-- ✅ Kelly position sizing
-- ✅ Performance metrics (win rate, Sharpe, drawdown)
-
----
-
-### 5. Notification System
-
-**Files**:
-
-- `backend/app/services/notifications.py`
-- `backend/app/services/alert_scheduler.py`
-
-**Purpose**: Posílá real-time alerts když Master Signal > 80%
-
-**Channels**:
-
-- Telegram bot
-- Email (SMTP)
-
-📖 **Detailed docs**: [NOTIFICATIONS.md](./NOTIFICATIONS.md)
-
----
-
-## API Reference
-
-### Base URL
-
-```
-Development: http://localhost:8000
-Production: https://api.akcion.com
-```
-
-### Authentication
-
-❌ **Zatím není implementováno**  
-✅ **TODO**: JWT tokens v příští verzi
-
-### Endpoints
-
-#### Master Signal
-
-| Method | Endpoint                           | Description                  |
-| ------ | ---------------------------------- | ---------------------------- |
-| GET    | `/api/master-signal/{ticker}`      | Get Master Signal for ticker |
-| GET    | `/api/action-center/opportunities` | Get top opportunities        |
-| GET    | `/api/action-center/summary`       | Get summary stats            |
-
-#### ML Learning
-
-| Method | Endpoint                       | Description                |
-| ------ | ------------------------------ | -------------------------- |
-| GET    | `/api/ml/performance/{ticker}` | Get performance metrics    |
-| POST   | `/api/ml/outcome`              | Record prediction outcome  |
-| GET    | `/api/ml/leaderboard`          | Get top performing tickers |
-
-#### Backtesting
-
-| Method | Endpoint                       | Description     |
-| ------ | ------------------------------ | --------------- |
-| POST   | `/api/backtest/run/{ticker}`   | Run backtest    |
-| GET    | `/api/backtest/stats/{ticker}` | Get quick stats |
-
-#### Notifications
-
-| Method | Endpoint                                 | Description        |
-| ------ | ---------------------------------------- | ------------------ |
-| POST   | `/api/notifications/test-alert`          | Send test alert    |
-| POST   | `/api/notifications/check-opportunities` | Manual alert check |
-| GET    | `/api/notifications/status`              | Get channel status |
-
-📖 **Full API docs**: http://localhost:8000/api/docs (Swagger UI)
-
----
-
-## Deployment
-
-### Local Development
-
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-pip install -r requirements_trading.txt
-python run_server.py
-
-# Frontend
-cd frontend
-npm install
-npm run dev
-```
-
-### Production (Docker)
-
-```dockerfile
-# Dockerfile
-FROM python:3.12-slim
-
-WORKDIR /app
-COPY backend/ .
-
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir -r requirements_trading.txt
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-```bash
-docker build -t akcion-backend .
-docker run -p 8000:8000 \
-  -e DATABASE_URL="postgresql://..." \
-  -e TELEGRAM_BOT_TOKEN="..." \
-  akcion-backend
-```
-
-### systemd Service
-
-```ini
-# /etc/systemd/system/akcion-api.service
-[Unit]
-Description=Akcion Trading API
-After=network.target postgresql.service
-
-[Service]
-Type=simple
-User=akcion
-WorkingDirectory=/opt/akcion/backend
-Environment="PATH=/opt/akcion/venv/bin"
-EnvironmentFile=/opt/akcion/.env
-ExecStart=/opt/akcion/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
----
-
-## Testing
-
-### Run All Tests
-
-```bash
-cd backend
-pip install -r requirements_test.txt
-pytest tests/ -v --cov=app
-```
-
-### Test Coverage
-
-```bash
-pytest tests/ --cov=app --cov-report=html
-open htmlcov/index.html
-```
-
-### CI/CD Pipeline
-
-GitHub Actions workflow: `.github/workflows/ci.yml`
-
-**Stages**:
-
-1. ✅ Backend tests (Python 3.12)
-2. ✅ Frontend tests (Node 18)
-3. ✅ Code quality (ruff)
-4. ✅ Coverage upload (Codecov)
-
----
-
-## Configuration
-
-### Environment Variables
-
-```bash
-# Database
-DATABASE_URL=postgresql://user:pass@host:5432/akcion
-
-# OpenAI (for Gomes analysis)
-OPENAI_API_KEY=sk-...
-
-# Telegram
-TELEGRAM_BOT_TOKEN=123456:ABC...
-TELEGRAM_CHAT_ID=123456789
-
-# Email
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=your-email@gmail.com
-SMTP_PASSWORD=app-password-16-chars
-SMTP_FROM_EMAIL=your-email@gmail.com
-SMTP_TO_EMAIL=alerts@yourdomain.com
-
-# Alert Settings
-ALERT_CHECK_INTERVAL=30
-ALERT_MIN_CONFIDENCE=80
-
-# ML Learning
-ML_LEARNING_ENABLED=true
-ML_MIN_SAMPLES=20
-ML_ADJUSTMENT_STRENGTH=0.15
-```
-
----
-
-## Troubleshooting
-
-### Backend neběží
-
-```bash
-# Check logs
-tail -f /var/log/akcion/api.log
-
-# Check dependencies
-pip list | grep -E "fastapi|sqlalchemy|torch"
-
-# Test DB connection
-python -c "from app.database.connection import is_connected; print(is_connected())"
-```
-
-### Master Signal vrací nízkou confidence
-
-1. **Zkontrolujte komponenty**:
-
-```bash
-curl http://localhost:8000/api/master-signal/AAPL | jq .components
-```
-
-2. **Možné příčiny**:
-   - ❌ Chybí ML predikce → retrain model
-   - ❌ Chybí Gomes data → import transcript
-   - ❌ Negativní sentiment → normal, market bearish
-   - ❌ Špatný R/R ratio → adjust targets
-
-### Tests failují
-
-```bash
-# Reinstall dependencies
-pip install --force-reinstall -r requirements_test.txt
-
-# Run specific test
-pytest tests/test_master_signal.py::test_weights_sum_to_one -v
-
-# Skip slow tests
-pytest tests/ -v -m "not slow"
-```
-
-### Alerty se neposílají
-
-1. **Test manuálně**:
-
-```bash
-curl -X POST http://localhost:8000/api/notifications/test-alert \
-  -H "Content-Type: application/json" \
-  -d '{"ticker":"AAPL","buy_confidence":85}'
-```
-
-2. **Zkontrolujte scheduler**:
-
-```bash
-ps aux | grep alert_scheduler
-```
-
-3. **Zkontrolujte credentials**:
-
-```bash
-curl http://localhost:8000/api/notifications/status
-```
-
----
-
-## Performance Optimization
-
-### Database Indexing
-
-```sql
--- OHLCV queries
-CREATE INDEX idx_ohlcv_ticker_timestamp ON ohlcv_data(ticker, timestamp DESC);
-
--- Master Signal cache
-CREATE INDEX idx_master_signal_ticker ON master_signals(ticker, created_at DESC);
-
--- ML Performance
-CREATE INDEX idx_ml_perf_ticker_eval ON model_performance(ticker, evaluation_date DESC);
-```
-
-### Caching Strategy
-
-```python
-from functools import lru_cache
-
-@lru_cache(maxsize=128)
-def get_master_signal_cached(ticker: str) -> MasterSignal:
-    # Cache pro 5 minut
-    return get_master_signal(db, ticker)
-```
-
-### Async Optimization
-
-```python
-import asyncio
-
-async def fetch_all_signals(tickers: list[str]):
-    tasks = [get_master_signal_async(ticker) for ticker in tickers]
-    return await asyncio.gather(*tasks)
-```
-
----
-
-## Security
-
-### ⚠️ CRITICAL
-
-1. **NIKDY** necommitujte `.env` soubor
-2. **VŽDY** používejte environment variables pro credentials
-3. **ROTUJTE** API keys pravidelně
-4. **LIMITUJTE** API rate limits (10 req/sec per IP)
-
-### Best Practices
-
-```bash
-# .env example (NEVER commit!)
-# Use .env.example for templates
-
-# Strong passwords
-DATABASE_PASSWORD=$(openssl rand -base64 32)
-
-# Restrict file permissions
-chmod 600 .env
-```
-
----
-
-## Changelog
-
-### January 25, 2026
-
-**🆕 Universal Intelligence Unit**
-- Multi-source prompt with automatic source type detection
-- Context-aware extraction logic per source reliability
-- Nested JSON structure with meta_info, inflection_updates, financial_updates
-- Decision tree with source-specific penalties
-
-**🛡️ Logical Validation System**
-- Backend validation: Score 9+ requires Catalyst
-- Yellow warning display in frontend
-- Protection against AI blind spots
-
-**🎨 UI/UX Improvements**
-- Trading Deck larger fonts (text-xs)
-- "+ ANALÝZA" button relocated to header
-- Trading Deck Legend with 3-column Czech explanations
-- Enhanced Intelligence Unit modal
-
----
-
-## Documentation Index
-
-| Document | Description |
-|----------|-------------|
-| [README.md](./README.md) | Complete system documentation (this file) |
-| [QUICKSTART.md](./QUICKSTART.md) | Quick setup guide |
-| [SETUP_GUIDE.md](./SETUP_GUIDE.md) | Detailed setup instructions |
-| [MASTER_SIGNAL.md](./MASTER_SIGNAL.md) | Master Signal aggregator docs |
-| [NOTIFICATIONS.md](./NOTIFICATIONS.md) | Alert system configuration |
-| [UNIVERSAL_INTELLIGENCE.md](./UNIVERSAL_INTELLIGENCE.md) | Multi-source analysis system |
-| [LOGICAL_VALIDATION.md](./LOGICAL_VALIDATION.md) | Investment logic validation |
-| [GOMES_TACTICAL_PANELS.md](./GOMES_TACTICAL_PANELS.md) | Gomes methodology panels |
-| [PORTFOLIO_PL_CALCULATION.md](./PORTFOLIO_PL_CALCULATION.md) | P&L calculation logic |
-| [YAHOO_CACHE.md](./YAHOO_CACHE.md) | Yahoo Finance caching |
-
----
-
-### v1.0.0 (2025-01-17)
-
-**Features**:
-
-- ✅ Master Signal Aggregator (6 components)
-- ✅ ML Learning Engine (self-improving)
-- ✅ Sentiment Analysis (news scraping)
-- ✅ Backtesting Engine (1-year sims)
-- ✅ Notification System (Telegram + Email)
-- ✅ Action Center (frontend widget)
-- ✅ ML Prediction Charts (interactive)
-
-**Tests**:
-
-- ✅ 50+ unit tests
-- ✅ API integration tests
-- ✅ GitHub Actions CI
-
-**Documentation**:
-
-- ✅ Complete module docs
-- ✅ API reference
-- ✅ Deployment guide
-
----
-
-## Future Roadmap
-
-### v1.1.0 (Q1 2025)
-
-- [ ] Short position support
-- [ ] Multi-timeframe analysis (1h, 4h, 1d)
-- [ ] Discord notifications
-- [ ] Mobile app (React Native)
-
-### v1.2.0 (Q2 2025)
-
-- [ ] Options trading signals
-- [ ] Portfolio optimization
-- [ ] Risk management dashboard
-- [ ] Advanced backtesting (Monte Carlo)
-
-### v2.0.0 (Q3 2025)
-
-- [ ] Real-time WebSocket feeds
-- [ ] AI chatbot assistant
-- [ ] Social sentiment (Twitter, Reddit)
-- [ ] Auto-trading execution
-
----
-
-## Support
-
-**Documentation**: https://docs.akcion.com  
-**Issues**: https://github.com/akcion/trading-intelligence/issues  
-**Email**: support@akcion.com
-
----
-
-## License
-
-Proprietary - All Rights Reserved
-
-© 2025 Akcion Trading Intelligence
+## See also
+
+- `../CLAUDE.md` — skill routing and verification commands, loaded automatically by
+  coding agents
+- `../IMPLEMENTATION_PLAN.md` — the running engineering log; always read this in full
+  before starting non-trivial work

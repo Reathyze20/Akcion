@@ -16,7 +16,6 @@ import {
   ChevronRight,
   RefreshCw,
   ShieldCheck,
-  Wallet,
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { DailyAction, DailyActionsResponse } from '../api/client';
@@ -29,6 +28,13 @@ interface DailyActionWidgetProps {
    * pre-filled trade flow; false falls back to a "execute at broker" note.
    */
   onExecuteAction?: (action: DailyAction) => boolean;
+  /**
+   * Called when the user wants to resolve a ROZPOR. Rozpory ukazujeme tady
+   * jen jako jednořádkovou připomínku — celé odůvodnění (fáze cyklu vs.
+   * ocenění) už jednou stojí na záložce „Co s tím", a psát ho sem znovu by
+   * bylo doslovné opakování téže věty ze stejného zdroje dat.
+   */
+  onOpenRozpor?: () => void;
   /** Bump to force a refetch (e.g. after a recorded trade). */
   refreshKey?: number;
 }
@@ -66,13 +72,6 @@ const ALERT_STYLE: Record<string, { dot: string; label: string; pill: string }> 
   },
 };
 
-const ALERT_NAME: Record<string, string> = {
-  GREEN: 'zelená',
-  YELLOW: 'žlutá',
-  ORANGE: 'oranžová',
-  RED: 'červená',
-};
-
 // Semantic tokens only — the emoji + label carry the alert level, color stays quiet.
 const ACTION_STYLE: Record<string, { border: string; badge: string; label: string }> = {
   BUY: { border: 'border-positive-border', badge: 'bg-positive-bg text-positive', label: 'Koupit' },
@@ -80,7 +79,15 @@ const ACTION_STYLE: Record<string, { border: string; badge: string; label: strin
   SELL: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Prodat — snížit riziko' },
   SELL_WAIT_TIME: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Prodat — kapitál nepracuje' },
   LIQUIDATE_HEAVY: { border: 'border-negative-border', badge: 'bg-negative-bg text-negative', label: 'Zlikvidovat pozici' },
+  /*
+   * Rozpor není pokyn. Nese varovný tón a níž se u něj nevykresluje
+   * tlačítko — provést se nedá něco, co aplikace sama nerozhodla.
+   */
+  ROZPOR: { border: 'border-warning-border', badge: 'bg-warning-bg text-warning', label: 'Rozpor — rozhodni ty' },
 };
+
+/** Pokyny, které se dají provést. Cokoli jinde je otázka, ne příkaz. */
+const EXECUTABLE = (actionType: string): boolean => actionType !== 'ROZPOR';
 
 const SOURCE_LABEL: Record<string, string> = {
   GOMES: 'Gomes',
@@ -93,6 +100,7 @@ const formatCzk = (value: number): string =>
 
 export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
   onExecuteAction,
+  onOpenRozpor,
   refreshKey = 0,
 }) => {
   const [data, setData] = useState<DailyActionsResponse | null>(null);
@@ -118,6 +126,9 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
   useEffect(() => {
     fetchActions();
   }, [fetchActions, refreshKey]);
+
+  const toDo = (data?.actions ?? []).filter((a) => EXECUTABLE(a.action_type)).length;
+  const questions = (data?.actions ?? []).length - toDo;
 
   const handleExecute = (action: DailyAction) => {
     const handled = onExecuteAction?.(action) ?? false;
@@ -164,21 +175,18 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
   const isHold = data.status === 'HOLD_HOLD_HOLD';
 
   return (
-    <div className="bg-surface-raised rounded-card border border-border overflow-hidden">
-      {/* Header row: alert pill + cash pill + refresh */}
-      <div className="flex items-center justify-between px-5 pt-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span
-            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${alertStyle.pill}`}
-          >
-            <span className={`h-2 w-2 rounded-full ${alertStyle.dot}`} aria-hidden="true" />
-            Semafor: {ALERT_NAME[data.market_alert] ?? data.market_alert}
-          </span>
-          <span className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
-            <Wallet className="w-3.5 h-3.5" />
-            Volná hotovost: {formatCzk(data.available_cash_czk)}
-          </span>
-        </div>
+    // shrink-0: bez něj flexbox rodiče (overflow-y-auto ve sloupci vlevo)
+    // tuhle kartu při nedostatku místa zmenšil na pár pixelů místo aby
+    // scrolloval kolem ní — `overflow-hidden` tady ruší automatické
+    // minimum výšky flex položky, takže se seznam pokynů ztratil skoro celý.
+    <div className="bg-surface-raised rounded-card border border-border overflow-hidden shrink-0">
+      {/*
+        Semafor a volná hotovost se dřív opakovaly i tady — semafor už trvale
+        stojí v levém sloupci (SideRail) a hotovost v horní liště appky
+        (HOTOVOST pill). Stejný fakt na obrazovce dvakrát není důraz, je to
+        šum; zůstává jen tlačítko na obnovení téhle karty.
+      */}
+      <div className="flex items-center justify-end px-5 pt-4">
         <button
           onClick={fetchActions}
           title="Obnovit"
@@ -187,6 +195,55 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
           <RefreshCw className="w-4 h-4" />
         </button>
       </div>
+
+      {/*
+        Skladba portfolia — `app/services/concentration.py`. Dřív se tahle
+        stejná čísla objevila jen jako věta v `warnings`, a jen když
+        překročila práh (40 % s nálezem, 50 % neposouzeno) — pod prahem
+        appka mlčela úplně a nešlo vidět, jestli se to blíží. Trvalá dlaždice,
+        aby byl vidět trend, ne jen okamžik, kdy je to už zle.
+      */}
+      {data.concentration && (
+        <div className="mx-5 mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-surface-raised/40 px-3 py-2 text-[11.5px]">
+          <span className="font-semibold uppercase tracking-wider text-text-muted">
+            Skladba portfolia
+          </span>
+          <span
+            className={
+              data.concentration.material_pct > 40
+                ? 'font-bold text-negative'
+                : data.concentration.material_pct > 25
+                  ? 'font-bold text-warning'
+                  : 'text-text-secondary'
+            }
+            title={
+              data.concentration.material_tickers.length > 0
+                ? `Materiální nález: ${data.concentration.material_tickers.join(', ')}`
+                : undefined
+            }
+          >
+            S nálezem: {data.concentration.material_pct.toFixed(1)} %
+          </span>
+          {data.concentration.unassessed_pct > 0 && (
+            <span
+              className={
+                data.concentration.unassessed_pct > 50
+                  ? 'font-bold text-warning'
+                  : 'text-text-secondary'
+              }
+              title={`Nikdo nevidí výkazy: ${data.concentration.unassessed_tickers.join(', ')}`}
+            >
+              Neposouzeno: {data.concentration.unassessed_pct.toFixed(1)} %
+            </span>
+          )}
+          {data.concentration.unassessed_pct > 0 && (
+            <span className="text-text-muted">
+              — problém je někde mezi {data.concentration.material_pct.toFixed(1)} % a{' '}
+              {data.concentration.upper_bound_pct.toFixed(1)} %
+            </span>
+          )}
+        </div>
+      )}
 
       {isHold ? (
         /* State A: Nic. Drž. — the correct answer most days */
@@ -205,13 +262,57 @@ export const DailyActionWidget: React.FC<DailyActionWidgetProps> = ({
       ) : (
         /* State B: 1-3 ranked actions */
         <div className="px-5 py-4">
+          {/*
+            * Nadpis počítá jen to, co se dá provést. Rozpory jsou otázky a
+            * počítat je mezi úkoly by znamenalo tvrdit, že aplikace ví, co
+            * dělat — přesně to, co u nich netvrdí.
+            */}
           <h2 className="text-lg font-black text-text-primary mb-3 flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-accent" />
-            CO MÁM DNES UDĚLAT ({data.actions.length})
+            {toDo > 0 ? `CO MÁM DNES UDĚLAT (${toDo})` : 'DNES NIC K PROVEDENÍ'}
+            {questions > 0 && (
+              <span className="text-[11px] font-bold uppercase tracking-wider text-warning">
+                · {questions} {plural(questions, 'rozpor', 'rozpory', 'rozporů')} k rozhodnutí
+              </span>
+            )}
           </h2>
           <div className="space-y-3">
             {data.actions.map((action, index) => {
               const style = ACTION_STYLE[action.action_type] ?? ACTION_STYLE.SELL;
+
+              /*
+               * Rozpor je otázka, ne pokyn — odůvodnění (fáze cyklu vs.
+               * ocenění) se nezopakuje, žije na záložce „Co s tím". Tady
+               * zůstává jen tolik, aby bylo vidět, že existuje a u koho.
+               */
+              if (action.action_type === 'ROZPOR') {
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={onOpenRozpor}
+                    disabled={!onOpenRozpor}
+                    className={`flex w-full items-center justify-between gap-3 rounded-lg border bg-surface-raised/40 px-4 py-2.5 text-left transition-colors ${style.border} ${
+                      onOpenRozpor ? 'hover:bg-surface-hover' : ''
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="text-text-muted font-mono text-sm">{index + 1}.</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${style.badge}`}>
+                        {style.label}
+                      </span>
+                      <span className="font-black text-base text-text-primary">{action.ticker}</span>
+                    </span>
+                    {onOpenRozpor && (
+                      <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-accent">
+                        Co s tím
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </button>
+                );
+              }
+
               return (
                 <div
                   key={action.id}

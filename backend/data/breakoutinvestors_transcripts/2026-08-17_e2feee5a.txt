@@ -1,0 +1,106 @@
+# Breakout Investors Elite Call - 8.17.26
+# datum: 2026-08-17 | autor: Josh E | post: e2feee5a-faba-4552-82e5-b77eb5a1727d
+# url: https://www.breakoutinvestors.com/feed/e2feee5a-faba-4552-82e5-b77eb5a1727d
+# tickery: DBOXF, DAIO, KUYAF, IDN, OPTX, TSSI, GKPRF, ITMSF, DFSC, AEHR, LPTH, TPCS
+# zdroj: ručně vložený text stránky (Elite, přihlášen uživatel), ne surový audio přepis
+
+Kuya Silver Production Targets and Earnings Discussion
+Bryan led a discussion on Kuya Silver's recent earnings, addressing the company's ongoing goal of reaching 350 tons per day by year-end, with Ashleigh and Brad contributing questions and observations about management's guidance and operational progress.
+
+Earnings and Production Guidance: Bryan explained that Kuya Silver's earnings were in line with expectations following their production report, noting that while the press release language might have raised concerns about the mill closing, the call clarified that there is no significant issue, just delays in achieving targets.
+
+350 Tons Per Day Target: Ashleigh and Bryan discussed management's continued reference to the 350 tons per day goal by year-end, with Bryan stating his belief that there is zero chance of achieving this even for a single day, but noting that management did not explicitly refute the possibility, which he viewed as a positive sign.
+
+Operational Progress and Market Context: Bryan highlighted that the contractor for the ramp is only just starting, making the year-end target unlikely, but overall, he described the company's progress as reasonably positive, especially with silver prices climbing recently.
+
+TechPrecision (TPCS) Performance and Outlook
+Bryan provided an in-depth update on TechPrecision's recent earnings and operational improvements, with Robert and Jerry raising questions about contract profitability and the impact of defense spending, leading to clarifications on management's progress and future prospects.
+
+Earnings and Management Improvements: Bryan reported increased enthusiasm after the Q2 call, citing solid results, improved contract pricing, and a more involved CFO, which have led to better throughput and customer confidence.
+
+Stadco Contract Profitability: Robert asked about the timeline for less profitable Stadco contracts ending, and Bryan clarified that while there is still a tail, it should be less than a year, and positive gross margins are now being achieved.
+
+Defense Spending Impact: Robert inquired about the effect of increased submarine spending on TPCS, and Bryan responded that future funding for TPCS's defense-related products is secure regardless of political changes, minimizing risk from congressional shifts.
+
+Clarification on Underwater Contracts: Jerry questioned a statement about less than 50% of Stadco contracts being underwater, and Bryan suggested this may have been a misunderstanding by management, promising to follow up for clarification.
+
+Intermap (ITMSF) Business Developments and Indonesia Project
+Bryan updated the group on Intermap's ongoing negotiations and project extensions, emphasizing increased management confidence and the binary nature of the Indonesia opportunity.
+
+Indonesia Project Extension: Bryan noted that Intermap was asked for permission to extend the timing of the Indonesia project, which he interpreted as a positive sign, though the outcome remains uncertain and high-risk.
+
+Other Business Opportunities: Bryan mentioned that Intermap has secured another country mapping project, providing some diversification if the Indonesia deal does not materialize.
+
+Intellicheck (IDN) Customer Retention and Meta Opportunity
+Bryan and Mark discussed Intellicheck's risk of losing a major customer, the resilience of their product against competitors, and the potential upside from Meta and banking contracts.
+
+Major Customer Risk: Bryan explained that IDN disclosed a worst-case scenario of losing up to 75% of a key customer's business, but actual order flow has not declined, suggesting the risk may be overstated.
+
+Competitive Product Issues: Mark shared that the replacement solution brought in by Capital One is reportedly ineffective, which may explain why IDN has not seen the expected drop in utilization.
+
+Meta and Banking Contracts: Bryan highlighted that Meta is back in play as a potential client, and that IDN's largest bank customer is expected to show significant growth in years two and three of their contract.
+
+Data I/O Strategic Direction and Valuation
+Bryan reviewed Data I/O's leadership, acquisition strategy, and AI integration, with Brad and Robert probing the company's valuation and future guidance, and Robert offering to assist in future calls due to his industry expertise.
+
+Leadership and Acquisitions: Bryan praised Data I/O's CEO for executing on acquisition plans and building a strong team, noting that a significant acquisition is expected to close soon, with updated guidance to follow.
+
+AI Integration: Bryan described the CEO's commitment to AI, including regular team meetings to disseminate AI knowledge and a focus on optimizing acquisitions through AI-driven synergies.
+
+Valuation and Price Target: Brad asked about Bryan's price target, and Bryan responded that while his current target is conservative due to uncertainties, the CEO aims for significant returns, and future guidance will inform any adjustments.
+
+Industry Expertise for Future Calls: Robert volunteered to join the next call with Data I/O management to provide deeper technical analysis, and Bryan agreed to include him.
+
+Energous (WATT) Growth Prospects and Risks
+Steven provided an analysis of Energous's near-term risks due to the Walmart contract roll-off and uncertainties in deal closures, while also highlighting long-term growth opportunities with major clients like McDonald's and regulatory tailwinds.
+
+Walmart Contract and Growth Risks: Steven explained that as the Walmart contract nears completion, there is a risk of flat or declining revenues in the short term, with uncertainty about how quickly new deals will close to fill the gap.
+
+Deal Closure and Management Challenges: Steven expressed concerns about management's ability to accurately forecast deal closure rates and timelines, noting that proof of concept cycles have taken longer than expected.
+
+Long-Term Opportunities: Steven emphasized that successful deployments with clients like McDonald's, British American Tobacco, or the US Postal Service could drive significant growth, and that new products and regulatory support position the company well for the future.
+
+D-Box Technologies Earnings and Market Reaction
+Brad and Bryan discussed D-Box's latest earnings, the market's negative reaction to screen addition numbers and revenue growth, and the company's long-term prospects, with Chris and others providing additional context on industry trends.
+
+Earnings Results and Market Response: Brad summarized the earnings call, noting record royalty revenues but a market sell-off likely triggered by lower-than-expected screen additions and modest revenue growth.
+
+Screen Addition Trends: Brad explained that screen additions are historically lumpy and tied to blockbuster movie seasons, with management indicating that this pattern will continue.
+
+Margin Improvement: Bryan pointed out that despite only a 3% revenue increase, D-Box achieved much stronger margins, which he views as a key positive takeaway.
+
+Industry and Demographic Trends: Chris highlighted the resurgence in moviegoing among younger demographics and the premium experience trend, supporting D-Box's long-term growth story.
+
+TSSI and AEHR Stock Evaluations
+Brad provided updates on TSSI's earnings and current investment outlook, as well as commentary on AEHR's valuation and risk profile, clarifying his current stance on both stocks.
+
+TSSI Investment Outlook: Brad stated that TSSI is no longer an investable stock for him due to lack of revenue diversification and overreliance on Dell, viewing it now only as a potential trading stock.
+
+AEHR Valuation Discussion: Brad discussed the recent Jefferies report on AEHR, expressing skepticism about the high upside potential and cautioning about the risks of holding at current price levels.
+
+DefSec Technologies (DFSC) Quarterly Results and Capital Raise
+Robert reported on DefSec's strong quarterly revenue growth, reduced cash burn, successful product testing, and a significant capital raise, while advising caution due to expected post-raise volatility.
+
+Quarterly Performance and Product Testing: Robert highlighted a 27% revenue increase, a 17% reduction in cash burn, and successful Bliss product testing with the US Army and an undisclosed Middle Eastern client.
+
+Capital Raise and Market Impact: Robert explained that a $5 million capital raise led to high dilution and a surge in trading activity, prompting his recommendation to sell and wait for price stabilization based on past experience with similar raises.
+
+Revenue Outlook and Strategic Partnerships: Robert shared management's guidance that digitization revenue will increase in coming quarters, with Lightning product revenue expected in Q3 next year, and mentioned his efforts to connect DefSec with the NYPD for product testing.
+
+Cash Position and Acquisition Potential: Robert analyzed the company's cash position, concluding that the raise should fund operations for three to four more quarters, and noted the possibility of an acquisition by General Dynamics if military product adoption continues.
+
+OPTX and LightPath Defense Sector Opportunities
+Robert, Chris, and Bryan discussed OPTX and LightPath's roles in the defense sector, focusing on satellite and infrared sensor demand, political risk, and long-term growth prospects.
+
+OPTX Revenue and Political Risk: Robert explained that OPTX's satellite revenue is expected to grow through 2027, with minimal near-term risk from US political changes due to the commercial nature of much of its business.
+
+Eagle Eye Product and Funding: Robert noted that the Eagle Eye product has independent funding and potential for international sales, reducing reliance on US government contracts in the near term.
+
+LightPath Infrared Sensor Growth: Chris and Robert emphasized LightPath's progress in infrared sensors for drones, highlighting the growing demand driven by security needs at large events and the broader defense market.
+
+Industry Collaboration and Research: Chris and Robert referenced collaborative research and industry analysis, including a write-up on the germanium supply situation and its implications for LightPath's future.
+
+Gatekeeper and Crescendo Valuation Highlights
+Bryan briefly mentioned Gatekeeper and Crescendo as undervalued companies with strong recent performance and favorable industry tailwinds, recommending them as attractive investment opportunities.
+
+Valuation and Performance: Bryan stated that both Gatekeeper and Crescendo have delivered strong results and are currently significantly undervalued, with industry trends supporting their continued growth.

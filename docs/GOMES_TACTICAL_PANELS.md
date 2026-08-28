@@ -1,3 +1,9 @@
+> ⚠️ **Stav: historický design záměr, ne aktuální implementace.** Popsaný "Gomes AI
+> Analyst" se ukázal jako atrapa — nikdy nevolal žádný model, psal vymyšlená čísla
+> do živého portfolia. Zastaveno 23. 8. 2026 (viz `INVARIANTS.md` §1,
+> `akcion-ai-analyst-was-a-stub` v paměti projektu). Ponecháno pro historii, ne jako
+> návod k implementaci.
+
 # Gomes Guardian - Complete Implementation
 
 ## ✅ Vytvořeno (Ready to Deploy):

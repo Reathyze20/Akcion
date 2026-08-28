@@ -1,0 +1,39 @@
+# Breakout Investors Elite Call - 8.4.26
+# datum: 2026-08-04 | autor: Josh E | post: c6d6965b-8f4c-4746-a362-a03608c1e425
+# url: https://www.breakoutinvestors.com/feed/c6d6965b-8f4c-4746-a362-a03608c1e425
+# tickery: DBOXF, DAIO, CXDO, OPTX, ITMSF, GEODF, INFU
+# zdroj: ručně vložený text stránky (Elite, přihlášen uživatel), ne surový audio přepis
+
+Company Updates and Earnings Previews
+Bryan provided updates on Data I/O, InterMap (ITMSF), and IPWR, discussing recent results, acquisition impacts, and management changes. Meanwhile, Aaron previewed InfuSystem's upcoming earnings, and Josh highlighted upcoming reports for Crescendo and Geodrill, with contributions from Brad, Matt, and Martin on OPTX and related earnings expectations.
+
+Data I/O Preliminary Results: Bryan reported that Data I/O released preliminary results consistent with their guidance, achieving $5.2 million in revenue and a higher-than-usual margin of 57%. The company delayed accounting for direct investments, rescheduling its call to a later date. Bryan expressed interest in hearing more details during the upcoming call.
+
+InterMap Acquisition Impact: Bryan confirmed with Investor Relations that InterMap's (ITMSF) new acquisition does not disqualify them from the Indonesia One Map program. He clarified that liquidity requirements for bidding are based on available funding sources—not just balance sheet cash—and that the World Bank's involvement is ongoing, with updates delayed weekly.
+
+IPWR Management and Sales Cycle: Bryan, Chris Forte, and Shareholders United spoke with IPWR's CFO, noting that the new CEO and C-suite hires have strong backgrounds. However, the company continues to face long sales cycles and lacks imminent major wins, making it less attractive for immediate investment.
+
+InfuSystem Earnings Preview: Aaron described InfuSystem as a stable company with few updates, noting that despite a recent dip and loss of unprofitable GE business, margins and profits are up, and guidance for the year remains unchanged. Aaron expects a positive earnings report and highlighted the stock's tendency for delayed positive reactions post-earnings.
+
+Upcoming Earnings for Crescendo and Geodrill: Josh mentioned that Crescendo's earnings are scheduled for the following afternoon and Geodrill's for next Monday morning, expressing optimism about both—especially Crescendo after a recent dip—and invited further discussion on other names of interest.
+
+Discussion on OPTX Earnings and Insider Activity
+Martin raised questions about OPTX's upcoming earnings and insider selling, with Matt and Brad discussing the company's lack of guidance, flat sales, and the risks of holding the stock into earnings, while Josh noted Rob as the group's expert for further insights.
+
+OPTX Earnings Expectations: Martin asked for insights into OPTX's upcoming earnings, noting concerns about insider selling and the associated overhang, and referenced Rob's previous comments that the earnings call might provide clarity on these issues.
+
+Lack of Guidance and Sales Trends: Matt explained that OPTX does not provide guidance and management is not contactable, with sales remaining flat at around $6–7 million per quarter for several years. The company trades at a high sales multiple, making a significant sales increase necessary to justify the valuation.
+
+Risks and Uncertainty: Brad and Matt agreed that holding OPTX into earnings is risky due to the lack of visibility and guidance. Matt noted that while positive press releases are frequent, they do not provide actionable information, and the company needs to scale up operations and improve profitability.
+
+Next Steps for Analysis: Josh suggested consulting Rob for a more informed perspective on OPTX, either in the chat or during the next call, and the group agreed to monitor for any surprises in the upcoming earnings report.
+
+D-Box and Cinemark Expansion Insights
+Brad shared insights from a recent Cinemark call, highlighting the company's commitment to expanding D-Box installations and the positive return on investment, which the group discussed as a positive indicator for D-Box's future prospects.
+
+Cinemark's D-Box Expansion: Brad relayed that Cinemark's CEO indicated there are limitations to expanding premium formats like 4DX and XD, but D-Box installations can be increased more easily since they only require a few rows. Cinemark remains committed to expanding D-Box, with positive ROI being a key factor.
+
+Market Trends and AI Trade Discussion
+Brad and Matt briefly discussed the current state of the AI trade and broader market trends, with Matt noting ongoing volatility and a general downtrend, especially in semiconductors and airlines.
+
+Market Volatility and Sector Performance: Matt commented that the market—particularly semiconductors and airlines—remains in a downtrend and is expected to be volatile in the coming months, suggesting caution regarding the AI trade's sustainability.
