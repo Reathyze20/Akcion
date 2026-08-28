@@ -1,28 +1,32 @@
 /**
- * Platby — pět knih na jedné obrazovce.
+ * Platby — dvě skupiny knih, pod sebou na jedné stránce.
  *
- * Předtím pod sebou stálo pět bloků, každý s vlastním nadpisem, vlastní
- * kartou souhrnu a vlastním prázdným stavem s kolečkem 80 × 80 px. Dohromady
- * 1 915 px, tedy skoro tři obrazovky, a číslo, které člověk hledá — kolik
- * měsíčně odchází — nebylo vidět ani jednou. Bylo rozsypané do pěti karet
- * „Celkem za měsíc", každá na jiné obrazovce.
+ * Skupina „Splácení" a skupina „Placení" fungují stejně — obě jsou seznam
+ * knih (kdysi pevně pojmenovaných „Společné splácení", „Platby Míša" atd.),
+ * ke kterým lze tlačítkem „Nová kniha" přidat další. Dřív bylo pět knih
+ * napevno zadrátovaných jako pět různých proměnných v InvestmentTerminal;
+ * teď je to jeden seznam na skupinu, takže přibýt může kolik knih je potřeba.
  *
- * Teď je nahoře řádek souhrnu, pod ním odrážky (jedna na knihu, každá se
- * svou měsíční částkou) a pod nimi tabulka té knihy, na kterou se člověk
- * přepnul. Všech pět částek je vidět naráz, aniž by se scrollovalo, a
- * podrobnosti se rozbalí kliknutím.
+ * Souhrn (měsíčně, zbývá uhradit, celkový dluh, splaceno) patří vždycky
+ * jen ke své knize — každá kniha skupiny „Splácení" počítá tahle čtyři
+ * čísla ze svých vlastních položek, ne ze všech knih dohromady.
  *
- * Žádný údaj nezmizel — jen se každý říká právě jednou. „Měsíční splátka"
- * a čtyři „Celkem za měsíc" ze starých karet jsou dnes částky na odrážkách,
- * zbytek stojí v souhrnu.
+ * Knihy skupiny „Placení" mají stejný půdorys sloupců (Splátka, Číslo
+ * účtu, VS, Informace), aby šly zarovnat pod sebe napříč knihami — proto
+ * mají pevnou šířku sloupců místo šířky podle obsahu. Vpravo tak zbývá
+ * volné místo u kratších knih; to je záměr, ne chyba.
+ *
+ * Položky v každé knize se řadí abecedně podle názvu, ne podle pořadí
+ * přidání — jinak by nová položka skočila na konec bez ohledu na to, kam
+ * abecedně patří.
  *
  * Data i formuláře zůstávají v InvestmentTerminal. Tahle komponenta jen
  * kreslí — nedrží stav, nezapisuje do localStorage, a proto nemůže o nic
  * přijít.
  */
 
-import React, { useMemo, useState } from 'react';
-import { Edit3, Plus } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Edit3, Plus, Settings2 } from 'lucide-react';
 
 export interface PaymentRecord {
   id: number;
@@ -36,28 +40,22 @@ export interface PaymentRecord {
   note: string;
 }
 
-interface LedgerSpec {
+export interface PaymentBook {
   id: string;
-  /** Jméno knihy na odrážce. */
-  label: string;
+  name: string;
   items: PaymentRecord[];
-  /** Splácení má navíc částku, zbytek a datum první splátky. */
-  kind: 'debt' | 'payment';
-  /** Věta do prázdného stavu — co se sem zapisuje. */
-  emptyHint: string;
-  onAdd: () => void;
-  onEdit: (item: PaymentRecord) => void;
 }
 
+export type PaymentGroupKind = 'debt' | 'payment';
+
 interface PaymentsPageProps {
-  debts: PaymentRecord[];
-  sharedPayments: PaymentRecord[];
-  misaPayments: PaymentRecord[];
-  savings: PaymentRecord[];
-  tomPayments: PaymentRecord[];
+  debtBooks: PaymentBook[];
+  paymentBooks: PaymentBook[];
   formatCurrency: (value: number, currency?: string) => string;
-  onAdd: (ledger: string) => void;
-  onEdit: (ledger: string, item: PaymentRecord) => void;
+  onAddItem: (groupKind: PaymentGroupKind, bookId: string) => void;
+  onEditItem: (groupKind: PaymentGroupKind, bookId: string, item: PaymentRecord) => void;
+  onAddBook: (groupKind: PaymentGroupKind) => void;
+  onManageBook: (groupKind: PaymentGroupKind, bookId: string) => void;
 }
 
 /** Číslo z textového pole. Prázdné i nesmyslné je nula, nikdy NaN. */
@@ -97,289 +95,302 @@ function monthlyTotal(items: PaymentRecord[]): number {
   return items.reduce((sum, item) => sum + num(item.monthlyPayment), 0);
 }
 
+/** Abecední pořadí položek podle názvu, česká kolace (Š za S, ne za Z). */
+function sortByName(items: PaymentRecord[]): PaymentRecord[] {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+}
+
 export const PaymentsPage: React.FC<PaymentsPageProps> = ({
-  debts,
-  sharedPayments,
-  misaPayments,
-  savings,
-  tomPayments,
+  debtBooks,
+  paymentBooks,
   formatCurrency,
-  onAdd,
-  onEdit,
+  onAddItem,
+  onEditItem,
+  onAddBook,
+  onManageBook,
 }) => {
-  const ledgers: LedgerSpec[] = useMemo(
-    () => [
-      {
-        id: 'debts',
-        label: 'Společné splácení',
-        items: debts,
-        kind: 'debt',
-        emptyHint: 'Hypotéka, leasing, půjčka — cokoli, co se splácí po měsících.',
-        onAdd: () => onAdd('debts'),
-        onEdit: (item) => onEdit('debts', item),
-      },
-      {
-        id: 'shared',
-        label: 'Společné platby',
-        items: sharedPayments,
-        kind: 'payment',
-        emptyHint: 'Pravidelné platby, které jdou napůl.',
-        onAdd: () => onAdd('shared'),
-        onEdit: (item) => onEdit('shared', item),
-      },
-      {
-        id: 'misa',
-        label: 'Platby Míša',
-        items: misaPayments,
-        kind: 'payment',
-        emptyHint: 'Míšiny vlastní pravidelné platby.',
-        onAdd: () => onAdd('misa'),
-        onEdit: (item) => onEdit('misa', item),
-      },
-      {
-        id: 'savings',
-        label: 'Šetření Míša',
-        items: savings,
-        kind: 'payment',
-        emptyHint: 'Kam si Míša měsíčně odkládá.',
-        onAdd: () => onAdd('savings'),
-        onEdit: (item) => onEdit('savings', item),
-      },
-      {
-        id: 'tom',
-        label: 'Platby Tom',
-        items: tomPayments,
-        kind: 'payment',
-        emptyHint: 'Tomovy vlastní pravidelné platby.',
-        onAdd: () => onAdd('tom'),
-        onEdit: (item) => onEdit('tom', item),
-      },
-    ],
-    [debts, sharedPayments, misaPayments, savings, tomPayments, onAdd, onEdit],
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto pr-0.5">
+      <BookGroup
+        title="Splácení"
+        kind="debt"
+        books={debtBooks}
+        formatCurrency={formatCurrency}
+        onAddItem={(bookId) => onAddItem('debt', bookId)}
+        onEditItem={(bookId, item) => onEditItem('debt', bookId, item)}
+        onAddBook={() => onAddBook('debt')}
+        onManageBook={(bookId) => onManageBook('debt', bookId)}
+      />
+      <BookGroup
+        title="Placení"
+        kind="payment"
+        books={paymentBooks}
+        formatCurrency={formatCurrency}
+        onAddItem={(bookId) => onAddItem('payment', bookId)}
+        onEditItem={(bookId, item) => onEditItem('payment', bookId, item)}
+        onAddBook={() => onAddBook('payment')}
+        onManageBook={(bookId) => onManageBook('payment', bookId)}
+      />
+    </div>
   );
+};
 
-  const [activeId, setActiveId] = useState(ledgers[0].id);
-  const active = ledgers.find((l) => l.id === activeId) ?? ledgers[0];
+/* -------------------------------------------------------------------------
+   Skupina knih — Splácení nebo Placení. Obě fungují stejně: nadpis
+   skupiny, tlačítko na novou knihu, a knihy pod sebou.
+------------------------------------------------------------------------- */
 
-  /* Souhrn. Měsíční částky jednotlivých knih tu nejsou — ty stojí na
-     odrážkách. Opakovat je i tady by byl přesně ten šum, kvůli kterému
-     se stránka předělávala. */
-  const summary = useMemo(() => {
-    const everyMonth = ledgers.reduce((sum, l) => sum + monthlyTotal(l.items), 0);
-    return {
-      everyMonth,
-      remaining: debts.reduce((sum, d) => sum + remainingOn(d), 0),
-      total: debts.reduce((sum, d) => sum + num(d.amount), 0),
-      paid: debts.reduce((sum, d) => sum + paidSoFar(d), 0),
-      perPerson: monthlyTotal(sharedPayments) / 2,
-    };
-  }, [ledgers, debts, sharedPayments]);
+const BookGroup: React.FC<{
+  title: string;
+  kind: PaymentGroupKind;
+  books: PaymentBook[];
+  formatCurrency: (value: number, currency?: string) => string;
+  onAddItem: (bookId: string) => void;
+  onEditItem: (bookId: string, item: PaymentRecord) => void;
+  onAddBook: () => void;
+  onManageBook: (bookId: string) => void;
+}> = ({ title, kind, books, formatCurrency, onAddItem, onEditItem, onAddBook, onManageBook }) => (
+  <div className="flex shrink-0 flex-col gap-2">
+    <div className="flex items-center justify-between px-0.5">
+      <span className="eyebrow text-text-muted">{title}</span>
+      <button
+        onClick={onAddBook}
+        className="flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-[12px] text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Nová tabulka {title}
+      </button>
+    </div>
 
-  /* Sloupec Informace se kreslí, jen když v něm něco je. Sloupec pomlček
-     zabírá místo a nic neříká. */
-  const showNote = active.items.some((item) => Boolean(item.note));
-  const showCreditor = active.kind === 'debt' && active.items.some((item) => Boolean(item.creditor));
+    {books.length === 0 ? (
+      <div className="flex flex-col items-center justify-center gap-1 rounded-card border border-dashed border-border px-4 py-6 text-center">
+        <p className="text-[12px] text-text-muted">Zatím žádná kniha.</p>
+      </div>
+    ) : (
+      books.map((book) => (
+        <LedgerSection
+          key={book.id}
+          book={book}
+          kind={kind}
+          formatCurrency={formatCurrency}
+          onAdd={() => onAddItem(book.id)}
+          onEdit={(item) => onEditItem(book.id, item)}
+          onManage={() => onManageBook(book.id)}
+        />
+      ))
+    )}
+  </div>
+);
 
-  /* Souhrn je odvozené číslo — bez jediné platby v pěti knihách nemá co
-     shrnovat, a pět dlaždic „0,00 Kč" vedle sebe vypadá jako appka, které
-     něco nefunguje, ne jako appka, kterou ještě nikdo nepoužil. Odrážky
-     dole zůstávají vždy: i prázdné jsou to, čím se vybírá, do které knihy
-     jde první záznam. */
-  const hasAnyPayments =
-    debts.length + sharedPayments.length + misaPayments.length + savings.length + tomPayments.length > 0;
+/* -------------------------------------------------------------------------
+   Sekce jedné knihy — hlavička (nadpis + částka) a tabulka. Knihy skupiny
+   Placení sdílejí pevný půdorys sloupců (colgroup), aby se sloupce
+   Splátka/Číslo účtu/VS/Informace zarovnaly napříč knihami.
+------------------------------------------------------------------------- */
+
+const LedgerSection: React.FC<{
+  book: PaymentBook;
+  kind: PaymentGroupKind;
+  formatCurrency: (value: number, currency?: string) => string;
+  onAdd: () => void;
+  onEdit: (item: PaymentRecord) => void;
+  onManage: () => void;
+}> = ({ book, kind, formatCurrency, onAdd, onEdit, onManage }) => {
+  const items = useMemo(() => sortByName(book.items), [book.items]);
+  const monthly = monthlyTotal(items);
+  /* Souhrn patří jen téhle knize — počítá se výhradně z jejích vlastních
+     položek. Dvě knihy typu Splácení tak mají každá svá čtyři čísla, ne
+     jeden součet za celou skupinu. */
+  const debtStats =
+    kind === 'debt' && items.length > 0
+      ? {
+          remaining: items.reduce((sum, d) => sum + remainingOn(d), 0),
+          total: items.reduce((sum, d) => sum + num(d.amount), 0),
+          paid: items.reduce((sum, d) => sum + paidSoFar(d), 0),
+        }
+      : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex shrink-0 flex-col overflow-hidden rounded-card border border-border bg-surface-raised">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle py-2 pr-3">
+        {/* Název a odznak sedí ve stejných dvou sloupcích (14rem/8rem) jako
+            tabulka pod nimi — Splátka tak vždycky začíná na stejném x jako
+            odznak, ať je název knihy jakkoli dlouhý nebo krátký. */}
+        <div
+          className="grid items-center"
+          style={kind === 'payment' ? { gridTemplateColumns: '14rem 8rem' } : undefined}
+        >
+          <div className="px-3">
+            <h2 className="text-[20px] font-semibold text-text-primary">{book.name}</h2>
+          </div>
+          {kind === 'payment' && (
+            <div className="px-3">
+              <span className="inline-flex w-fit items-baseline rounded-button border border-border px-2 py-1">
+                <span className="font-mono text-[13px] tabular-nums text-text-primary">
+                  {formatCurrency(monthly)}
+                </span>
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onManage}
+            className="flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-[12px] text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            Upravit
+          </button>
+          <button
+            onClick={onAdd}
+            className="flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-[12px] text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Přidat platbu
+          </button>
+        </div>
+      </div>
 
-      {/* ------------------------------------------------------------------
-          SOUHRN — pět čísel, která platí napříč knihami.
-      ------------------------------------------------------------------ */}
-      {hasAnyPayments && (
-        <div className="grid shrink-0 grid-cols-5 gap-px overflow-hidden rounded-card border border-border bg-border">
-          <SummaryCell
-            label="Měsíčně celkem"
-            value={formatCurrency(summary.everyMonth)}
-            hint="Součet všech pěti knih — kolik každý měsíc odejde z účtů."
-            strong
-          />
+      {debtStats && (
+        <div className="grid grid-cols-2 gap-px border-b border-border-subtle bg-border sm:grid-cols-4">
+          <SummaryCell label="Měsíčně" value={formatCurrency(monthly)} hint="Součet splátek této knihy." strong />
           <SummaryCell
             label="Zbývá uhradit"
-            value={formatCurrency(summary.remaining)}
-            hint="Ze společného splácení, po odečtení dosud zaplacených splátek."
+            value={formatCurrency(debtStats.remaining)}
+            hint="Po odečtení dosud zaplacených splátek."
           />
-          <SummaryCell label="Celkový dluh" value={formatCurrency(summary.total)} hint="Původní výše všech závazků." />
-          <SummaryCell label="Splaceno" value={formatCurrency(summary.paid)} hint="Splátky × měsíce od první splátky." />
           <SummaryCell
-            label="Na jednoho"
-            value={formatCurrency(summary.perPerson)}
-            hint="Polovina společných plateb."
+            label="Celkový dluh"
+            value={formatCurrency(debtStats.total)}
+            hint="Původní výše závazků v této knize."
+          />
+          <SummaryCell
+            label="Splaceno"
+            value={formatCurrency(debtStats.paid)}
+            hint="Splátky × měsíce od první splátky."
           />
         </div>
       )}
 
-      {/* ------------------------------------------------------------------
-          ODRÁŽKY — jedna na knihu, s vlastní měsíční částkou.
-
-          Částka na odrážce je celý důvod, proč tenhle pruh existuje: bez
-          ní by se člověk musel na každou knihu přepnout, aby zjistil,
-          kolik z ní odchází.
-      ------------------------------------------------------------------ */}
-      <div className="flex shrink-0 flex-wrap items-stretch gap-2" role="tablist" aria-label="Knihy plateb">
-        {ledgers.map((ledger) => {
-          const on = ledger.id === active.id;
-          const monthly = monthlyTotal(ledger.items);
-          return (
-            <button
-              key={ledger.id}
-              role="tab"
-              aria-selected={on}
-              onClick={() => setActiveId(ledger.id)}
-              className={`flex min-w-[160px] flex-col gap-0.5 rounded-card border px-3 py-2 text-left transition-colors ${
-                on
-                  ? 'border-accent-border bg-accent-bg'
-                  : 'border-border bg-surface-raised hover:bg-surface-hover'
-              }`}
-            >
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={`h-[6px] w-[6px] shrink-0 rounded-full ${on ? 'bg-accent' : 'bg-text-muted'}`}
-                  aria-hidden="true"
-                />
-                <span
-                  className={`text-[12px] font-medium ${on ? 'text-accent' : 'text-text-secondary'}`}
-                >
-                  {ledger.label}
-                </span>
-              </span>
-              <span className="flex items-baseline gap-1.5 pl-[13px]">
-                <span className="font-mono text-[14px] tabular-nums text-text-primary">
-                  {formatCurrency(monthly)}
-                </span>
-                <span className="text-[10px] text-text-muted">
-                  {ledger.items.length === 0
-                    ? 'prázdné'
-                    : `${ledger.items.length} ${polozek(ledger.items.length)}`}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ------------------------------------------------------------------
-          KNIHA — tabulka té odrážky, na které člověk stojí.
-      ------------------------------------------------------------------ */}
-      {/* Rám knihy roste s obsahem a zastaví se na kraji obrazovky. Když
-          dostal `flex-1`, natáhl se přes celou výšku a pod dvěma řádky
-          zůstalo šest set pixelů bílého vnitřku, který vypadal jako
-          chybějící obsah. */}
-      <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex max-h-full min-h-0 flex-col overflow-hidden rounded-card border border-border bg-surface-raised">
-        <div className="flex shrink-0 items-center justify-between border-b border-border-subtle px-3 py-2">
-          <h2 className="text-[13px] font-semibold text-text-primary">{active.label}</h2>
-          <button
-            onClick={active.onAdd}
-            className="flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1 text-[12px] text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Přidat
-          </button>
+      {items.length === 0 ? (
+        /* Prázdný stav na jednu řádku. Kolečko 80 × 80 px se zelenou
+           fajfkou tu dřív slavilo, že se nic neeviduje — a zabíralo
+           výšku pěti záznamů. */
+        <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+          <p className="text-[13px] text-text-secondary">Zatím tu nic není.</p>
+          <p className="max-w-sm text-[12px] text-text-muted">
+            {kind === 'debt'
+              ? 'Hypotéka, leasing, půjčka — cokoli, co se splácí po měsících.'
+              : 'Pravidelná měsíční platba.'}
+          </p>
         </div>
+      ) : (
+        <div className="overflow-x-auto">
+          {/* Název/Splátka/Číslo účtu/VS mají v obou knihovnách stejnou
+              pevnou šířku (colgroup), takže se zarovnají pod sebe napříč
+              Splácením i Placením. Zbytek sloupců u Splácení (Částka, Zbývá,
+              Splaceno, 1. splátka, Komu) na nic zarovnaný být nemusí — v
+              Placení neexistují. */}
+          <table className="w-full table-fixed">
+            <colgroup>
+              <col className="w-56" />
+              <col className="w-32" />
+              <col className="w-56" />
+              <col className="w-32" />
+              {kind === 'debt' && (
+                <>
+                  <col className="w-36" />
+                  <col className="w-36" />
+                  <col className="w-36" />
+                  <col className="w-28" />
+                  <col className="w-40" />
+                </>
+              )}
+              {/* Informace nemá šířku — je to jediný sloupec, do kterého se
+                  vlije zbylá šířka karty. Musí být vždycky přítomný, i u
+                  knihy bez jediné poznámky: bez pružného sloupce by
+                  `table-fixed` roztáhl proporčně všechny pevné sloupce a
+                  Splátka/Číslo účtu/VS by se rozjely s Placením. */}
+              <col />
+              <col className="w-10" />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-border">
+                <Th>Název</Th>
+                <Th align="right">Splátka</Th>
+                <Th>Číslo účtu</Th>
+                <Th>VS</Th>
+                {kind === 'debt' && <Th align="right">Částka</Th>}
+                {kind === 'debt' && <Th align="right">Zbývá</Th>}
+                {kind === 'debt' && <Th align="right">Splaceno</Th>}
+                {kind === 'debt' && <Th>1. splátka</Th>}
+                {kind === 'debt' && <Th>Komu</Th>}
+                <Th>Informace</Th>
+                <Th align="right"> </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr
+                  key={item.id}
+                  className="group border-b border-border-subtle transition-colors hover:bg-surface-hover"
+                >
+                  <Td>
+                    <span className="text-[13px] text-text-primary">{item.name || '—'}</span>
+                  </Td>
 
-        {active.items.length === 0 ? (
-          /* Prázdný stav na jednu řádku. Kolečko 80 × 80 px se zelenou
-             fajfkou tu dřív slavilo, že se nic neeviduje — a zabíralo
-             výšku pěti záznamů. */
-          <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
-            <p className="text-[13px] text-text-secondary">Zatím tu nic není.</p>
-            <p className="max-w-sm text-[12px] text-text-muted">{active.emptyHint}</p>
-          </div>
-        ) : (
-          <div className="min-h-0 overflow-y-auto">
-            <table className="w-full">
-              <thead className="sticky top-0 z-10 bg-surface-raised">
-                <tr className="border-b border-border">
-                  <Th>Název</Th>
-                  {active.kind === 'debt' && <Th align="right">Částka</Th>}
-                  {active.kind === 'debt' && <Th align="right">Zbývá</Th>}
-                  {active.kind === 'debt' && <Th align="right">Splaceno</Th>}
-                  <Th align="right">Splátka</Th>
-                  {active.kind === 'debt' && <Th>1. splátka</Th>}
-                  {showCreditor && <Th>Komu</Th>}
-                  <Th>Číslo účtu</Th>
-                  <Th>VS</Th>
-                  {showNote && <Th>Informace</Th>}
-                  <Th align="right"> </Th>
-                </tr>
-              </thead>
-              <tbody>
-                {active.items.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="group border-b border-border-subtle transition-colors hover:bg-surface-hover"
-                  >
-                    <Td>
-                      <span className="text-[13px] text-text-primary">{item.name || '—'}</span>
-                    </Td>
+                  <Td align="right" mono>
+                    {item.monthlyPayment ? formatCurrency(num(item.monthlyPayment)) : '—'}
+                  </Td>
 
-                    {active.kind === 'debt' && (
-                      <Td align="right" mono>
-                        {item.amount ? formatCurrency(num(item.amount)) : '—'}
-                      </Td>
-                    )}
-                    {active.kind === 'debt' && (
-                      <Td align="right" mono>
-                        {item.amount ? formatCurrency(remainingOn(item)) : '—'}
-                      </Td>
-                    )}
-                    {active.kind === 'debt' && (
-                      <Td align="right" mono muted>
-                        {item.date ? formatCurrency(paidSoFar(item)) : '—'}
-                      </Td>
-                    )}
+                  <Td mono muted>{item.accountNumber || '—'}</Td>
+                  <Td mono muted>{item.variableSymbol || '—'}</Td>
 
+                  {kind === 'debt' && (
                     <Td align="right" mono>
-                      {item.monthlyPayment ? formatCurrency(num(item.monthlyPayment)) : '—'}
+                      {item.amount ? formatCurrency(num(item.amount)) : '—'}
                     </Td>
-
-                    {active.kind === 'debt' && (
-                      <Td muted>
-                        {item.date && !Number.isNaN(new Date(item.date).getTime())
-                          ? new Date(item.date).toLocaleDateString('cs-CZ')
-                          : '—'}
-                      </Td>
-                    )}
-
-                    {showCreditor && <Td muted>{item.creditor || '—'}</Td>}
-
-                    <Td mono muted>{item.accountNumber || '—'}</Td>
-                    <Td mono muted>{item.variableSymbol || '—'}</Td>
-
-                    {showNote && (
-                      <Td muted>
-                        <span className="block max-w-[220px] truncate" title={item.note}>
-                          {item.note || '—'}
-                        </span>
-                      </Td>
-                    )}
-
-                    <Td align="right">
-                      <button
-                        onClick={() => active.onEdit(item)}
-                        className="rounded p-1 text-text-muted opacity-0 transition-opacity hover:text-accent focus:opacity-100 group-hover:opacity-100"
-                        title="Upravit"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                      </button>
+                  )}
+                  {kind === 'debt' && (
+                    <Td align="right" mono>
+                      {item.amount ? formatCurrency(remainingOn(item)) : '—'}
                     </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      </div>
+                  )}
+                  {kind === 'debt' && (
+                    <Td align="right" mono muted>
+                      {item.date ? formatCurrency(paidSoFar(item)) : '—'}
+                    </Td>
+                  )}
+                  {kind === 'debt' && (
+                    <Td muted>
+                      {item.date && !Number.isNaN(new Date(item.date).getTime())
+                        ? new Date(item.date).toLocaleDateString('cs-CZ')
+                        : '—'}
+                    </Td>
+                  )}
+                  {kind === 'debt' && <Td muted>{item.creditor || '—'}</Td>}
+
+                  <Td muted>
+                    <span className="block break-words" title={item.note}>
+                      {item.note || '—'}
+                    </span>
+                  </Td>
+
+                  <Td align="right">
+                    <button
+                      onClick={() => onEdit(item)}
+                      className="rounded p-1 text-text-muted opacity-0 transition-opacity hover:text-accent focus:opacity-100 group-hover:opacity-100"
+                      title="Upravit"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                    </button>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
@@ -432,12 +443,5 @@ const Td: React.FC<{
     {children}
   </td>
 );
-
-/** Skloňování za počtem položek. */
-function polozek(n: number): string {
-  if (n === 1) return 'položka';
-  if (n >= 2 && n <= 4) return 'položky';
-  return 'položek';
-}
 
 export default PaymentsPage;
